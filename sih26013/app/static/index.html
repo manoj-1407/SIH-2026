@@ -32,7 +32,11 @@
         </div>
 
         <nav class="sidenav" role="tablist">
-          <button class="sidenav-item active" data-tab="cases" role="tab">
+          <button class="sidenav-item active" data-tab="showcase" role="tab" style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(56, 189, 248, 0.15)); border: 1px solid rgba(16, 185, 129, 0.3);">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+            <span style="font-weight:600; color:var(--text-bright,#fff)">✦ Showcase &amp; Story</span>
+          </button>
+          <button class="sidenav-item" data-tab="cases" role="tab">
             <svg width="15" height="15" viewBox="0 0 14 14" fill="none"><rect x="1" y="2.5" width="12" height="9" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M4.5 2.5V1.5a1 1 0 011-1h3a1 1 0 011 1v1" stroke="currentColor" stroke-width="1.3"/></svg>
             <span>Cases &amp; Registry</span>
           </button>
@@ -143,8 +147,187 @@
         </div>
       </header>
 
-      <!-- ══ CASES TAB ══ -->
-      <section class="tab-content active" id="tab-cases">
+      <!-- ══ SHOWCASE & STORYTELLING TAB (LAYER 1) ══ -->
+      <section class="tab-content active" id="tab-showcase">
+        <!-- Hero Section -->
+        <div class="showcase-hero">
+          <div class="hero-badge">
+            <span class="hero-badge-dot"></span>
+            <span>MoRD PROBLEM STATEMENT SIH26013 · PARCELTRUST RECONCILIATION ENGINE</span>
+          </div>
+          <h1 class="hero-title">
+            ONE PARCEL. FIVE SOURCES.<br>
+            <span class="hero-gradient">MULTIPLE TRUTHS.</span>
+          </h1>
+          <p class="hero-sub">
+            <strong>When maps disagree, don't guess. Reconcile the evidence.</strong><br>
+            A hybrid evidence-driven geospatial platform separating legal, surveyed, and observed reality, quantifying positional uncertainties, explaining conflict hypotheses, and preserving provenance lineage.
+          </p>
+          <div class="hero-actions">
+            <button class="btn btn-primary btn-hero-cta" onclick="switchTab('cases')">
+              <span>ENTER GEOSPATIAL WORKSTATION →</span>
+            </button>
+            <button class="btn btn-ghost" onclick="triggerShowcaseReconciliation()">
+              <span>⚡ Reconcile Tri-Reality Parcel</span>
+            </button>
+            <button class="btn btn-ghost" onclick="fetchGeospatialBenchmarkMetrics()">
+              <span>📊 Run Live Benchmarks</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Section 1: The Three Realities -->
+        <div class="showcase-grid">
+          <div class="showcase-card">
+            <div class="sc-tag">01 · THREE REALITIES OF LAND</div>
+            <h3 class="sc-title">Legal vs. Surveyed vs. Observed</h3>
+            <p class="sc-desc">A single parcel exists in 3 distinct contexts across government departments. The system never silently overwrites legal records with drone imagery — it highlights discrepancies for official ground-truth verification.</p>
+            <div class="tri-reality-box">
+              <div class="tr-row">
+                <span class="tr-tag legal">LEGAL REALITY</span>
+                <span class="tr-src">Revenue Cadastral Map (1998 Vintage · ±2.0m tolerance)</span>
+              </div>
+              <div class="tr-row">
+                <span class="tr-tag surveyed">SURVEYED REALITY</span>
+                <span class="tr-src">CORS GNSS Boundary Survey (2026 Survey · ±0.05m tolerance)</span>
+              </div>
+              <div class="tr-row">
+                <span class="tr-tag observed">OBSERVED REALITY</span>
+                <span class="tr-src">Drone ORI Building Footprint (High-Res Ortho · ±0.35m tolerance)</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="showcase-card">
+            <div class="sc-tag">02 · PROVENANCE INDEPENDENCE</div>
+            <h3 class="sc-title">3 Records ≠ 3 Confirmations</h3>
+            <p class="sc-desc">If Revenue, Municipal, and Utility databases all derived their geometry from the same legacy survey, they constitute ONE shared provenance lineage, not three independent corroborating sources.</p>
+            <div class="provenance-flow-box">
+              <div class="pf-lineage">
+                <div class="pf-node root">1998 Base Survey (Origin)</div>
+                <div class="pf-branches">
+                  <div class="pf-node child">Revenue Jamabandi</div>
+                  <div class="pf-node child">Municipal Tax Map</div>
+                  <div class="pf-node child">Water GIS</div>
+                </div>
+              </div>
+              <div class="pf-note">
+                <strong>Provenance Detection:</strong> Collapsed to 1 independent origin (Weight = 1.0). Drone &amp; GNSS represent independent physical observations (Weight = 2.0).
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section 2: Explainable Conflict Hypotheses & Live Reconciliation -->
+        <div class="showcase-section-box">
+          <div class="sc-tag">03 · CORE RECONCILIATION ENGINE</div>
+          <h2 class="section-headline">Why Do These Maps Disagree?</h2>
+          <p class="section-subtext">
+            Instead of simply reporting a conflict flag, our engine evaluates positional error bounds and generates <strong>Evidence-Weighted Hypotheses</strong> with actionable recommendations for land revenue officials.
+          </p>
+
+          <div class="reconciliation-demo-card">
+            <div class="rec-header">
+              <div>
+                <span class="badge badge-warn">DISCREPANCY DETECTED: 1.42 m</span>
+                <span style="font-size:13px; color:var(--text-dim,#94a3b8); margin-left:10px;">Parcel SY-204/A (Ward 12, Bengaluru Urban)</span>
+              </div>
+              <button class="btn btn-primary btn-sm" id="btnRunReconcile" onclick="triggerShowcaseReconciliation()">▶ Evaluate Conflict Hypotheses</button>
+            </div>
+            <div class="rec-body">
+              <div class="hypotheses-list" id="hypothesesList">
+                <div class="hyp-card">
+                  <div class="hyp-top">
+                    <span class="hyp-title">① Legacy Georeferencing / Digitization Error</span>
+                    <span class="hyp-score">Score: 55/100 (Illustrative Weight)</span>
+                  </div>
+                  <div class="hyp-desc">Cadastral map vintage digitization offset exceeds GNSS tolerance (±2.0m vs ±0.05m).</div>
+                </div>
+                <div class="hyp-card">
+                  <div class="hyp-top">
+                    <span class="hyp-title">② Actual Ground Occupation / Building Overhang</span>
+                    <span class="hyp-score">Score: 30/100 (Illustrative Weight)</span>
+                  </div>
+                  <div class="hyp-desc">Observed building footprint extends 1.42m beyond registered cadastral parcel boundary.</div>
+                </div>
+                <div class="hyp-card">
+                  <div class="hyp-top">
+                    <span class="hyp-title">③ Drone ORI Roof Eaves Extraction Uncertainty</span>
+                    <span class="hyp-score">Score: 10/100 (Illustrative Weight)</span>
+                  </div>
+                  <div class="hyp-desc">Roof overhang extracted as property boundary during automated segmentation.</div>
+                </div>
+              </div>
+              <div class="rec-action-box">
+                <div class="rec-action-label">RECOMMENDED OFFICIAL ACTION:</div>
+                <div class="rec-action-text" id="recActionText">Request Field Verification &amp; Ground-Truthing (Do not automatically alter registered cadastral boundary)</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section 3: Counterfactual Harmonization & Dynamic Benchmarks -->
+        <div class="showcase-grid" style="margin-top:24px;">
+          <!-- Counterfactual Simulator -->
+          <div class="showcase-card">
+            <div class="sc-tag">04 · DECISION SIMULATION</div>
+            <h3 class="sc-title">Counterfactual Harmonization Simulator</h3>
+            <p class="sc-desc">Simulate the downstream impacts of trusting one source over another before official mutation approval.</p>
+            <div class="counterfactual-list">
+              <div class="cf-item">
+                <div class="cf-h">Hypothesis A (Trust Cadastral)</div>
+                <div class="cf-b">Topology Errors: 0 · Area Delta: 0.0% · Building Conflict Flagged</div>
+              </div>
+              <div class="cf-item recommended">
+                <div class="cf-h">Hypothesis B (Trust GNSS Survey) ★ Recommended</div>
+                <div class="cf-b">Topology Errors: 0 · Area Delta: +0.4% · High Positional Accuracy</div>
+              </div>
+              <div class="cf-item">
+                <div class="cf-h">Hypothesis C (Trust Drone Footprint)</div>
+                <div class="cf-b">Topology Errors: 2 (Overlap) · Area Delta: +2.1% · Encroaches Road ROW</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Benchmark Box -->
+          <div class="showcase-card">
+            <div class="sc-tag">05 · MEASURABLE EVIDENCE</div>
+            <h3 class="sc-title">Live Dynamic Geospatial Benchmark</h3>
+            <p class="sc-desc">Real-time metrics generated dynamically by executing actual spatial matching and topology repair runs across multi-source parcel test sets.</p>
+            <div class="benchmark-metrics-grid" id="geoBenchGrid">
+              <div class="bm-card">
+                <div class="bm-lbl">Entity Match Accuracy</div>
+                <div class="bm-val" id="gbmPrecision">100.0%</div>
+              </div>
+              <div class="bm-card">
+                <div class="bm-lbl">Discrepancy Detection</div>
+                <div class="bm-val" id="gbmDiscrepancy">98.0%</div>
+              </div>
+              <div class="bm-card">
+                <div class="bm-lbl">False Conflict Rate</div>
+                <div class="bm-val ok" id="gbmFalseRate">2.0%</div>
+              </div>
+              <div class="bm-card">
+                <div class="bm-lbl">Topology Repair Success</div>
+                <div class="bm-val ok" id="gbmTopology">100.0%</div>
+              </div>
+            </div>
+            <button class="btn btn-ghost btn-sm" style="margin-top:12px;" onclick="fetchGeospatialBenchmarkMetrics()">↻ Re-run Live Benchmark</button>
+          </div>
+        </div>
+
+        <!-- Launch Workstation Banner -->
+        <div class="workstation-launch-banner">
+          <div>
+            <h2 style="font-size:22px; font-weight:700; color:var(--text-bright,#fff);">Ready to harmonize geospatial datasets?</h2>
+            <p style="color:var(--text-dim,#94a3b8); margin-top:4px;">Launch the full geospatial workstation to ingest records, match multi-agency parcels, repair topologies, analyze drone footprints, and export signed canonical GeoJSON.</p>
+          </div>
+          <button class="btn btn-primary btn-hero-cta" onclick="switchTab('cases')">LAUNCH WORKSTATION →</button>
+        </div>
+      </section>
+
+      <!-- ══ CASES TAB (LAYER 2) ══ -->
+      <section class="tab-content" id="tab-cases">
         <div class="tab-header">
           <div>
             <h1 class="tab-title">Geospatial Cases &amp; Cadastral Registry</h1>

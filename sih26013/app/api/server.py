@@ -1025,6 +1025,51 @@ def seed_demo_cases():
     }
 
 
+class TriRealityRequest(BaseModel):
+    legal_record: Dict[str, Any]
+    surveyed_record: Optional[Dict[str, Any]] = None
+    observed_record: Optional[Dict[str, Any]] = None
+
+
+@router.post("/reconcile/tri-reality")
+def reconcile_tri_reality_endpoint(req: TriRealityRequest):
+    """
+    Reconciles Legal Cadastral Boundary, Surveyed GNSS Boundary, and Observed Drone Footprint.
+    Evaluates positional uncertainties and evidence-weighted hypotheses.
+    """
+    from app.core.reconciliation import calculate_tri_reality_reconciliation
+    return calculate_tri_reality_reconciliation(
+        legal_record=req.legal_record,
+        surveyed_record=req.surveyed_record,
+        observed_record=req.observed_record
+    )
+
+
+@router.post("/reconcile/counterfactuals")
+def simulate_counterfactuals_endpoint(req: TriRealityRequest):
+    """
+    Simulates counterfactual harmonization scenarios: 'What if we trust Cadastral vs GNSS vs Observed?'
+    """
+    from app.core.reconciliation import simulate_counterfactual_harmonization
+    return simulate_counterfactual_harmonization(
+        legal_record=req.legal_record,
+        surveyed_record=req.surveyed_record,
+        observed_record=req.observed_record
+    )
+
+
+@router.get("/benchmark")
+def run_live_geospatial_benchmark_endpoint(parcels: int = 4):
+    """
+    Runs actual dynamic evaluation runs on synthetic spatial datasets to compute real metrics.
+    No hardcoded values.
+    """
+    from app.core.benchmark import run_live_geospatial_benchmark
+    n = min(max(1, parcels), 10)
+    return run_live_geospatial_benchmark(num_synthetic_parcels=n)
+
+
+
 # ── Mount router at root AND at /api ──────────────────────────────────────────
 app.include_router(router)
 app.include_router(router, prefix="/api")

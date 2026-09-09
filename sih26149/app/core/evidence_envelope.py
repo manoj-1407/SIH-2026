@@ -61,7 +61,7 @@ def build_evidence_payload(
 
 def sign_evidence_envelope(
     payload: dict,
-    private_key_bytes: bytes,
+    private_key_bytes: Any,
 ) -> dict:
     """
     Sign an evidence payload.
@@ -70,6 +70,9 @@ def sign_evidence_envelope(
     3. Sign canonical bytes with Ed25519 private key.
     4. Return full package with evidence_hash and signature.
     """
+    if isinstance(private_key_bytes, str):
+        private_key_bytes = private_key_bytes.encode('utf-8')
+
     canon_bytes = canonicalize(payload)
     evidence_hash = hash_bytes(canon_bytes)
     signature_hex = sign_evidence(private_key_bytes, canon_bytes)
@@ -78,3 +81,4 @@ def sign_evidence_envelope(
     package['evidence_hash'] = evidence_hash
     package['signature'] = signature_hex
     return package
+

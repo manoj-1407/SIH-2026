@@ -570,21 +570,24 @@ def carve_bytes(
 
 
 def carve_image(
-    image_path: str,
+    image_input,
     max_results: int = 500,
     target_types: Optional[list] = None,
 ) -> list[CarvedFile]:
     """
-    Scan a disk image and carve recoverable files.
+    Scan a disk image (path or raw bytes) and carve recoverable files.
     """
-    with open(image_path, 'rb') as f:
-        data = f.read(MAX_SCAN_SIZE)
+    if isinstance(image_input, (bytes, bytearray)):
+        data = bytes(image_input)
+    else:
+        with open(str(image_input), 'rb') as f:
+            data = f.read(MAX_SCAN_SIZE)
     return carve_bytes(data, max_results=max_results, target_types=target_types)
 
 
-def carve_image_summary(image_path: str, **kwargs) -> dict:
+def carve_image_summary(image_input, **kwargs) -> dict:
     """Scan and return a structured summary suitable for API response."""
-    carved = carve_image(image_path, **kwargs)
+    carved = carve_image(image_input, **kwargs)
     by_type: dict[str, int] = {}
     for c in carved:
         by_type[c.file_type] = by_type.get(c.file_type, 0) + 1

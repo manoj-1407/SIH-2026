@@ -30,7 +30,11 @@
         </div>
 
         <nav class="sidenav" role="tablist">
-          <button class="sidenav-item active" data-tab="cases" role="tab">
+          <button class="sidenav-item active" data-tab="showcase" role="tab" style="background: linear-gradient(135deg, rgba(56, 189, 248, 0.15), rgba(99, 102, 241, 0.15)); border: 1px solid rgba(56, 189, 248, 0.3);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+            <span style="font-weight:600; color:var(--text-bright,#fff)">✦ Showcase &amp; Story</span>
+          </button>
+          <button class="sidenav-item" data-tab="cases" role="tab">
             <svg width="16" height="16" viewBox="0 0 15 15" fill="none"><rect x="1" y="3" width="13" height="10" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M5 3V2a1 1 0 011-1h3a1 1 0 011 1v1" stroke="currentColor" stroke-width="1.3"/></svg>
             <span>Cases &amp; Timeline</span>
           </button>
@@ -147,8 +151,225 @@
         <div class="cold-start-bar"><div class="cold-start-progress" id="coldProgressBar"></div></div>
       </div>
 
-      <!-- ══ CASES TAB ══ -->
-      <section class="tab-content active" id="tab-cases">
+      <!-- ══ SHOWCASE & STORYTELLING TAB (LAYER 1) ══ -->
+      <section class="tab-content active" id="tab-showcase">
+        <!-- Hero Section -->
+        <div class="showcase-hero">
+          <div class="hero-badge">
+            <span class="hero-badge-dot"></span>
+            <span>NTRO PROBLEM STATEMENT SIH26149 · FORENSIC ASSURANCE PLATFORM</span>
+          </div>
+          <h1 class="hero-title">
+            DIGITAL EVIDENCE<br>
+            <span class="hero-gradient">SHOULD NEVER BE A BLACK BOX.</span>
+          </h1>
+          <p class="hero-sub">
+            <strong>Recover what remains. Prove what was removed.</strong><br>
+            A closed-loop forensic assurance workstation unifying raw carving, NIST/IEEE informed sanitization, independent validation probes, and Ed25519 tamper-proof evidence preservation.
+          </p>
+          <div class="hero-actions">
+            <button class="btn btn-primary btn-hero-cta" onclick="switchTab('cases')">
+              <span>ENTER FORENSIC WORKSTATION →</span>
+            </button>
+            <button class="btn btn-ghost" onclick="triggerShowcaseProofLoop()">
+              <span>⚡ Execute Forensic Proof Loop</span>
+            </button>
+            <button class="btn btn-ghost" onclick="fetchLiveBenchmarkMetrics()">
+              <span>📊 Run Live Benchmarks</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Section 1: The Problem & The Solution -->
+        <div class="showcase-grid">
+          <div class="showcase-card">
+            <div class="sc-tag">01 · RECOVERY PRINCIPLE</div>
+            <h3 class="sc-title">Deleted doesn't mean gone.</h3>
+            <p class="sc-desc">Standard OS file deletion merely marks filesystem inodes as free. Actual file clusters persist in unallocated space until overwritten. Our engine carves raw byte signatures and performs bounded gap-scan reconstruction on fragmented streams.</p>
+            <div class="sc-viz-box" id="sectorVizBox">
+              <div class="sector-strip">
+                <span class="sec sec-allocated">ALLOCATED</span>
+                <span class="sec sec-deleted">DELETED INODE</span>
+                <span class="sec sec-unallocated" id="secUnallocated">UNALLOCATED (RAW JPEG)</span>
+                <span class="sec sec-gap">GAP (512KB)</span>
+                <span class="sec sec-unallocated">FRAGMENT #2</span>
+              </div>
+              <div class="sector-status" id="sectorStatusText">Signature Scan: Found 0xFFD8... JPEG Header at offset 0x00200 + Bounded Gap Scan Active</div>
+            </div>
+          </div>
+
+          <div class="showcase-card">
+            <div class="sc-tag">02 · EVIDENCE REASONING</div>
+            <h3 class="sc-title">Multi-Factor Evidence Confidence Matrix</h3>
+            <p class="sc-desc">Confidence is not a black-box percentage. Every recovered artifact is evaluated across 6 structural dimensions with natural language rationale.</p>
+            <div class="confidence-matrix-grid">
+              <div class="conf-item"><span class="conf-lbl">Signature Validity</span><span class="conf-val ok">100%</span></div>
+              <div class="conf-item"><span class="conf-lbl">Structural Depth</span><span class="conf-val ok">94%</span></div>
+              <div class="conf-item"><span class="conf-lbl">Fragment Continuity</span><span class="conf-val ok">88%</span></div>
+              <div class="conf-item"><span class="conf-lbl">Entropy Consistency</span><span class="conf-val ok">91%</span></div>
+              <div class="conf-item"><span class="conf-lbl">Gap Reconstruction</span><span class="conf-val warn">82%</span></div>
+              <div class="conf-item"><span class="conf-lbl">Format Integrity</span><span class="conf-val ok">96%</span></div>
+            </div>
+            <div class="conf-explanation">
+              <strong>Evidence Rationale:</strong> Valid JPEG SOF0/DHT markers + consistent entropy. Confidence slightly adjusted due to bounded gap scan reconstruction over 512KB cluster hop.
+            </div>
+          </div>
+        </div>
+
+        <!-- Section 2: The Core Innovation — The Forensic Proof Loop -->
+        <div class="showcase-section-box">
+          <div class="sc-tag">03 · CORE INNOVATION</div>
+          <h2 class="section-headline">The Closed-Loop Forensic Proof Loop</h2>
+          <p class="section-subtext">
+            Existing tools treat recovery and sanitization as separate silos. We connect them: the same forensic engine used to recover evidence acts as an <strong>independent validation probe</strong> post-sanitization, producing a cryptographically signed assurance package.
+          </p>
+
+          <div class="proof-loop-stepper">
+            <div class="pl-step active" id="pls1">
+              <div class="pl-num">1</div>
+              <div class="pl-body">
+                <div class="pl-title">Known Test Evidence</div>
+                <div class="pl-sub">Controlled synthetic media stream with embedded JPEG/PNG/PDF</div>
+              </div>
+            </div>
+            <div class="pl-arrow">→</div>
+            <div class="pl-step active" id="pls2">
+              <div class="pl-num">2</div>
+              <div class="pl-body">
+                <div class="pl-title">Pre-Carve Scan</div>
+                <div class="pl-sub">Carves &amp; indexes all 3 recoverable artifacts</div>
+              </div>
+            </div>
+            <div class="pl-arrow">→</div>
+            <div class="pl-step active" id="pls3">
+              <div class="pl-num">3</div>
+              <div class="pl-body">
+                <div class="pl-title">NIST/IEEE Sanitize</div>
+                <div class="pl-sub">Clear / Purge / Destroy execution</div>
+              </div>
+            </div>
+            <div class="pl-arrow">→</div>
+            <div class="pl-step active" id="pls4">
+              <div class="pl-num">4</div>
+              <div class="pl-body">
+                <div class="pl-title">Post-Carve Probe</div>
+                <div class="pl-sub">Validation probe confirms 0 residual artifacts</div>
+              </div>
+            </div>
+            <div class="pl-arrow">→</div>
+            <div class="pl-step active" id="pls5">
+              <div class="pl-num">5</div>
+              <div class="pl-body">
+                <div class="pl-title">Signed Assurance</div>
+                <div class="pl-sub">Ed25519 Signed Certificate</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="proof-loop-card" id="proofLoopResultCard">
+            <div class="pl-card-header">
+              <div>
+                <span class="badge badge-ok">LIVE FORENSIC ASSURANCE PROBE</span>
+                <span style="font-size:13px; color:var(--text-dim,#94a3b8); margin-left:8px;">Scope: Controlled Validation Probe (Confidential)</span>
+              </div>
+              <button class="btn btn-primary btn-sm" id="btnRunProofLoop" onclick="triggerShowcaseProofLoop()">▶ Run Live Proof Loop</button>
+            </div>
+            <div class="pl-card-body" id="proofLoopOutput">
+              <div class="pl-metrics-row">
+                <div class="pl-metric">
+                  <div class="pl-metric-label">Pre-Sanitization Recovery</div>
+                  <div class="pl-metric-val" id="plPreCount">3 / 3 Artifacts Detected</div>
+                </div>
+                <div class="pl-metric">
+                  <div class="pl-metric-label">Sanitization Technique</div>
+                  <div class="pl-metric-val ok" id="plMethod">CLEAR (Logical Zero-Fill)</div>
+                </div>
+                <div class="pl-metric">
+                  <div class="pl-metric-label">Post-Sanitization Validation</div>
+                  <div class="pl-metric-val ok" id="plPostCount">0 Recoverable (100% Assurance)</div>
+                </div>
+                <div class="pl-metric">
+                  <div class="pl-metric-label">Verification Status</div>
+                  <div class="pl-metric-val ok" id="plVerifyStatus">VERIFIED &amp; VALIDATED</div>
+                </div>
+              </div>
+              <div class="pl-disclaimer">
+                <strong>Standards Reference:</strong> Decision logic informed by NIST SP 800-88 Rev. 2 &amp; IEEE 2883-2022. Observed post-sanitization recovery: none within the defined validation scope.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section 3: Dynamic Live Benchmarks & NIST Decision Profiler -->
+        <div class="showcase-grid" style="margin-top:24px;">
+          <!-- Benchmark Box -->
+          <div class="showcase-card">
+            <div class="sc-tag">04 · MEASURABLE EVIDENCE</div>
+            <h3 class="sc-title">Live Dynamic Benchmark Suite</h3>
+            <p class="sc-desc">Real-time metrics generated dynamically by executing actual synthetic evaluation runs against the carving and proof-loop engines.</p>
+            <div class="benchmark-metrics-grid" id="benchMetricsGrid">
+              <div class="bm-card">
+                <div class="bm-lbl">Recovery Precision</div>
+                <div class="bm-val" id="bmPrecision">100.0%</div>
+              </div>
+              <div class="bm-card">
+                <div class="bm-lbl">Recovery Recall</div>
+                <div class="bm-val" id="bmRecall">100.0%</div>
+              </div>
+              <div class="bm-card">
+                <div class="bm-lbl">F1 Score</div>
+                <div class="bm-val" id="bmF1">1.000</div>
+              </div>
+              <div class="bm-card">
+                <div class="bm-lbl">Post-Sanitize Erasure</div>
+                <div class="bm-val ok" id="bmErasure">100.0%</div>
+              </div>
+            </div>
+            <button class="btn btn-ghost btn-sm" style="margin-top:12px;" onclick="fetchLiveBenchmarkMetrics()">↻ Re-run Live Benchmark</button>
+          </div>
+
+          <!-- Decision Profiler Box -->
+          <div class="showcase-card">
+            <div class="sc-tag">05 · DECISION SUPPORT</div>
+            <h3 class="sc-title">Media Sanitization Decision Engine</h3>
+            <p class="sc-desc">Informed by NIST SP 800-88 Rev. 2 and IEEE 2883-2022. Evaluates storage media characteristics, data classification, and custody parameters to recommend defensible sanitization levels.</p>
+            <div class="form-row" style="margin-top:12px;">
+              <div class="field">
+                <label class="field-label">Media Type</label>
+                <select id="profMediaType" class="input" onchange="updateDecisionProfile()">
+                  <option value="NVME_SSD">NVMe / Flash SSD</option>
+                  <option value="SATA_HDD">Magnetic SATA HDD</option>
+                  <option value="USB_FLASH">USB Flash Drive</option>
+                </select>
+              </div>
+              <div class="field">
+                <label class="field-label">Sensitivity</label>
+                <select id="profSensitivity" class="input" onchange="updateDecisionProfile()">
+                  <option value="CONFIDENTIAL">CONFIDENTIAL</option>
+                  <option value="RESTRICTED">RESTRICTED</option>
+                  <option value="SECRET">SECRET / TOP SECRET</option>
+                </select>
+              </div>
+            </div>
+            <div class="result-card ok" id="profResultCard" style="margin-top:12px;">
+              <div class="result-status" id="profRecMethod">RECOMMENDED: PURGE</div>
+              <div class="result-reason" id="profRecReason">Flash media with confidential data requires firmware-level cryptographic or block purge per NIST SP 800-88 Rev. 2.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Launch Workstation Banner -->
+        <div class="workstation-launch-banner">
+          <div>
+            <h2 style="font-size:22px; font-weight:700; color:var(--text-bright,#fff);">Ready to investigate evidence cases?</h2>
+            <p style="color:var(--text-dim,#94a3b8); margin-top:4px;">Launch the full laboratory workstation to manage cases, extract inodes, carve raw media, verify audit chains, and download Section 65B certificates.</p>
+          </div>
+          <button class="btn btn-primary btn-hero-cta" onclick="switchTab('cases')">LAUNCH WORKSTATION →</button>
+        </div>
+      </section>
+
+      <!-- ══ CASES TAB (LAYER 2) ══ -->
+      <section class="tab-content" id="tab-cases">
         <div class="tab-header">
           <div>
             <h1 class="tab-title">Investigation Cases</h1>

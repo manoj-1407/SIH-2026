@@ -132,3 +132,86 @@ def run_sanitization(case_id: str, req: SanitizationRequest):
         'scope': scope_rec,
         'signed_evidence': signed_pkg,
     }
+
+
+class ProofLoopRequest(BaseModel):
+    method: str = "CLEAR"
+    data_sensitivity: str = "CONFIDENTIAL"
+
+
+@router.post('/proof-loop')
+def run_proof_loop_endpoint(case_id: str, req: ProofLoopRequest):
+    """
+    Executes the sequential Forensic Proof Loop:
+    1. Known Test Evidence → 2. Pre-Carve → 3. Sanitize → 4. Post-Carve Probe → 5. Compare → 6. Verification vs Validation → 7. Signed Assurance Package.
+    """
+    validate_case_id(case_id)
+    try:
+        case = case_store.get(case_id)
+        source_path = case.source_path
+    except Exception:
+        source_path = None
+
+    if source_path and os.path.exists(source_path):
+        with open(source_path, 'rb') as f:
+            disk_bytes = f.read(5 * 1024 * 1024)
+    else:
+        from app.forensics.synthetic import generate_synthetic_disk_stream
+        disk_bytes = generate_synthetic_disk_stream()
+
+    from app.forensics.proof_loop import execute_forensic_proof_loop
+    result = execute_forensic_proof_loop(
+        raw_bytes=disk_bytes,
+        method=req.method,
+        case_id=case_id,
+        data_sensitivity=req.data_sensitivity
+    )
+    return result
+
+
+class DecisionEngineRequest(BaseModel):
+    media_type: str = "NVME_SSD"  # NVME_SSD, SATA_HDD, USB_FLASH
+    data_sensitivity: str = "CONFIDENTIAL"  # RESTRICTED, CONFIDENTIAL, SECRET
+    hardware_health: str = "GOOD"  # GOOD, DEGRADED, DAMAGED
+    leaving_custody: bool = True
+
+
+@router.post('/decision-profile')
+def profile_sanitization_decision(req: DecisionEngineRequest):
+    """
+    NIST SP 800-88 Rev. 2 & IEEE 2883-2022 Decision Profiler.
+    Recommends Clear vs Purge vs Destroy based on hardware characteristics and risk profile.
+    """
+    media = req.media_type.upper()
+    sens = req.data_sensitivity.upper()
+
+    if sens == "SECRET" or req.hardware_health == "DAMAGED":
+        rec_method = "DESTROY"
+        reason = "High sensitivity or damaged hardware requires physical destruction or degaussing."
+    elif sens == "CONFIDENTIAL" or req.leaving_custody or media in ["NVME_SSD", "USB_FLASH"]:
+        rec_method = "PURGE"
+        reason = "Flash media or media leaving organizational control requires firmware-level Purge (cryptographic erase or sanitize block erase)."
+    else:
+        rec_method = "CLEAR"
+        reason = "Standard overwrite Clear acceptable for reusable magnetic/logical storage within secure custody."
+
+    return {
+        "recommended_method": rec_method,
+        "reasoning": reason,
+        "input_profile": req.model_dump(),
+        "standards_reference": "Decision logic informed by NIST SP 800-88 Rev. 2 and IEEE 2883-2022 / IEEE 2883.1-2025 standards.",
+        "verification_type": "Logical Readback Pattern Verification",
+        "validation_probe": f"Post-Sanitization Forensic Carving Probe ({sens} scope)",
+    }
+
+
+@router.get('/benchmark')
+def run_live_benchmark(runs: int = 3):
+    """
+    Runs actual dynamic evaluation runs on synthetic test sets to compute real metrics.
+    No hardcoded values.
+    """
+    from app.forensics.benchmark import run_live_forensic_benchmark
+    num_runs = min(max(1, runs), 5)
+    return run_live_forensic_benchmark(num_synthetic_runs=num_runs)
+
