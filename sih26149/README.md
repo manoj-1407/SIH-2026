@@ -42,7 +42,7 @@ docker-compose up --build -d
 ### Run tests
 ```bash
 python3 -m pytest tests/ -v
-# Expected: 75+ tests passing
+# Expected: 89 passed, 7 skipped (0 failures)
 ```
 
 ### Verify evidence from the CLI
@@ -80,7 +80,7 @@ DEMO_MODE=1 ./run.sh
 Browser Workstation UI (HTML / CSS / JS)
               │
               ▼
-  FastAPI Application (REST, /api/v1/*)
+  FastAPI Application (REST, /api/*)
  ┌────────────┴────────────┐
  ▼                         ▼
 Forensics               Sanitization

@@ -4,11 +4,12 @@ This repository contains two production-grade, containerized digital forensic an
 
 ```
 SIH_FINAL_v5/
-├── sih26013/       # Cadastral Boundary AI Harmonization & Multi-Source Geospatial Conflict Detection
-├── sih26149/       # Integrated Forensic File Recovery & NIST SP 800-88 Rev.2 Data Sanitization Workstation
-├── DEPLOYMENT.md   # Complete Docker & Render Deployment Guide
-├── SECURITY.md     # Cryptographic Security Architecture & Threat Model
-└── .gitignore      # Comprehensive exclusion rules (0 keys, 0 payloads, 0 caches)
+├── sih26013/             # Geospatial Harmonization Platform (Tri-Reality & Provenance DAG)
+├── sih26149/             # Integrated Forensic File Recovery & NIST/IEEE Sanitization Workstation
+├── AUDIT_REVIEW_GUIDE.md # Complete Evaluation & Audit Verification Manual
+├── DEPLOYMENT.md         # Complete Docker & Render Deployment Guide
+├── SECURITY.md           # Cryptographic Security Architecture & Threat Model
+└── .gitignore            # Clean repository rules (0 keys, 0 payloads, 0 runtime caches)
 ```
 
 ---
@@ -16,24 +17,26 @@ SIH_FINAL_v5/
 ## Solutions Overview
 
 ### 1. SIH26013 — Multi-Source Geospatial Data Harmonization
-- **Organization**: Ministry of Rural Development
+- **Organization**: Ministry of Rural Development / Department of Land Resources (DoLR)
 - **Problem Statement**: SIH26013
-- **Features**:
-  - IoU and Hausdorff geometric conflict detection.
-  - DAG-based provenance lineage collapse (identifies whether 3 datasets are independent confirmations or 1 observation in 3 containers).
-  - India CRS coordinate heuristic validation (guards against axis swaps and degrees/meters confusion).
-  - Pure Shapely `STRtree` spatial indexing engine (zero external C library dependencies).
-  - Ed25519 cryptographic evidence generation with honest `UNKNOWN` handling.
+- **Core Innovations**:
+  - **Tri-Reality Boundary Reconciliation**: Reconciles Legal (Cadastral), Surveyed (GNSS), and Observed (Drone ORI) boundaries with dynamic RSS error-propagation envelopes.
+  - **Explainable Conflict Hypotheses**: Evaluates centroid displacements and generates Evidence-Weighted Hypotheses for official field-verification.
+  - **DAG Lineage Provenance**: Traverses cross-departmental ancestry graphs to identify shared-origin dependencies ("3 records from 1 source = 1 independent origin").
+  - **Deterministic Hybrid Entity Matcher**: IoU geometric overlap, Hausdorff metric distance, and token similarity.
+  - **Automated Topology Repair**: Resolves cadastral overlaps and micro-slivers while preserving spatial invariants.
+  - **Ed25519 Cryptographic Assurance**: Generates tamper-evident signed proposal envelopes (*The system recommends · The authority decides*).
 
 ### 2. SIH26149 — Forensic Recovery & Secure Data Sanitization
 - **Organization**: National Technical Research Organisation (NTRO)
 - **Problem Statement**: SIH26149
-- **Features**:
-  - Raw byte file carving for JPEG, PNG, PDF, ZIP, and MP4 structures with confidence scoring.
-  - NIST SP 800-88 Rev. 2 compliant storage device capability classification (USB flash, SD card, virtual disk images).
-  - Scope-confined selective file eraser with metadata scrubbing and pseudorandom directory renaming.
-  - Tamper-evident SHA-256 hash-chained audit trails.
-  - Cryptographic HTML/PDF evidence certificates with QR verification.
+- **Core Innovations**:
+  - **Sequential Forensic Proof Loop**: Closed-loop assurance (Known Evidence → Pre-Sanitization Recovery Scan → Sanitization Execution → Post-Sanitization Recovery Probe → Signed Assurance Package).
+  - **Raw Byte Stream Carving**: Pure-Python reconstruction of JPEG, PNG, PDF, ZIP, and MP4 structures with bounded gap-scan fragment assembly.
+  - **Standards-Informed Sanitization**: Storage-device capability classification informed by NIST SP 800-88 Rev. 2 and IEEE 2883-2022.
+  - **Scope-Confined Selective Eraser**: Multi-pass zero-fill with filesystem metadata scrubbing and directory name scrambling.
+  - **Tamper-Evident SHA-256 Audit Trail**: Cryptographic append-only hash chain with real-time mutation detection.
+  - **Independent Verification**: Ed25519 digital signature verification without database dependencies.
 
 ---
 
@@ -57,15 +60,18 @@ docker-compose up --build -d
 
 ## Test Suites & Validation
 
-Both applications contain automated test suites:
+Both applications contain automated unit, integration, and security test suites:
 
 ```bash
-# Test SIH26013 (57 tests)
+# Test SIH26013 (59 passed / 1 skipped on Windows, 60 passed on Linux)
 cd sih26013 && python -m pytest tests/ -v
 
-# Test SIH26149 (87 tests)
+# Test SIH26149 (89 passed, 7 skipped)
 cd sih26149 && python -m pytest tests/ -v
 ```
 
-See [DEPLOYMENT.md](file:///d:/SIH_FINAL_v5/DEPLOYMENT.md) for full cloud and Render deployment steps.
+Total verification: **148 automated tests passed** (0 failures).
+
+See [AUDIT_REVIEW_GUIDE.md](file:///d:/SIH_FINAL_v5/AUDIT_REVIEW_GUIDE.md) for full step-by-step evaluator instructions.  
+See [DEPLOYMENT.md](file:///d:/SIH_FINAL_v5/DEPLOYMENT.md) for cloud and Render deployment steps.  
 See [SECURITY.md](file:///d:/SIH_FINAL_v5/SECURITY.md) for cryptographic signing and defense details.

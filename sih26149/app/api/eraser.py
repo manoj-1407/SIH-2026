@@ -22,11 +22,13 @@ from app.core.evidence_envelope import build_evidence_payload, sign_evidence_env
 _ERASURE_ROOT = UPLOADS_DIR.resolve()
 
 
-def _validate_erasure_paths(paths: List[str]) -> None:
-    """Raise HTTP 403 for any path that resolves outside the authorised erasure root."""
+def _validate_erasure_paths(paths: List[str]) -> List[str]:
+    """Validate and resolve paths within the authorised erasure root. Returns list of resolved string paths."""
+    resolved_paths = []
     for raw in paths:
         try:
-            resolved = Path(raw).resolve()
+            p = Path(raw)
+            resolved = (_ERASURE_ROOT / p).resolve() if not p.is_absolute() else p.resolve()
         except Exception:
             raise HTTPException(
                 status_code=400,
@@ -41,6 +43,8 @@ def _validate_erasure_paths(paths: List[str]) -> None:
                     "are permitted."
                 ),
             )
+        resolved_paths.append(str(resolved))
+    return resolved_paths
 
 router = APIRouter(prefix='/cases/{case_id}', tags=['File Eraser'])
 
@@ -73,8 +77,8 @@ def preview_erase_scope(case_id: str, req: PreviewRequest):
     except Exception:
         raise HTTPException(status_code=404, detail='Case not found')
 
-    _validate_erasure_paths(req.target_paths)
-    items = preview_scope(req.target_paths)
+    resolved = _validate_erasure_paths(req.target_paths)
+    items = preview_scope(resolved)
     return {
         'case_id': case_id,
         'scope_items': [
@@ -133,11 +137,11 @@ def run_file_eraser(case_id: str, req: FileEraseRequest):
         },
     )
 
-    _validate_erasure_paths(req.target_paths)
+    resolved = _validate_erasure_paths(req.target_paths)
 
     try:
         result = erase_paths(
-            req.target_paths,
+            resolved,
             method=method,
             scrub_metadata=req.scrub_metadata,
             scramble_names=req.scramble_names,

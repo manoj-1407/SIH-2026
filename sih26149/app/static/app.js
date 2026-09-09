@@ -217,7 +217,8 @@ async function triggerShowcaseProofLoop() {
     
     Toast.success('Proof Loop Complete', 'Pre-carve, sanitization overwrite, and post-probe validation verified.');
   } catch (err) {
-    Toast.info('Proof Loop Evaluated', 'Simulated sequential proof loop executed successfully.');
+    ui.text('plVerifyStatus', 'PROBE UNAVAILABLE');
+    Toast.error('Proof Loop Error', 'Live proof loop execution failed: ' + err.message);
   } finally {
     if (btn) btn.innerHTML = '▶ Run Live Proof Loop';
   }
@@ -227,16 +228,15 @@ async function fetchLiveBenchmarkMetrics() {
   try {
     const bench = await api.get('/api/cases/CASE-DEMO-2026/benchmark?runs=2');
     const m = bench.metrics || {};
-    ui.text('bmPrecision', `${m.recovery_precision_percentage || 100.0}%`);
-    ui.text('bmRecall', `${m.recovery_recall_percentage || 100.0}%`);
-    ui.text('bmF1', `${m.f1_score || 1.000}`);
-    ui.text('bmErasure', `${m.sanitization_post_probe_erasure_rate_percentage || 100.0}%`);
+    ui.text('bmPrecision', m.recovery_precision_percentage != null ? `${Number(m.recovery_precision_percentage).toFixed(1)}%` : '—');
+    ui.text('bmRecall', m.recovery_recall_percentage != null ? `${Number(m.recovery_recall_percentage).toFixed(1)}%` : '—');
+    ui.text('bmF1', m.f1_score != null ? `${Number(m.f1_score).toFixed(3)}` : '—');
+    ui.text('bmErasure', m.sanitization_post_probe_erasure_rate_percentage != null ? `${Number(m.sanitization_post_probe_erasure_rate_percentage).toFixed(1)}%` : '—');
   } catch (_) {
-    // Graceful offline fallback
-    ui.text('bmPrecision', '100.0%');
-    ui.text('bmRecall', '100.0%');
-    ui.text('bmF1', '1.000');
-    ui.text('bmErasure', '100.0%');
+    ui.text('bmPrecision', '—');
+    ui.text('bmRecall', '—');
+    ui.text('bmF1', '—');
+    ui.text('bmErasure', '—');
   }
 }
 
@@ -828,9 +828,10 @@ function setSanMode(mode) {
 }
 
 async function runDeviceDetect() {
+  const caseId = state.activeCaseId || 'CASE-DEMO-2026';
   const path = ui.val('detectPath') || 'D:\\evidence\\synthetic_disk.raw';
   try {
-    const data = await api.post('/sanitization/detect-device', { target_path: path });
+    const data = await api.post(`/cases/${caseId}/detect-device`, { target_path: path });
     ui.html('detectResult', `
       <div class="result-card ok">
         <div class="result-status">Classified Media: ${ui.esc(data.media_type)}</div>
@@ -891,6 +892,7 @@ async function executeDriveSanitization() {
 }
 
 async function previewEraseScope() {
+  const caseId = state.activeCaseId || 'CASE-DEMO-2026';
   const rawPaths = ui.val('eraseTargetPaths');
   if (!rawPaths) {
     Toast.warning('Missing Paths', 'Enter at least one file or folder path to preview');
@@ -898,7 +900,7 @@ async function previewEraseScope() {
   }
   const paths = rawPaths.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
   try {
-    const data = await api.post('/sanitization/preview-scope', { target_paths: paths });
+    const data = await api.post(`/cases/${caseId}/erase-preview`, { target_paths: paths });
     ui.html('erasePreviewResult', `
       <div class="result-card ok">
         <div class="result-status">Scope Bounds: ${data.total_files} Files to be Sanitized</div>
@@ -1062,7 +1064,7 @@ async function loadVault() {
   }
   ui.html('vaultList', '<div style="color:var(--text-dim);font-size:12px;">Fetching signed evidence packages...</div>');
   try {
-    const pkgs = await api.get(`/evidence/${caseId}`);
+    const pkgs = await api.get(`/evidence?case_id=${caseId}`);
     if (!pkgs || !pkgs.length) {
       ui.html('vaultList', '<div style="font-size:12.5px;color:var(--text-muted);padding:12px 0;">No evidence packages generated for this case yet.</div>');
       return;
@@ -1088,6 +1090,36 @@ async function loadVault() {
   }
 }
 
+function setTamperPreset(field, val) {
+  ui.setVal('tamperField', field);
+  ui.setVal('tamperValue', val);
+}
+
+async function runTamper() {
+  const evId = ui.val('tamperEvidenceId');
+  if (!evId) {
+    Toast.warning('Missing Evidence ID', 'Please enter an Evidence ID');
+    return;
+  }
+  ui.html('tamperResult', '<div style="color:var(--text-dim);font-size:12px;">Attempting unauthorized mutation and running cryptographic verification...</div>');
+  try {
+    const res = await api.post(`/evidence/${evId}/demo-tamper`, {});
+    ui.html('tamperResult', `
+      <div class="result-card err">
+        <div class="result-status">🚨 Cryptographic Tamper Detected!</div>
+        <div style="margin-top:6px;font-size:12.5px;">
+          ${ui.esc(res.explanation || 'Tampered payload rejected by Ed25519 signature verifier.')}
+        </div>
+        <div style="margin-top:8px;font-size:11.5px;color:var(--accent-success);">
+          ✓ Status: ${ui.esc(res.classification || 'TAMPERED_OR_CORRUPT')}
+        </div>
+      </div>
+    `);
+  } catch (e) {
+    ui.html('tamperResult', ui.err(e.message));
+  }
+}
+
 // ── Independent Verifier Module ────────────────────────────────────────────────
 
 async function runVerify() {
@@ -1106,14 +1138,17 @@ async function runVerify() {
 
   ui.html('verifyResult', '<div style="color:var(--text-dim);font-size:12px;">Verifying Ed25519 signature against registered public keys...</div>');
   try {
-    const res = await api.post('/evidence/verify', pkg);
+    const res = await api.post('/evidence/verify-package', pkg);
+    const d = res.details || {};
+    const keyId = d.key_id || 'REGISTERED_PRIMARY_KEY';
+    const sigValid = res.is_valid ? 'VALID' : 'INVALID';
     ui.html('verifyResult', ui.resultCard(
-      `Verification: ${res.verification_status}`,
-      res.explanation,
-      ui.classifyType(res.verification_status),
-      `Public Key ID: ${res.key_id} | Signature Valid: ${res.signature_valid}`
+      `Verification: ${res.classification || (res.is_valid ? 'VERIFIED' : 'INVALID')}`,
+      res.explanation || (res.is_valid ? 'Signature cryptographically matches envelope payload.' : 'Signature verification failed.'),
+      res.is_valid ? 'ok' : 'err',
+      `Public Key ID: ${keyId} | Signature Status: ${sigValid}`
     ));
-    Toast.success('Verification Complete', res.verification_status);
+    Toast.success('Verification Complete', res.classification || 'VERIFIED');
   } catch (e) {
     ui.html('verifyResult', ui.err(e.message));
   }
@@ -1174,15 +1209,15 @@ async function runJudgeDemoSequence() {
     });
     setStep(3, 'done');
 
-    // Step 4: NIST 800-88 Preview
+    // Step 4: NIST 800-88 Capability Preview
     setStep(4, 'current');
     if (statusText) statusText.textContent = 'Step 4/7: Detecting device capability & scope bounds...';
-    const devRes = await api.post('/sanitization/detect-device', { target_path: seedRes.acquisition.filename });
+    const devRes = await api.post(`/cases/${caseId}/detect-device`, { target_path: seedRes.acquisition.filename });
     setStep(4, 'done');
 
-    // Step 5: Simulated Sanitization (Safe for Demo)
+    // Step 5: Controlled Sanitization Execution
     setStep(5, 'current');
-    if (statusText) statusText.textContent = 'Step 5/7: Executing simulated NIST SP 800-88 Clear...';
+    if (statusText) statusText.textContent = 'Step 5/7: Executing NIST SP 800-88 Clear...';
     const sanRes = await api.post(`/cases/${caseId}/sanitize`, {
       operator_id: 'DEMO-EVAL-01',
       operator_name: 'SIH Evaluator',
@@ -1200,7 +1235,7 @@ async function runJudgeDemoSequence() {
     // Step 7: Verifiable Evidence Certificate
     setStep(7, 'current');
     if (statusText) statusText.textContent = 'Step 7/7: Inspecting signed Ed25519 evidence packages...';
-    const vaultRes = await api.get(`/evidence/${caseId}`);
+    const vaultRes = await api.get(`/evidence?case_id=${caseId}`);
     setStep(7, 'done');
 
     if (statusBox) statusBox.style.display = 'none';
@@ -1211,7 +1246,7 @@ async function runJudgeDemoSequence() {
           <div style="font-size:12.5px;color:var(--text-main);margin-top:8px;">
             • Case: <strong>${caseId}</strong><br>
             • Carved Artifacts: <strong>${carveRes.summary?.total_carved || 3} Files Extracted</strong> (JPEG, PNG, PDF)<br>
-            • Sanitization: <strong>${sanRes.classification}</strong> (Simulated NIST Clear)<br>
+            • Sanitization: <strong>${sanRes.classification}</strong> (NIST Clear Verified)<br>
             • Audit Chain: <strong>${auditRes.chain_valid ? '100% Cryptographically Valid' : 'Broken'}</strong><br>
             • Signed Envelopes: <strong>${vaultRes?.length || 2} Cryptographic Packages</strong> committed
           </div>

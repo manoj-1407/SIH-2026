@@ -211,7 +211,8 @@ async function triggerShowcaseReconciliation() {
     }
     Toast.success('Tri-Reality Reconciled', 'Evaluated positional error bounds & generated explainable hypotheses.');
   } catch (err) {
-    Toast.info('Reconciliation Simulated', 'Tri-reality uncertainty evaluated across 3 sources.');
+    ui.text('recActionText', 'Live Reconciliation API unavailable — request failed.');
+    Toast.error('Reconciliation Error', 'Tri-reality reconciliation failed: ' + err.message);
   } finally {
     if (btn) btn.innerHTML = '▶ Evaluate Conflict Hypotheses';
   }
@@ -221,16 +222,15 @@ async function fetchGeospatialBenchmarkMetrics() {
   try {
     const bench = await api.get('/api/cases/DEMO-ALIGN/benchmark?runs=2');
     const m = bench.metrics || {};
-    ui.text('gbmPrecision', `${m.entity_matching_accuracy_percentage || 100.0}%`);
-    ui.text('gbmDiscrepancy', `${m.discrepancy_detection_rate_percentage || 98.0}%`);
-    ui.text('gbmFalseRate', `${m.false_conflict_rate_percentage || 2.0}%`);
-    ui.text('gbmTopology', `${m.topology_repair_success_percentage || 100.0}%`);
+    ui.text('gbmPrecision', m.entity_matching_accuracy_percentage != null ? `${Number(m.entity_matching_accuracy_percentage).toFixed(1)}%` : '—');
+    ui.text('gbmDiscrepancy', m.discrepancy_detection_rate_percentage != null ? `${Number(m.discrepancy_detection_rate_percentage).toFixed(1)}%` : '—');
+    ui.text('gbmFalseRate', m.false_conflict_rate_percentage != null ? `${Number(m.false_conflict_rate_percentage).toFixed(1)}%` : '—');
+    ui.text('gbmTopology', (m.topology_repair_success_percentage ?? m.topology_repair_success_rate) != null ? `${Number(m.topology_repair_success_percentage ?? m.topology_repair_success_rate).toFixed(1)}%` : '—');
   } catch (_) {
-    // Graceful offline fallback
-    ui.text('gbmPrecision', '100.0%');
-    ui.text('gbmDiscrepancy', '98.0%');
-    ui.text('gbmFalseRate', '2.0%');
-    ui.text('gbmTopology', '100.0%');
+    ui.text('gbmPrecision', '—');
+    ui.text('gbmDiscrepancy', '—');
+    ui.text('gbmFalseRate', '—');
+    ui.text('gbmTopology', '—');
   }
 }
 
@@ -602,7 +602,7 @@ async function runAIMatching() {
     `).join('');
 
     ui.html('aiMatchResults', cards);
-    Toast.success('AI Match Complete', `Identified ${matches.length} candidate entity alignments`);
+    Toast.success('Entity Match Complete', `Identified ${matches.length} candidate entity alignments`);
   } catch (e) {
     ui.html('aiMatchResults', ui.err(e.message));
   }
@@ -1026,7 +1026,8 @@ async function loadEvidence() {
   if (!state.activeCaseId) return;
   ui.html('evidenceList', '<div style="color:var(--text-dim);font-size:12px;">Fetching signed evidence packages...</div>');
   try {
-    const pkgs = await api.get(`/evidence/${state.activeCaseId}`);
+    const data = await api.get(`/cases/${state.activeCaseId}/evidence`);
+    const pkgs = Array.isArray(data) ? data : (data.evidence || []);
     if (!pkgs.length) {
       ui.html('evidenceList', '<div style="font-size:12.5px;color:var(--text-muted);padding:14px 0;">No evidence packages generated for this case yet.</div>');
       return;

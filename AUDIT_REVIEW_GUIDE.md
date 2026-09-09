@@ -2,7 +2,7 @@
 
 **Problem Statements**:
 1. **SIH26149** (NTRO): Integrated Secure Data Erasure and Advanced File Recovery Tool for Digital Forensics and Data Sanitization
-2. **SIH26013** (MoRD): Automated Integration and Intelligent Harmonization of Multi-source Geospatial Data for Urban Land Record Management
+2. **SIH26013** (MoRD / DoLR): Automated Integration and Intelligent Harmonization of Multi-source Geospatial Data for Urban Land Record Management
 
 ---
 
@@ -22,7 +22,7 @@ d:/SIH_FINAL_v5/
 ├── README.md                                     # System overview & quickstart
 ├── SECURITY.md                                   # Security policy & cryptographic threat model
 │
-├── sih26149/                                     # Forensic Assurance & Sanitization Platform v3
+├── sih26149/                                     # Forensic Assurance & Sanitization Platform
 │   ├── app/
 │   │   ├── api/
 │   │   │   ├── audit_chain.py                    # Append-only SHA-256 hash chain & live tamper demo API
@@ -36,7 +36,7 @@ d:/SIH_FINAL_v5/
 │   │   │   ├── forensics.py                      # Filesystem acquisition & artifact recovery
 │   │   │   ├── health.py                         # Subsystem liveness & tool status
 │   │   │   ├── rate_limit.py                     # Sliding-window IP rate limiter
-│   │   │   ├── sanitization.py                   # Whole-drive / virtual image zero-fill overwrite
+│   │   │   ├── sanitization.py                   # Whole-drive / virtual image zero-fill overwrite & decision profiler
 │   │   │   └── validation.py                     # Input sanitization & path traversal barriers
 │   │   ├── cases/
 │   │   │   └── audit.py                          # Cryptographically hash-chained append-only audit logger
@@ -48,18 +48,17 @@ d:/SIH_FINAL_v5/
 │   │   ├── forensics/
 │   │   │   ├── proof_loop.py                     # 5-Stage Closed-Loop Forensic Proof Loop Engine
 │   │   │   ├── benchmark.py                      # Live Dynamic Synthetic Benchmark Suite
-│   │   │   ├── decision_engine.py                # Evidence-Weighted Confidence Matrix & NIST/IEEE Guidance
 │   │   │   ├── carving.py                        # Pure-Python raw stream carving (JPEG, PNG, PDF, ZIP, MP4)
 │   │   │   ├── discovery.py                      # Unallocated inode & metadata scanner
 │   │   │   ├── filesystem.py                     # Ext4, FAT32, NTFS detection
 │   │   │   ├── recovery.py                       # Block-level artifact extraction
 │   │   │   └── verification.py                   # Readback hash verification against reference
 │   │   ├── sanitization/
-│   │   │   ├── device_detector.py                # NIST SP 800-88 Rev. 2 media classifier (HDD, SSD, USB, SD)
+│   │   │   ├── device_detector.py                # Storage media classifier informed by NIST SP 800-88 Rev. 2
 │   │   │   ├── file_eraser.py                    # Selective file/folder eraser (zero-fill, metadata scrub, name scramble)
 │   │   │   └── methods.py                        # Cross-platform chunked zero-fill overwrite
 │   │   ├── static/
-│   │   │   ├── app.js                            # Cinematic showcase & workstation controller
+│   │   │   ├── app.js                            # Modular UI controller with dual-mount API routing
 │   │   │   ├── app.css                           # Professional dark-mode design system
 │   │   │   └── index.html                        # 3-Layer Experience: Cinematic Showcase, Cases, Workstation
 │   │   └── main.py                               # FastAPI application entrypoint (dual-mounts / and /api)
@@ -70,15 +69,15 @@ d:/SIH_FINAL_v5/
 │   ├── Dockerfile, docker-compose.yml, requirements.txt
 │   └── README.md
 │
-└── sih26013/                                     # Geospatial Harmonization Platform v3
+└── sih26013/                                     # Geospatial Harmonization Platform
     ├── app/
     │   ├── api/
     │   │   ├── auth.py                           # API key middleware (exact canonical public showcase routes)
-    │   │   └── server.py                         # Core FastAPI server with Tri-Reality, AI matching, topology, drone
+    │   │   └── server.py                         # Core FastAPI server with Tri-Reality, Entity matching, topology, drone
     │   ├── core/
     │   │   ├── reconciliation.py                 # Tri-Reality Reconciliation & Counterfactual Simulation Engine
-    │   │   ├── benchmark_evaluator.py            # Live Dynamic Geospatial Benchmark Evaluator
-    │   │   ├── ai_matcher.py                     # Hybrid AI+GIS matching engine (IoU, centroid, Levenshtein tokens)
+    │   │   ├── benchmark.py                      # Live Dynamic Geospatial Benchmark Evaluator
+    │   │   ├── ai_matcher.py                     # Hybrid Geospatial Entity Matcher (IoU, centroid, token similarity)
     │   │   ├── attribute_harmonizer.py           # Cross-agency schema mapper, unit normalizer (acres/gunthas), discrepancy grader
     │   │   ├── canonical_model.py                # Unified CanonicalParcel model across Revenue, Municipal, Cadastral, Drone
     │   │   ├── classification.py                 # Multi-axis classification taxonomy
@@ -86,7 +85,7 @@ d:/SIH_FINAL_v5/
     │   │   ├── evidence_envelope.py              # Canonical JSON evidence envelopes & verification
     │   │   ├── geometry.py                       # Shapely polygon validation, IoU & Hausdorff distance (meters)
     │   │   ├── hashing.py                        # Cryptographic canonical hash utilities
-    │   │   ├── imagery_features.py               # Photogrammetric building footprint encroachment & unrecorded construction CV
+    │   │   ├── imagery_features.py               # Photogrammetric building footprint encroachment CV
     │   │   ├── persistence.py                    # Atomic JSON persistence & append-only audit logger
     │   │   ├── pipeline.py                       # 4-axis comparison engine (Geometry, Temporal, CRS, Provenance)
     │   │   ├── provenance.py                     # Directed Acyclic Graph (DAG) lineage & shared-origin collapse
@@ -96,7 +95,7 @@ d:/SIH_FINAL_v5/
     │   │   ├── temporal.py                       # Temporal gap analysis & era-qualification
     │   │   └── topology_repair.py                # Cadastral boundary overlap elimination & shared-edge snapping
     │   ├── static/
-    │   │   ├── app.js                            # Cinematic showcase & workstation controller
+    │   │   ├── app.js                            # Modular UI controller with dual-mount API routing
     │   │   ├── style.css                         # Dark-mode styling for geospatial workstation
     │   │   └── index.html                        # 3-Layer Experience: Tri-Reality Showcase, Cases, Workstation
     │   └── main.py
@@ -104,7 +103,7 @@ d:/SIH_FINAL_v5/
     │   ├── unit/
     │   │   ├── test_tri_reality_benchmark.py     # Unit tests for Tri-Reality, uncertainty models & benchmark
     │   │   └── test_v0_geometry.py, ...          # Unit tests for geometry, CRS, provenance, temporal, pipelines
-    │   └── test_v2_features.py                   # Integration tests for AI matcher, topology, drone, proposals
+    │   └── test_v2_features.py                   # Integration tests for entity matcher, topology, drone, proposals
     ├── Dockerfile, docker-compose.yml, requirements.txt
     └── README.md
 ```
@@ -122,7 +121,7 @@ d:/SIH_FINAL_v5/
   cd sih26149
   py -m pytest tests/ -v
   ```
-- Key Test Coverage:
+- Key Test Highlights:
   - `test_proof_loop_flow`: Verifies full 5-stage sequential proof loop execution.
   - `test_proof_loop_tamper_detection`: Verifies tamper barrier and post-probe validation.
   - `test_live_benchmark_metrics`: Verifies dynamic precision, recall, and erasure calculations.
@@ -131,16 +130,16 @@ d:/SIH_FINAL_v5/
   - `test_audit_chain_and_tamper`: Validates SHA-256 hash chaining and proves tamper detection triggers immediately.
 
 ### SIH26013 (Geospatial Harmonization Platform)
-- **59 passed, 1 skipped, 0 failures** in `pytest tests/`
+- **59 passed, 1 skipped, 0 failures on Windows (60 passed on Linux)** in `pytest tests/`
 - Command to run:
   ```powershell
   cd sih26013
   py -m pytest tests/ -v
   ```
-- Key Test Coverage:
+- Key Test Highlights:
   - `test_tri_reality_reconciliation_bangalore_demo`: Validates RSS uncertainty propagation ($\sqrt{\sigma_1^2 + \sigma_2^2}$) and 4 Evidence-Weighted Hypotheses generation.
   - `test_counterfactual_simulation`: Validates downstream topology and area impact analysis across hypotheses.
-  - `test_geospatial_dynamic_benchmark`: Validates live synthetic benchmark metrics evaluation.
+  - `test_live_geospatial_benchmark`: Validates live synthetic benchmark metrics evaluation with ground-truth TP/FP/TN/FN.
   - `test_provenance_independence`: Validates shared upstream ancestry detection in DAG lineage graphs.
   - `test_topology_repair`: Validates automated cadastral overlap elimination and edge snapping.
 
@@ -151,7 +150,7 @@ d:/SIH_FINAL_v5/
 ### SIH26149
 - `POST /api/cases/CASE-DEMO-2026/proof-loop` — Executes 5-stage sequential Forensic Proof Loop.
 - `GET  /api/cases/CASE-DEMO-2026/benchmark?runs=3` — Executes live synthetic carving & sanitization benchmark.
-- `GET  /api/cases/CASE-DEMO-2026/decision-profile` — Evaluates media parameters against NIST SP 800-88 / IEEE 2883.
+- `POST /api/cases/CASE-DEMO-2026/decision-profile` — Evaluates media parameters against NIST SP 800-88 / IEEE 2883.
 
 ### SIH26013
 - `POST /api/cases/DEMO-ALIGN/reconcile/tri-reality` — Reconciles Legal, Surveyed, and Observed realities with error envelopes.

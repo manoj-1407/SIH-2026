@@ -1,6 +1,6 @@
 # SIH26013 — Integrated Multi-Source Geospatial Data Harmonization
 
-**Organisation:** Ministry of Rural Development  
+**Organisation:** Ministry of Rural Development / Department of Land Resources (DoLR)  
 **Problem Statement:** SIH26013  
 **Team:** Session B
 
@@ -50,7 +50,7 @@ docker-compose up --build -d
 ### Run tests
 ```bash
 python3 -m pytest tests/ -v
-# Expected: 57 tests passing (56 unit/integration + 1 live Docker lifecycle)
+# Expected: 59 passed / 1 skipped on Windows (60 passed on Linux, 0 failures)
 ```
 
 ### Run scalability benchmarks

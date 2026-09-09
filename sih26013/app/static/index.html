@@ -298,19 +298,19 @@
             <div class="benchmark-metrics-grid" id="geoBenchGrid">
               <div class="bm-card">
                 <div class="bm-lbl">Entity Match Accuracy</div>
-                <div class="bm-val" id="gbmPrecision">100.0%</div>
+                <div class="bm-val" id="gbmPrecision">—</div>
               </div>
               <div class="bm-card">
                 <div class="bm-lbl">Discrepancy Detection</div>
-                <div class="bm-val" id="gbmDiscrepancy">98.0%</div>
+                <div class="bm-val" id="gbmDiscrepancy">—</div>
               </div>
               <div class="bm-card">
                 <div class="bm-lbl">False Conflict Rate</div>
-                <div class="bm-val ok" id="gbmFalseRate">2.0%</div>
+                <div class="bm-val ok" id="gbmFalseRate">—</div>
               </div>
               <div class="bm-card">
                 <div class="bm-lbl">Topology Repair Success</div>
-                <div class="bm-val ok" id="gbmTopology">100.0%</div>
+                <div class="bm-val ok" id="gbmTopology">—</div>
               </div>
             </div>
             <button class="btn btn-ghost btn-sm" style="margin-top:12px;" onclick="fetchGeospatialBenchmarkMetrics()">↻ Re-run Live Benchmark</button>
@@ -359,10 +359,7 @@
         </div>
 
         <div id="casesList" class="cases-list">
-          <div class="skeleton-card">
-            <div class="skeleton-line" style="width: 40%"></div>
-            <div class="skeleton-line" style="width: 70%"></div>
-          </div>
+          <!-- Populated by JS -->
         </div>
       </section>
 
@@ -370,53 +367,54 @@
       <section class="tab-content" id="tab-ingest">
         <div class="tab-header">
           <div>
-            <h1 class="tab-title">Ingest Multi-Source Records</h1>
-            <p class="tab-desc">Upload GeoJSON cadastral polygons. Topology anomalies, inverted polygons, and invalid coordinates are validated at ingestion.</p>
+            <h1 class="tab-title">Multi-Agency Data Ingestion</h1>
+            <p class="tab-desc">Ingest and cross-reference revenue jamabandi, municipal GIS, survey CORS GNSS, and drone orthophoto vectors.</p>
           </div>
         </div>
 
         <div class="form-card">
-          <div class="form-section-title">Add Cadastral Record</div>
-          <div class="form-row" style="flex-wrap: wrap;">
-            <div class="field" style="flex:1; min-width:180px;">
-              <label class="field-label">Record Identifier</label>
-              <input type="text" id="recId" class="input" placeholder="REV-PARCEL-204">
+          <div class="form-section-title">Ingest Single Parcel Record</div>
+          <div class="form-row">
+            <div class="field">
+              <label class="field-label">Record ID</label>
+              <input type="text" id="recId" class="input" placeholder="REV-204">
             </div>
-            <div class="field" style="flex:1; min-width:180px;">
-              <label class="field-label">Source Agency</label>
-              <input type="text" id="recSource" class="input" placeholder="State Revenue Department">
+            <div class="field">
+              <label class="field-label">Source Department / Agency</label>
+              <input type="text" id="recSource" class="input" placeholder="Department of Revenue / Jamabandi">
             </div>
-            <div class="field" style="flex:1; min-width:140px;">
-              <label class="field-label">Coordinate Reference (CRS)</label>
+            <div class="field">
+              <label class="field-label">Coordinate Reference System</label>
               <input type="text" id="recCrs" class="input" value="EPSG:4326">
             </div>
           </div>
-          <div class="field" style="margin-top:10px;">
-            <label class="field-label">GeoJSON Geometry (Polygon or MultiPolygon)</label>
-            <textarea id="recGeometry" class="code-area" rows="4" placeholder='{"type": "Polygon", "coordinates": [[[77.6, 12.9], [77.61, 12.9], [77.61, 12.91], [77.6, 12.91], [77.6, 12.9]]]}'></textarea>
+          <div class="field" style="margin-top:12px;">
+            <label class="field-label">Parcel Polygon Geometry (GeoJSON)</label>
+            <textarea id="recGeometry" class="code-area" rows="4" placeholder='{"type": "Polygon", "coordinates": [[[77.594, 12.971], [77.596, 12.971], [77.596, 12.973], [77.594, 12.973], [77.594, 12.971]]]}'></textarea>
           </div>
-          <div class="form-actions">
+          <div class="form-actions" style="margin-top:12px;">
             <button class="btn btn-primary" onclick="addRecord()">Ingest Record</button>
           </div>
         </div>
 
-        <div id="recordsList" class="records-list"></div>
+        <div id="recordsList" style="margin-top:16px;"></div>
       </section>
 
-      <!-- ══ AI PARCEL MATCH TAB ══ -->
+      <!-- ══ HYBRID ENTITY MATCH TAB ══ -->
       <section class="tab-content" id="tab-aimatch">
         <div class="tab-header">
           <div>
-            <h1 class="tab-title">AI Multi-Source Entity Matcher</h1>
-            <p class="tab-desc">Uses spatial IoU geometric overlap, attribute token similarity, and address text normalization to find corresponding parcel records across agencies.</p>
+            <h1 class="tab-title">Hybrid Geospatial Entity Matcher</h1>
+            <p class="tab-desc">Deterministic spatial IoU, Hausdorff boundary distance, centroid proximity, and token similarity across departments.</p>
           </div>
-          <button class="btn btn-primary" onclick="runAIMatching()">Run AI Matcher</button>
+          <button class="btn btn-primary" onclick="runAIMatching()">Run Entity Matcher</button>
         </div>
+
         <div id="aiMatchResults">
           <div class="empty-state">
             <div class="empty-icon">🤖</div>
-            <div class="empty-title">AI Matching Ready</div>
-            <div class="empty-sub">Ingest multi-agency records or seed an official test case, then run matching.</div>
+            <div class="empty-title">Entity Matching Ready</div>
+            <div class="empty-sub">Click "Run Entity Matcher" to evaluate spatial IoU and name similarity across ingested records.</div>
           </div>
         </div>
       </section>

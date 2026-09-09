@@ -146,7 +146,7 @@ def review_proposal(
             "reviewer_id": reviewer_id,
             "result": {
                 "decision": "APPROVED",
-                "scope_statement": "Authoritative inter-departmental land record reconciliation per NTRO SIH26013 standards.",
+                "scope_statement": "Evidence-backed inter-departmental land-record reconciliation proposal for Ministry of Rural Development / DoLR SIH26013; final authority remains with the designated land-record authority.",
             },
         }
         envelope = sign_evidence(payload=payload, signing_key=signing_key)

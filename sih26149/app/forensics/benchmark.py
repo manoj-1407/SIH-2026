@@ -9,9 +9,8 @@ Runs actual live evaluation runs on synthetic test sets to compute real metrics:
   - Execution Latency Benchmark
 """
 import time
-import random
 from typing import Dict, Any
-from app.forensics.carving import carve_image_summary, carve_bytes
+from app.forensics.carving import carve_bytes
 from app.forensics.synthetic import generate_synthetic_disk_stream
 from app.forensics.proof_loop import execute_forensic_proof_loop
 
@@ -23,6 +22,7 @@ def run_live_forensic_benchmark(num_synthetic_runs: int = 3) -> Dict[str, Any]:
     and sanitization validation metrics.
     """
     t0 = time.time()
+    num_synthetic_runs = max(1, int(num_synthetic_runs))
 
     total_known_files = 0
     total_recovered_files = 0
@@ -35,6 +35,9 @@ def run_live_forensic_benchmark(num_synthetic_runs: int = 3) -> Dict[str, Any]:
     proof_loop_results = []
     confidence_scores = []
     actual_outcomes = []
+
+    total_pre_san_artifacts = 0
+    total_post_san_recovered = 0
 
     for i in range(num_synthetic_runs):
         # Generate synthetic disk stream containing known JPEG, PNG, PDF artifacts
@@ -69,7 +72,13 @@ def run_live_forensic_benchmark(num_synthetic_runs: int = 3) -> Dict[str, Any]:
 
         # Run Proof Loop benchmark run
         proof_res = execute_forensic_proof_loop(disk_bytes, method="CLEAR", case_id=f"BENCH-CASE-{i+1}")
-        proof_loop_results.append(proof_res["proof_result"])
+        pr = proof_res.get("proof_result", {})
+        proof_loop_results.append(pr)
+
+        pre_count = pr.get("pre_sanitization", {}).get("artifacts_found", 0)
+        post_count = pr.get("post_sanitization_probe", {}).get("artifacts_recovered", 0)
+        total_pre_san_artifacts += pre_count
+        total_post_san_recovered += post_count
 
     # Compute Precision and Recall dynamically
     precision = (true_positives / total_recovered_files) if total_recovered_files > 0 else 1.0
@@ -80,6 +89,12 @@ def run_live_forensic_benchmark(num_synthetic_runs: int = 3) -> Dict[str, Any]:
         (fragmented_reconstructed / fragmented_cases_tested)
         if fragmented_cases_tested > 0 else 1.0
     )
+
+    # Compute actual erasure rate from live proof loop probe outcomes
+    if total_pre_san_artifacts > 0:
+        erasure_rate = ((total_pre_san_artifacts - total_post_san_recovered) / total_pre_san_artifacts) * 100.0
+    else:
+        erasure_rate = 100.0 if total_post_san_recovered == 0 else 0.0
 
     # Compute mean confidence calibration error
     if confidence_scores and len(confidence_scores) == len(actual_outcomes):
@@ -104,7 +119,7 @@ def run_live_forensic_benchmark(num_synthetic_runs: int = 3) -> Dict[str, Any]:
             "f1_score": round(f1_score, 3),
             "fragment_reconstruction_accuracy_percentage": round(reconstruction_accuracy * 100, 1),
             "confidence_calibration_mae": round(calib_error, 4),
-            "sanitization_post_probe_erasure_rate_percentage": 100.0,
+            "sanitization_post_probe_erasure_rate_percentage": round(erasure_rate, 1),
         },
         "performance": {
             "total_benchmark_duration_ms": benchmark_duration_ms,

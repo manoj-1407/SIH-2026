@@ -1076,7 +1076,8 @@ def run_live_geospatial_benchmark_endpoint(parcels: int = 4, case_id: Optional[s
     """
     from app.core.benchmark import run_live_geospatial_benchmark
     n = min(max(1, parcels), 10)
-    return run_live_geospatial_benchmark(num_synthetic_parcels=n)
+    r = min(max(1, runs), 10)
+    return run_live_geospatial_benchmark(num_synthetic_parcels=n, runs=r)
 
 
 
