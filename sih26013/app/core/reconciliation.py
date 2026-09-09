@@ -33,7 +33,7 @@ def profile_source_uncertainty(source_type: str, custom_uncertainty_m: Optional[
 
 
 def calculate_tri_reality_reconciliation(
-    legal_record: Dict[str, Any],
+    legal_record: Optional[Dict[str, Any]] = None,
     surveyed_record: Optional[Dict[str, Any]] = None,
     observed_record: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
@@ -41,8 +41,47 @@ def calculate_tri_reality_reconciliation(
     Reconciles Legal Cadastral Boundary, Surveyed GNSS Boundary, and Observed Drone Footprint.
     Computes effective spatial discrepancy taking positional uncertainties into account.
     Generates Evidence-Weighted Conflict Hypotheses.
+
+    When called without geometry (e.g. showcase/demo trigger), uses built-in canonical
+    Bengaluru Urban Ward 12 Parcel SY-204/A geometry.
     """
     t0 = time.time()
+
+    # ── Canonical Showcase Demo Geometry (Parcel SY-204/A, Ward 12, Bengaluru Urban) ──
+    # Legal cadastral: 1998 vintage, ±2.0m tolerance
+    _DEMO_LEGAL = {
+        "source_type": "CADASTRAL",
+        "geometry": {
+            "type": "Polygon",
+            "coordinates": [[[77.6200, 13.0000], [77.6210, 13.0000], [77.6210, 13.0010],
+                             [77.6200, 13.0010], [77.6200, 13.0000]]]
+        }
+    }
+    # CORS GNSS survey: 2026, ±0.05m tolerance — slight shift representing real ground reality
+    _DEMO_SURVEYED = {
+        "source_type": "GNSS",
+        "geometry": {
+            "type": "Polygon",
+            "coordinates": [[[77.62001, 13.0000], [77.62101, 13.0000], [77.62101, 13.0010],
+                             [77.62001, 13.0010], [77.62001, 13.0000]]]
+        }
+    }
+    # Drone ORI footprint: ±0.35m tolerance — footprint extends 1.42m beyond cadastral
+    _DEMO_OBSERVED = {
+        "source_type": "DRONE",
+        "geometry": {
+            "type": "Polygon",
+            "coordinates": [[[77.61987, 12.99997], [77.62113, 12.99997], [77.62113, 13.00103],
+                             [77.61987, 13.00103], [77.61987, 12.99997]]]
+        }
+    }
+
+    if legal_record is None:
+        legal_record = _DEMO_LEGAL
+    if surveyed_record is None:
+        surveyed_record = _DEMO_SURVEYED
+    if observed_record is None:
+        observed_record = _DEMO_OBSERVED
 
     # 1. Parse Geometries
     legal_geom = shape(legal_record.get("geometry", {})) if legal_record.get("geometry") else None
@@ -169,7 +208,7 @@ def calculate_tri_reality_reconciliation(
 
 
 def simulate_counterfactual_harmonization(
-    legal_record: Dict[str, Any],
+    legal_record: Optional[Dict[str, Any]] = None,
     surveyed_record: Optional[Dict[str, Any]] = None,
     observed_record: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:

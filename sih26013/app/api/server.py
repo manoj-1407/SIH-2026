@@ -1026,9 +1026,10 @@ def seed_demo_cases():
 
 
 class TriRealityRequest(BaseModel):
-    legal_record: Dict[str, Any]
+    legal_record: Optional[Dict[str, Any]] = None
     surveyed_record: Optional[Dict[str, Any]] = None
     observed_record: Optional[Dict[str, Any]] = None
+    tolerance_mode: Optional[str] = None  # passthrough field for showcase trigger
 
 
 @router.post("/cases/{case_id}/reconcile/tri-reality")
