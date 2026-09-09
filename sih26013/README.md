@@ -50,7 +50,7 @@ docker-compose up --build -d
 ### Run tests
 ```bash
 python3 -m pytest tests/ -v
-# Expected: 51 tests passing
+# Expected: 57 tests passing (56 unit/integration + 1 live Docker lifecycle)
 ```
 
 ### Run scalability benchmarks
@@ -66,8 +66,9 @@ python3 benchmarks/benchmark_scale.py
 | Variable | Default | Description |
 |---|---|---|
 | `SIH26013_DATA_DIR` | `/app/data` (container) or `<repo>/data` (local) | Root for evidence, keys, audit logs |
-| `SIH26013_API_KEY` | *(unset = open)* | When set, all API requests must supply `X-API-Key` header |
-| `DEMO_MODE` | `0` | Set to `1` to enable tamper-demo endpoint and bypass API key |
+| `SIH26013_API_KEY` | *(optional in dev)* | When set in production, all API requests must supply `X-API-Key` header |
+| `DEMO_MODE` | `0` | Set to `1` in local sandbox to enable tamper-demo endpoint and allow interactive testing |
+| `PORT` | `8000` | Port for web server to listen on (Render / Docker standard) |
 
 ### Running the tamper demonstration
 ```bash
@@ -84,7 +85,7 @@ DEMO_MODE=1 ./run.sh
 Browser Workstation UI  (HTML / CSS / JS + Leaflet.js map)
               │
               ▼
-  FastAPI Application (REST, /api/v1/*)
+  FastAPI Application (REST: /cases, /records, /evidence, /demo)
               │
      Analysis Pipeline
  ┌────┬───────┬──────┬──────────┐
