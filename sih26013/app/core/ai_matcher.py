@@ -89,12 +89,22 @@ class MatchResult:
     explanation: str
 
     def to_dict(self) -> Dict[str, Any]:
+        rec_action = (
+            "Accept Automatic Alignment" if self.match_probability >= 0.82
+            else ("Field Inspection Required" if self.spatial_conflict or self.match_probability >= 0.60
+                  else "Reconcile Attributes Manually")
+        )
         return {
             "source_parcel_id": self.source_parcel_id,
             "target_parcel_id": self.target_parcel_id,
+            "parcel_a_id": self.source_parcel_id,
+            "parcel_b_id": self.target_parcel_id,
             "match_probability": round(self.match_probability, 4),
             "classification": self.classification,
+            "confidence_tier": self.classification,
             "features": self.features.to_dict(),
+            "spatial_iou": self.features.iou,
+            "recommended_action": rec_action,
             "factor_breakdown": {k: round(v, 4) for k, v in self.factor_breakdown.items()},
             "spatial_conflict": self.spatial_conflict,
             "explanation": self.explanation,

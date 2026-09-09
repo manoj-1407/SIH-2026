@@ -3,10 +3,17 @@ import subprocess
 import tempfile
 import hashlib
 import httpx
+import pytest
 
 BASE_URL = "http://localhost:8000"
 
+@pytest.mark.live
 def test_container_lifecycle():
+    try:
+        r = httpx.get(f"{BASE_URL}/health", timeout=1.5)
+    except Exception:
+        pytest.skip("Live container not running on http://localhost:8000 — skipping live container test.")
+
     client = httpx.Client(base_url=BASE_URL, timeout=30.0)
 
     # ── 1. HEALTH ─────────────────────────────────────────────────────────

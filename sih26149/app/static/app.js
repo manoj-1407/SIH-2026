@@ -371,14 +371,25 @@ async function pingHealth() {
     state.demoMode = health.demo_mode === true;
     if (state.demoMode) ui.show('tamperSection');
   } catch (err) {
-    if (connDot) connDot.className = 'conn-dot dot-err';
-    if (connLabel) connLabel.textContent = 'Service Offline';
-    if (connPing) connPing.textContent = '-- ms';
+    // Distinguish between authentication failure (401) and actual network outage
+    const errMsg = String(err.message || '');
+    const isAuthError = errMsg.includes('401') || errMsg.toLowerCase().includes('authentication') || errMsg.toLowerCase().includes('api key');
 
-    // Show friendly cold-start notice if on Render
-    if (coldBanner && window.location.hostname.includes('render.com')) {
-      coldBanner.style.display = 'flex';
-      startColdStartCountdown();
+    if (isAuthError) {
+      if (connDot) connDot.className = 'conn-dot dot-warn';
+      if (connLabel) connLabel.textContent = 'Auth Required';
+      if (connPing) connPing.textContent = '-- ms';
+      // Don't show cold-start banner for auth issues
+    } else {
+      if (connDot) connDot.className = 'conn-dot dot-err';
+      if (connLabel) connLabel.textContent = 'Service Offline';
+      if (connPing) connPing.textContent = '-- ms';
+
+      // Show friendly cold-start notice if on Render
+      if (coldBanner && window.location.hostname.includes('render.com')) {
+        coldBanner.style.display = 'flex';
+        startColdStartCountdown();
+      }
     }
   }
 }
@@ -403,20 +414,38 @@ function openConnDiagnostics() {
   if (!modal) return;
   modal.style.display = 'flex';
 
-  ui.text('diagStatusBadge', state.healthData ? '● Operational' : '✖ Offline / Unreachable');
+  const connLabel = document.getElementById('connLabel');
+  const currentStatus = connLabel ? connLabel.textContent : (state.healthData ? 'Operational' : 'Offline');
+  ui.text('diagStatusBadge', currentStatus);
   ui.text('diagLatency', `Roundtrip Latency: ${state.latencyMs ?? '--'} ms`);
   ui.text('diagOrigin', cfg.base || window.location.origin);
   ui.text('diagVersion', state.healthData?.version || '2.0.0');
   ui.text('diagCrypto', state.healthData?.subsystems?.cryptography || 'Ed25519');
   ui.text('diagSleuth', state.healthData?.subsystems?.sleuthkit ? 'Active & Ready' : 'Fallback / Inode Emulated');
 
+  // Populate saved settings
   const savedOverride = localStorage.getItem('sih_api_override') || '';
   ui.setVal('apiBaseOverride', savedOverride);
+  const savedKey = localStorage.getItem('sih_api_key') || '';
+  ui.setVal('diagApiKeyInput', savedKey);
 }
 
 function closeConnDiagnostics(e) {
   const modal = document.getElementById('connModalBackdrop');
   if (modal) modal.style.display = 'none';
+}
+
+function saveApiKey() {
+  const keyVal = ui.val('diagApiKeyInput');
+  if (keyVal) {
+    localStorage.setItem('sih_api_key', keyVal);
+    Toast.success('API Key Saved', 'Key stored in browser — all requests will now include X-API-Key.');
+  } else {
+    localStorage.removeItem('sih_api_key');
+    Toast.info('API Key Cleared', 'Running without authentication key.');
+  }
+  closeConnDiagnostics();
+  pingHealth();
 }
 
 function saveApiOverride() {
@@ -639,7 +668,7 @@ async function discoverDeleted() {
     }
     const html = arts.map(a => `
       <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:4px;margin-bottom:6px;font-size:12.5px;">
-        <span><strong>Inode ${a.inode}</strong> — ${ui.esc(a.filename || 'unnamed')}</span>
+        <span><strong>Inode ${a.inode}</strong> — ${ui.esc(a.filename || a.name || ('inode_' + a.inode))}</span>
         <button class="btn btn-ghost btn-sm" onclick="prefillRecovery(${a.inode})">Select for Recovery</button>
       </div>
     `).join('');
@@ -661,8 +690,8 @@ async function runRecovery() {
 
   ui.html('recoveryResult', '<div style="color:var(--text-dim);font-size:12px;">Extracting raw block stream and computing SHA-256...</div>');
   try {
-    const res = await api.post(`/cases/${state.activeCaseId}/recover`, {
-      inode: parseInt(inode),
+    const res = await api.post(`/cases/${state.activeCaseId}/forensic`, {
+      inode: String(inode),
       reference_sha256: ref,
     });
     ui.html('recoveryResult', ui.resultCard(
@@ -1069,21 +1098,27 @@ async function loadVault() {
       ui.html('vaultList', '<div style="font-size:12.5px;color:var(--text-muted);padding:12px 0;">No evidence packages generated for this case yet.</div>');
       return;
     }
-    const html = pkgs.map(p => `
-      <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:var(--radius);padding:14px;margin-bottom:12px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;">
-          <div>
-            <div style="font-weight:700;font-size:13.5px;color:var(--text-main);">Evidence: ${ui.esc(p.evidence_id)}</div>
-            <div style="font-size:11.5px;color:var(--text-dim);">Signed at: ${new Date(p.signed_at).toLocaleString()} · Alg: ${ui.esc(p.algorithm || 'Ed25519')}</div>
+    const html = pkgs.map(p => {
+      const signedDate = p.signed_at || p.created_at_utc || p.timestamp;
+      const dateStr = signedDate ? new Date(signedDate).toLocaleString() : 'Recent';
+      const alg = p.algorithm || p.signing?.algorithm || 'Ed25519';
+      const evType = p.payload?.evidence_type || p.evidence_type || 'FORENSIC';
+      return `
+        <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:var(--radius);padding:14px;margin-bottom:12px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <div>
+              <div style="font-weight:700;font-size:13.5px;color:var(--text-main);">Evidence: ${ui.esc(p.evidence_id)}</div>
+              <div style="font-size:11.5px;color:var(--text-dim);">Signed at: ${dateStr} · Alg: ${ui.esc(alg)}</div>
+            </div>
+            ${ui.badge(evType, 'ok')}
           </div>
-          ${ui.badge(p.payload?.evidence_type || 'FORENSIC', 'ok')}
+          <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-dim);background:var(--bg-surface-elevated);padding:8px;border-radius:4px;margin-top:8px;word-break:break-all;">
+            <strong>SHA-256:</strong> ${p.evidence_hash}<br>
+            <strong>Signature:</strong> ${p.signature.substring(0, 32)}...
+          </div>
         </div>
-        <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-dim);background:var(--bg-surface-elevated);padding:8px;border-radius:4px;margin-top:8px;word-break:break-all;">
-          <strong>SHA-256:</strong> ${p.evidence_hash}<br>
-          <strong>Signature:</strong> ${p.signature.substring(0, 32)}...
-        </div>
-      </div>
-    `).join('');
+      `;
+    }).join('');
     ui.html('vaultList', html);
   } catch (e) {
     ui.html('vaultList', ui.err(e.message));
@@ -1104,14 +1139,19 @@ async function runTamper() {
   ui.html('tamperResult', '<div style="color:var(--text-dim);font-size:12px;">Attempting unauthorized mutation and running cryptographic verification...</div>');
   try {
     const res = await api.post(`/evidence/${evId}/demo-tamper`, {});
+    const v = res.verification || {};
+    const reason = v.reason || res.explanation || 'Tampered payload rejected by Ed25519 signature verifier.';
+    const valid = v.valid ?? false;
+    const classification = valid ? 'VALID' : (res.classification || 'TAMPERED_OR_CORRUPT');
     ui.html('tamperResult', `
       <div class="result-card err">
         <div class="result-status">🚨 Cryptographic Tamper Detected!</div>
         <div style="margin-top:6px;font-size:12.5px;">
-          ${ui.esc(res.explanation || 'Tampered payload rejected by Ed25519 signature verifier.')}
+          Mutated Field: <code>${ui.esc(res.tampered_field || 'payload')}</code><br>
+          Verification Detail: <strong>${ui.esc(reason)}</strong>
         </div>
         <div style="margin-top:8px;font-size:11.5px;color:var(--accent-success);">
-          ✓ Status: ${ui.esc(res.classification || 'TAMPERED_OR_CORRUPT')}
+          ✓ Status: <strong>${ui.esc(classification)}</strong>
         </div>
       </div>
     `);

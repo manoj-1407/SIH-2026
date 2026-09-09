@@ -22,8 +22,8 @@ from app.core.evidence_envelope import build_evidence_payload, sign_evidence_env
 _ERASURE_ROOT = UPLOADS_DIR.resolve()
 
 
-def _validate_erasure_paths(paths: List[str]) -> List[str]:
-    """Validate and resolve paths within the authorised erasure root. Returns list of resolved string paths."""
+def _validate_erasure_paths(case_id: str, paths: List[str]) -> List[str]:
+    """Validate and resolve paths within the authorised case erasure root. Returns list of resolved string paths."""
     resolved_paths = []
     for raw in paths:
         try:
@@ -42,6 +42,22 @@ def _validate_erasure_paths(paths: List[str]) -> List[str]:
                     f"Only paths within the case uploads directory ({_ERASURE_ROOT}) "
                     "are permitted."
                 ),
+            )
+        
+        # Enforce Case Namespace Isolation:
+        # Files must belong to case_id namespace (prefixed with case_id + '_' or inside case_id directory)
+        rel_to_root = resolved.relative_to(_ERASURE_ROOT)
+        name = resolved.name
+        is_case_scoped = (
+            name.startswith(f"{case_id}_")
+            or name.startswith(f"{case_id}-")
+            or name == case_id
+            or (len(rel_to_root.parts) > 1 and rel_to_root.parts[0] == case_id)
+        )
+        if not is_case_scoped:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Cross-case erasure forbidden: target {raw!r} does not belong to case {case_id!r}",
             )
         resolved_paths.append(str(resolved))
     return resolved_paths
@@ -77,7 +93,7 @@ def preview_erase_scope(case_id: str, req: PreviewRequest):
     except Exception:
         raise HTTPException(status_code=404, detail='Case not found')
 
-    resolved = _validate_erasure_paths(req.target_paths)
+    resolved = _validate_erasure_paths(case_id, req.target_paths)
     items = preview_scope(resolved)
     return {
         'case_id': case_id,
@@ -137,7 +153,7 @@ def run_file_eraser(case_id: str, req: FileEraseRequest):
         },
     )
 
-    resolved = _validate_erasure_paths(req.target_paths)
+    resolved = _validate_erasure_paths(case_id, req.target_paths)
 
     try:
         result = erase_paths(

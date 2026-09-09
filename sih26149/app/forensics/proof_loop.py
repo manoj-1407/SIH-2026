@@ -139,6 +139,7 @@ def execute_forensic_proof_loop(
     }
 
     # Build signed Ed25519 payload
+    key_id, priv_key = get_or_create_primary_key()
     payload = build_evidence_payload(
         case_id=case_id,
         operation_id=op_id,
@@ -154,11 +155,10 @@ def execute_forensic_proof_loop(
         },
         result_meta=proof_result,
         scope=f"Controlled Validation Probe ({data_sensitivity})",
-        key_id="PRIMARY-ED25519",
+        key_id=key_id,
         evidence_id=ev_id,
     )
     
-    key_id, priv_key = get_or_create_primary_key()
     signed_pkg = sign_evidence_envelope(payload, priv_key)
 
     return {

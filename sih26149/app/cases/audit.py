@@ -131,13 +131,17 @@ class AuditLogger:
             return []
         events = []
         with open(p, 'r', encoding='utf-8') as f:
-            for line in f:
+            for line_idx, line in enumerate(f):
                 line = line.strip()
                 if line:
                     try:
                         events.append(json.loads(line))
                     except json.JSONDecodeError:
-                        continue
+                        events.append({
+                            'entry_index': line_idx,
+                            'malformed': True,
+                            'raw_content': line,
+                        })
         return sorted(events, key=lambda x: x.get('entry_index', x.get('timestamp', 0)))
 
     def verify_chain(self, case_id: str) -> Tuple[bool, List[dict]]:
@@ -156,6 +160,14 @@ class AuditLogger:
 
         for i, entry in enumerate(events):
             idx = entry.get('entry_index', i)
+            if entry.get('malformed'):
+                violations.append({
+                    'entry_index': idx,
+                    'violation': 'MALFORMED_RECORD',
+                    'explanation': f"Entry {idx} contains corrupted/unparseable JSON in audit log."
+                })
+                continue
+
             stored_hash = entry.get('entry_hash')
             stored_prev = entry.get('previous_hash', _GENESIS_HASH)
 

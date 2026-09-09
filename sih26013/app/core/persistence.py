@@ -70,27 +70,59 @@ class AtomicStore:
 
 
 class AuditLogger:
-    """Immutable append-only JSONL audit log per case."""
+    """Cryptographically hash-chained append-only JSONL audit log per case."""
 
     def __init__(self, directory: str | Path):
         self._dir = Path(directory)
         self._dir.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
 
-    def log(self, case_id: str, event_type: str, actor: str, details: dict = None, **kwargs) -> None:
-        from datetime import datetime, timezone
+    def _get_last_entry_hash(self, case_id: str) -> tuple[str, int]:
         path = self._dir / f"{case_id}.jsonl"
-        entry = {
-            "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-            "case_id": case_id,
-            "event_type": event_type,
-            "actor": actor,
-            "details": details or {},
-        }
-        entry.update(kwargs)
+        if not path.exists():
+            return "GENESIS", 0
+        last_hash = "GENESIS"
+        count = 0
+        import hashlib
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        try:
+                            entry = json.loads(line)
+                            sanitized = {k: v for k, v in entry.items() if k != "entry_hash"}
+                            canon = json.dumps(sanitized, sort_keys=True, separators=(',', ':')).encode('utf-8')
+                            last_hash = entry.get("entry_hash", hashlib.sha256(canon).hexdigest())
+                            count += 1
+                        except json.JSONDecodeError:
+                            continue
+        except OSError:
+            pass
+        return last_hash, count
+
+    def log(self, case_id: str, event_type: str, actor: str, details: dict = None, **kwargs) -> dict:
+        from datetime import datetime, timezone
+        import hashlib
+        path = self._dir / f"{case_id}.jsonl"
         with self._lock:
+            prev_hash, entry_idx = self._get_last_entry_hash(case_id)
+            entry = {
+                "entry_index": entry_idx,
+                "previous_hash": prev_hash,
+                "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+                "case_id": case_id,
+                "event_type": event_type,
+                "actor": actor,
+                "details": details or {},
+            }
+            entry.update(kwargs)
+            canon = json.dumps(entry, sort_keys=True, separators=(',', ':')).encode('utf-8')
+            entry["entry_hash"] = hashlib.sha256(canon).hexdigest()
+
             with open(path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(entry, sort_keys=True) + "\n")
+            return entry
 
     def get_timeline(self, case_id: str) -> list[dict]:
         path = self._dir / f"{case_id}.jsonl"

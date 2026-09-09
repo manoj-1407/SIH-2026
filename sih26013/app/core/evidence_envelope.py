@@ -73,6 +73,10 @@ def sign_evidence(payload: dict, signing_key: SigningKey = None) -> dict:
     }
 
 
+# Alias for compatibility across modules
+sign_evidence_envelope = sign_evidence
+
+
 def verify_envelope(envelope: dict, registry: TrustRegistry = None) -> tuple[bool, str]:
     """
     Independently verify a signed evidence envelope.

@@ -66,14 +66,14 @@ def calculate_tri_reality_reconciliation(
                              [77.62003, 13.0010], [77.62003, 13.0000]]]
         }
     }
-    # Drone ORI footprint: ±0.35m tolerance — centroid shifted ~3m east (0.000027 deg)
+    # Drone ORI footprint: ±0.35m tolerance — centroid shifted ~9.4m northeast (0.00006 deg)
     # representing building footprint extending beyond registered cadastral parcel boundary
     _DEMO_OBSERVED = {
         "source_type": "DRONE",
         "geometry": {
             "type": "Polygon",
-            "coordinates": [[[77.61993, 12.99990], [77.62113, 12.99990], [77.62113, 13.00110],
-                             [77.61993, 13.00110], [77.61993, 12.99990]]]
+            "coordinates": [[[77.62006, 13.00006], [77.62106, 13.00006], [77.62106, 13.00106],
+                             [77.62006, 13.00106], [77.62006, 13.00006]]]
         }
     }
 

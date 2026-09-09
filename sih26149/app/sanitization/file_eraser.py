@@ -234,8 +234,18 @@ def erase_file(
         # Final unlink
         try:
             os.unlink(path)
-        except OSError:
-            pass
+            if os.path.exists(path):
+                return FileErasureResult(
+                    path=path, size_bytes=size, overwrite_passes=1, method=method,
+                    readback_verified=False, metadata_scrubbed=meta_ok, filename_scrambled=name_scrambled,
+                    sha256_before=sha256_before, error="File still exists on disk after unlink attempt"
+                )
+        except OSError as e:
+            return FileErasureResult(
+                path=path, size_bytes=size, overwrite_passes=1, method=method,
+                readback_verified=False, metadata_scrubbed=meta_ok, filename_scrambled=name_scrambled,
+                sha256_before=sha256_before, error=f"Unlink failed: {e}"
+            )
     except Exception as e:
         return FileErasureResult(
             path=path, size_bytes=size, overwrite_passes=1, method=method,
@@ -283,13 +293,13 @@ def erase_paths(
         res = erase_file(fpath, method=method, scrub_metadata=scrub_metadata, scramble_name=scramble_names)
         results.append(res)
         total_bytes += res.size_bytes
-        if res.error:
+        if res.error or not res.readback_verified:
             failed += 1
-            errors.append(f"{fpath}: {res.error}")
-        elif res.readback_verified:
-            verified += 1
+            if res.error:
+                errors.append(f"{fpath}: {res.error}")
+            else:
+                errors.append(f"{fpath}: readback zero-fill verification failed")
         else:
-            # Erased but not read-back verified (e.g. random fill)
             verified += 1
 
     # Remove empty directory shells

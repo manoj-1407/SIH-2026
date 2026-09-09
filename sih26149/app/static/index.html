@@ -860,6 +860,63 @@
     </div>
   </div>
 
+  <!-- ══ CONNECTION DIAGNOSTICS MODAL ══ -->
+  <div class="modal-backdrop" id="connModalBackdrop" style="display:none;" onclick="closeConnDiagnostics()">
+    <div class="modal-card" onclick="event.stopPropagation()" style="max-width:480px;">
+      <div class="modal-header">
+        <div class="modal-title">⚙️ Connection &amp; Authentication</div>
+        <button class="btn-modal-close" onclick="closeConnDiagnostics()">✕</button>
+      </div>
+      <div class="modal-body">
+
+        <!-- Status row -->
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+          <span class="conn-dot" id="diagDot" style="width:10px;height:10px;border-radius:50%;background:var(--ok);"></span>
+          <span style="font-size:13px;font-weight:600;" id="diagStatusBadge">Checking...</span>
+          <span style="font-size:11px;color:var(--muted);margin-left:auto;" id="diagLatency">Roundtrip: -- ms</span>
+        </div>
+
+        <!-- Info grid -->
+        <div class="kv-grid" style="margin-bottom:16px;">
+          <div class="kv-row"><span class="kv-k">API Origin</span><span class="kv-v kv-mono" id="diagOrigin">—</span></div>
+          <div class="kv-row"><span class="kv-k">Backend Version</span><span class="kv-v" id="diagVersion">—</span></div>
+          <div class="kv-row"><span class="kv-k">Crypto Layer</span><span class="kv-v" id="diagCrypto">Ed25519</span></div>
+          <div class="kv-row"><span class="kv-k">SleuthKit</span><span class="kv-v" id="diagSleuth">—</span></div>
+        </div>
+
+        <!-- API Key Configuration -->
+        <div style="margin-bottom:14px;">
+          <label style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:6px;">API Key (Authentication)</label>
+          <div style="display:flex;gap:8px;">
+            <input type="password" id="diagApiKeyInput" placeholder="Enter X-API-Key value or leave blank for demo mode"
+              style="flex:1;background:var(--surface2,#1e2533);border:1px solid var(--border,rgba(255,255,255,.12));border-radius:6px;padding:8px 10px;color:var(--text);font-size:12px;font-family:monospace;"
+            />
+            <button class="btn btn-primary" onclick="saveApiKey()" style="white-space:nowrap;font-size:12px;padding:8px 14px;">Save Key</button>
+          </div>
+          <p style="font-size:11px;color:var(--muted);margin-top:5px;">Leave blank to run in demo mode (no auth). Saved securely in browser localStorage.</p>
+        </div>
+
+        <!-- API Base Override -->
+        <div>
+          <label style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:6px;">Custom API Origin (optional)</label>
+          <div style="display:flex;gap:8px;">
+            <input type="text" id="apiBaseOverride" placeholder="e.g. http://127.0.0.1:8000 or https://your-render-url"
+              style="flex:1;background:var(--surface2,#1e2533);border:1px solid var(--border,rgba(255,255,255,.12));border-radius:6px;padding:8px 10px;color:var(--text);font-size:12px;font-family:monospace;"
+            />
+            <button class="btn btn-ghost" onclick="resetApiOverride()" style="font-size:12px;padding:8px 12px;">Reset</button>
+          </div>
+          <p style="font-size:11px;color:var(--muted);margin-top:5px;">Override if running backend on a different host. Empty = same-origin (localhost).</p>
+        </div>
+
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary" onclick="saveApiOverride()">Save &amp; Reconnect</button>
+        <button class="btn btn-ghost" onclick="pingHealth(); closeConnDiagnostics();">↻ Retry Connection</button>
+        <button class="btn btn-ghost" onclick="closeConnDiagnostics()">Close</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ══ TOAST NOTIFICATIONS CONTAINER ══ -->
   <div class="toast-container" id="toastContainer"></div>
 

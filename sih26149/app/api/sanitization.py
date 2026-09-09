@@ -140,7 +140,7 @@ class ProofLoopRequest(BaseModel):
 
 
 @router.post('/proof-loop')
-def run_proof_loop_endpoint(case_id: str, req: ProofLoopRequest):
+def run_proof_loop_endpoint(case_id: str, req: Optional[ProofLoopRequest] = None):
     """
     Executes the sequential Forensic Proof Loop:
     1. Known Test Evidence → 2. Pre-Carve → 3. Sanitize → 4. Post-Carve Probe → 5. Compare → 6. Verification vs Validation → 7. Signed Assurance Package.
@@ -160,11 +160,13 @@ def run_proof_loop_endpoint(case_id: str, req: ProofLoopRequest):
         disk_bytes = generate_synthetic_disk_stream()
 
     from app.forensics.proof_loop import execute_forensic_proof_loop
+    method = req.method if req and req.method else "CLEAR"
+    sens = req.data_sensitivity if req and req.data_sensitivity else "CONFIDENTIAL"
     result = execute_forensic_proof_loop(
         raw_bytes=disk_bytes,
-        method=req.method,
+        method=method,
         case_id=case_id,
-        data_sensitivity=req.data_sensitivity
+        data_sensitivity=sens
     )
     return result
 

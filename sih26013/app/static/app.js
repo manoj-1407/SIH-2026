@@ -329,9 +329,19 @@ async function pingHealth() {
     if (dotDAG) dotDAG.className = `dot ${subs.provenance_graph === 'active' ? 'dot-ok' : 'dot-warn'}`;
     if (dotTrust) dotTrust.className = `dot ${subs.cryptographic_trust === 'active' ? 'dot-ok' : 'dot-warn'}`;
   } catch (err) {
-    if (connDot) connDot.className = 'conn-dot dot-err';
-    if (connLabel) connLabel.textContent = 'Service Offline';
-    if (connPing) connPing.textContent = '-- ms';
+    // Distinguish between authentication failure (401) and actual network outage
+    const errMsg = String(err.message || '');
+    const isAuthError = errMsg.includes('401') || errMsg.toLowerCase().includes('authentication') || errMsg.toLowerCase().includes('api key');
+
+    if (isAuthError) {
+      if (connDot) connDot.className = 'conn-dot dot-warn';
+      if (connLabel) connLabel.textContent = 'Auth Required';
+      if (connPing) connPing.textContent = '-- ms';
+    } else {
+      if (connDot) connDot.className = 'conn-dot dot-err';
+      if (connLabel) connLabel.textContent = 'Service Offline';
+      if (connPing) connPing.textContent = '-- ms';
+    }
   }
 }
 
@@ -342,20 +352,40 @@ function openConnDiagnostics() {
   if (!modal) return;
   modal.style.display = 'flex';
 
-  ui.text('diagStatusBadge', state.healthData ? '● Operational' : '✖ Offline / Unreachable');
+  const connLabel = document.getElementById('connLabel');
+  const currentStatus = connLabel ? connLabel.textContent : (state.healthData ? 'Operational' : 'Offline');
+  ui.text('diagStatusBadge', currentStatus);
   ui.text('diagLatency', `Roundtrip Latency: ${state.latencyMs ?? '--'} ms`);
   ui.text('diagOrigin', cfg.base || window.location.origin);
   ui.text('diagVersion', state.healthData?.version || '2.0.0');
   ui.text('diagCrypto', 'Ed25519');
   ui.text('diagCases', state.healthData?.active_cases ?? '--');
 
+  // Populate saved settings
   const savedOverride = localStorage.getItem('sih_api_override') || '';
   ui.setVal('apiBaseOverride', savedOverride);
+  const savedKey = localStorage.getItem('sih26013_api_key') || localStorage.getItem('sih_api_key') || '';
+  ui.setVal('diagApiKeyInput', savedKey);
 }
 
 function closeConnDiagnostics() {
   const modal = document.getElementById('connModalBackdrop');
   if (modal) modal.style.display = 'none';
+}
+
+function saveApiKey() {
+  const keyVal = ui.val('diagApiKeyInput');
+  if (keyVal) {
+    localStorage.setItem('sih26013_api_key', keyVal);
+    localStorage.setItem('sih_api_key', keyVal);
+    Toast.success('API Key Saved', 'Key stored in browser — all requests will now include X-API-Key.');
+  } else {
+    localStorage.removeItem('sih26013_api_key');
+    localStorage.removeItem('sih_api_key');
+    Toast.info('API Key Cleared', 'Running without authentication key.');
+  }
+  closeConnDiagnostics();
+  pingHealth();
 }
 
 function saveApiOverride() {
@@ -424,7 +454,7 @@ async function loadCases() {
 
   try {
     const data = await api.get('/cases');
-    const cases = data.cases || [];
+    const cases = Array.isArray(data) ? data : (data.cases || []);
 
     if (!cases.length) {
       ui.html('casesList', `
@@ -442,6 +472,7 @@ async function loadCases() {
 
     const cards = cases.map(c => {
       const isActive = c.case_id === state.activeCaseId;
+      const recCount = c.records_count ?? c.record_count ?? (Array.isArray(c.records) ? c.records.length : 0);
       return `
         <div class="case-item ${isActive ? 'active-case' : ''}" data-case-id="${ui.esc(c.case_id)}" onclick="switchCase('${ui.esc(c.case_id)}')">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;">
@@ -449,10 +480,10 @@ async function loadCases() {
               <div style="font-weight:700;font-size:14px;color:var(--text-main);">${ui.esc(c.title || c.case_id)}</div>
               <div style="font-family:var(--font-mono);font-size:11.5px;color:var(--accent-primary);margin-top:2px;">${ui.esc(c.case_id)}</div>
             </div>
-            ${ui.badge(`${c.record_count || 0} Records`, 'geo')}
+            ${ui.badge(`${recCount} Records`, 'geo')}
           </div>
           <div style="display:flex;justify-content:space-between;align-items:center;font-size:11.5px;color:var(--text-dim);margin-top:10px;padding-top:8px;border-top:1px solid var(--border-subtle);">
-            <span>Provenance Nodes: <strong>${c.provenance_node_count || 0}</strong></span>
+            <span>Evidence Envelopes: <strong>${c.evidence_count ?? (c.evidence_ids?.length || 0)}</strong></span>
             <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();switchCase('${ui.esc(c.case_id)}');switchTab('analysis');">Inspect Map →</button>
           </div>
         </div>
@@ -473,8 +504,8 @@ async function switchCase(caseId) {
   setActiveCase(caseId);
   try {
     const data = await api.get(`/cases/${caseId}`);
-    state.records = data.records || [];
-    state.provenanceNodes = data.provenance_nodes || [];
+    state.records = Array.isArray(data.records) ? data.records : (data.records ? Object.values(data.records) : []);
+    state.provenanceNodes = Array.isArray(data.provenance_nodes) ? data.provenance_nodes : [];
     ui.text('acsRecords', `${state.records.length} records`);
 
     renderRecordsList();
@@ -1033,21 +1064,28 @@ async function loadEvidence() {
       return;
     }
 
-    const html = pkgs.map(p => `
-      <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:var(--radius);padding:14px;margin-bottom:12px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;">
-          <div>
-            <div style="font-weight:700;font-size:13.5px;color:var(--text-main);">Envelope: ${ui.esc(p.evidence_id)}</div>
-            <div style="font-size:11.5px;color:var(--text-dim);">Signed: ${new Date(p.signed_at).toLocaleString()} · Alg: ${ui.esc(p.algorithm || 'Ed25519')}</div>
+    const html = pkgs.map(p => {
+      const dt = p.created_at_utc || p.signed_at || p.timestamp;
+      const dateStr = dt ? new Date(dt).toLocaleString() : 'Recent';
+      const sigStr = p.signature ? `${p.signature.substring(0, 32)}...` : '—';
+      const alg = p.signing?.algorithm || p.algorithm || 'Ed25519';
+      const evType = p.evidence_type || p.payload?.evidence_type || 'GEOSPATIAL';
+      return `
+        <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:var(--radius);padding:14px;margin-bottom:12px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <div>
+              <div style="font-weight:700;font-size:13.5px;color:var(--text-main);">Envelope: ${ui.esc(p.evidence_id)}</div>
+              <div style="font-size:11.5px;color:var(--text-dim);">Signed: ${dateStr} · Alg: ${ui.esc(alg)}</div>
+            </div>
+            ${ui.badge(evType, 'geo')}
           </div>
-          ${ui.badge(p.payload?.evidence_type || 'GEOSPATIAL', 'geo')}
+          <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-dim);background:var(--bg-surface-elevated);padding:8px;border-radius:4px;margin-top:8px;word-break:break-all;">
+            <strong>SHA-256:</strong> ${p.evidence_hash || '—'}<br>
+            <strong>Signature:</strong> ${sigStr}
+          </div>
         </div>
-        <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-dim);background:var(--bg-surface-elevated);padding:8px;border-radius:4px;margin-top:8px;word-break:break-all;">
-          <strong>SHA-256:</strong> ${p.evidence_hash}<br>
-          <strong>Signature:</strong> ${p.signature.substring(0, 32)}...
-        </div>
-      </div>
-    `).join('');
+      `;
+    }).join('');
     ui.html('evidenceList', html);
   } catch (e) {
     ui.html('evidenceList', ui.err(e.message));

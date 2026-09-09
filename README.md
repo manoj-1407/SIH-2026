@@ -40,6 +40,34 @@ SIH_FINAL_v5/
 
 ---
 
+## Quick Start — Windows (No Docker Required)
+
+The fastest way to run on any Windows machine:
+
+### SIH26149 — Forensic Workstation (Port 8000)
+```bat
+cd sih26149
+pip install -r requirements.txt
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+→ Open **http://localhost:8000** in your browser
+
+Or just double-click **`sih26149\run_windows.bat`** — it installs dependencies and starts the server automatically.
+
+### SIH26013 — Geospatial Workstation (Port 8001)
+```bat
+cd sih26013
+pip install -r requirements.txt
+python -m uvicorn app.api.server:app --host 127.0.0.1 --port 8001
+```
+→ Open **http://localhost:8001** in your browser
+
+Or just double-click **`sih26013\run_windows.bat`**.
+
+> **No API key needed on localhost:** Both systems run in `DEMO_MODE=1` by default locally — the connection indicator will show 🟢 **API Online** immediately. If you see **Auth Required** (amber), click the connection pill (top-right) → enter your API key in the modal → **Save Key**.
+
+---
+
 ## Quick Start (Docker)
 
 ### Run SIH26013:
@@ -72,6 +100,11 @@ cd sih26149 && python -m pytest tests/ -v
 
 Total verification: **148 automated tests passed** (0 failures).
 
-See [AUDIT_REVIEW_GUIDE.md](file:///d:/SIH_FINAL_v5/AUDIT_REVIEW_GUIDE.md) for full step-by-step evaluator instructions.  
-See [DEPLOYMENT.md](file:///d:/SIH_FINAL_v5/DEPLOYMENT.md) for cloud and Render deployment steps.  
-See [SECURITY.md](file:///d:/SIH_FINAL_v5/SECURITY.md) for cryptographic signing and defense details.
+Cross-system integration test (21 audit criteria):
+```bash
+python scratch_test_everything.py
+```
+
+See [AUDIT_REVIEW_GUIDE.md](AUDIT_REVIEW_GUIDE.md) for full step-by-step evaluator instructions.  
+See [DEPLOYMENT.md](DEPLOYMENT.md) for cloud and Render deployment steps.  
+See [SECURITY.md](SECURITY.md) for cryptographic signing and defense details.

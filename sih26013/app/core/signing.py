@@ -102,7 +102,10 @@ class TrustRegistry:
             return False
 
 
+import threading
+
 # Module-level singletons — populated by init_signing()
+_key_init_lock = threading.Lock()
 _registry = TrustRegistry()
 _signing_key: SigningKey | None = None
 _data_dir: Path | None = None   # tracks the data_dir used at init time
@@ -139,40 +142,39 @@ def init_signing(data_dir: Path) -> None:
     Subsequent calls with the same data_dir are no-ops (idempotent).
     """
     global _signing_key, _data_dir
-    if _signing_key is not None:
-        return  # already initialised — idempotent
+    with _key_init_lock:
+        if _signing_key is not None:
+            return  # already initialised — idempotent
 
-    _data_dir = data_dir
-    key_dir = data_dir / "keys"
-    key_dir.mkdir(parents=True, exist_ok=True)
-    key_path = key_dir / "geo_examiner.priv"
-    reg_path = key_dir / "trust_registry.json"
+        _data_dir = data_dir
+        key_dir = data_dir / "keys"
+        key_dir.mkdir(parents=True, exist_ok=True)
+        key_path = key_dir / "geo_examiner.priv"
+        reg_path = key_dir / "trust_registry.json"
 
-    if key_path.exists():
-        # Load existing persistent key — auto-detects PEM (current format)
-        # vs. raw bytes (format written by older versions of this file).
-        raw = key_path.read_bytes()
-        _signing_key = SigningKey.load(EXAMINER_KEY_ID, raw)
-    else:
-        # First run: generate and persist in PEM (see private_pem_bytes()
-        # docstring for why — standardizes on the same format sih26149 uses).
-        _signing_key = SigningKey.generate(EXAMINER_KEY_ID)
-        key_path.write_bytes(_signing_key.private_pem_bytes())
-        try:
-            key_path.chmod(0o600)
-        except OSError:
-            pass
+        if key_path.exists():
+            # Load existing persistent key — auto-detects PEM (current format)
+            # vs. raw bytes (format written by older versions of this file).
+            raw = key_path.read_bytes()
+            _signing_key = SigningKey.load(EXAMINER_KEY_ID, raw)
+        else:
+            # First run: generate and persist in PEM (see private_pem_bytes()
+            # docstring for why — standardizes on the same format sih26149 uses).
+            _signing_key = SigningKey.generate(EXAMINER_KEY_ID)
+            key_path.write_bytes(_signing_key.private_pem_bytes())
+            try:
+                key_path.chmod(0o600)
+            except OSError:
+                pass
 
-    if EXAMINER_KEY_ID not in _registry._keys:
-        _registry.register(EXAMINER_KEY_ID, _signing_key.public_bytes)
-    else:
-        _registry._keys[EXAMINER_KEY_ID] = _signing_key.public_bytes
+        if EXAMINER_KEY_ID not in _registry._keys:
+            _registry.register(EXAMINER_KEY_ID, _signing_key.public_bytes)
 
-    # Persist public trust registry for independent verification
-    reg_path.write_text(
-        json.dumps({EXAMINER_KEY_ID: _signing_key.public_bytes.hex()}, indent=2),
-        encoding="utf-8",
-    )
+        # Persist public trust registry for independent verification
+        reg_path.write_text(
+            json.dumps({EXAMINER_KEY_ID: _signing_key.public_bytes.hex()}, indent=2),
+            encoding="utf-8",
+        )
 
 
 def _ensure_key() -> tuple:

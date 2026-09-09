@@ -151,6 +151,7 @@ class ForensicRecoveryRequest(BaseModel):
 
 
 @router.post('/forensic')
+@router.post('/recover')
 def run_forensic_recovery(case_id: str, req: ForensicRecoveryRequest):
     validate_case_id(case_id)
     try:

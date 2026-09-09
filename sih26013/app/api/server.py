@@ -224,18 +224,41 @@ def list_cases():
     ]
 
 
+class AnalysisRequest(BaseModel):
+    record_id_a: Optional[str] = None
+    record_id_b: Optional[str] = None
+
+
 @router.get("/cases/{case_id}")
 def get_case(case_id: str):
     c = get_case_or_404(case_id)
+    graph: LineageGraph = c.get("graph")
+    provenance_nodes = []
+    if graph and hasattr(graph, "_nodes"):
+        provenance_nodes = [
+            {
+                "node_id": n.node_id,
+                "node_type": n.node_type,
+                "parent_ids": n.parent_ids,
+                "metadata": n.metadata,
+            }
+            for n in graph._nodes.values()
+        ]
+    records_list = list(c.get("records", {}).values()) if isinstance(c.get("records"), dict) else c.get("records", [])
     return {
         "case_id": c["case_id"],
         "title": c["title"],
         "description": c["description"],
         "created_at_utc": c["created_at_utc"],
-        "records_count": len(c["records"]),
+        "records": records_list,
+        "records_count": len(records_list),
         "evidence_ids": c["evidence_ids"],
+        "provenance_nodes": provenance_nodes,
         "analysis_summary": c["analysis_summary"],
         "proposals_count": len(c.get("proposals", {})),
+        "proposals": [p.to_dict() if hasattr(p, "to_dict") else p for p in c.get("proposals", {}).values()],
+        "topology_results": c.get("topology_results"),
+        "imagery_results": c.get("imagery_results"),
     }
 
 
@@ -320,7 +343,8 @@ def add_provenance_node(case_id: str, n: ProvenanceNodeInput):
 
 
 @router.post("/cases/{case_id}/analyze")
-def run_analysis(case_id: str):
+@router.post("/cases/{case_id}/analysis")
+def run_analysis(case_id: str, req: Optional[AnalysisRequest] = None):
     c = get_case_or_404(case_id)
     pipeline: AnalysisPipeline = c["pipeline"]
     graph: LineageGraph = c["graph"]
@@ -332,6 +356,22 @@ def run_analysis(case_id: str):
         audit_log.log(case_id, "ANALYSIS_STARTED", "engine", {"record_count": len(c["records"])})
         summary = pipeline.run_analysis(graph, sign=True)
 
+        classifications = [
+            {
+                "record_id_a": p.record_id_a,
+                "record_id_b": p.record_id_b,
+                "geo_classification": p.geo_classification,
+                "provenance_classification": p.provenance_classification,
+                "independent_lineages": p.independent_lineages,
+                "unknown": p.unknown,
+                "explanation": p.explanation,
+                "comparison_id": p.comparison_id,
+                "measurements": p.measurements,
+                "evidence_envelope": p.evidence_envelope,
+            }
+            for p in summary.pair_results
+        ]
+
         c["analysis_summary"] = {
             "total_ingested": summary.total_ingested,
             "rejected_at_ingestion": summary.rejected_at_ingestion,
@@ -339,28 +379,35 @@ def run_analysis(case_id: str):
             "candidate_pairs_examined": summary.candidate_pairs_examined,
             "cases_flagged": summary.cases_flagged,
             "signed_evidence_ids": summary.signed_case_ids,
-            "classifications": [
-                {
-                    "record_id_a": p.record_id_a,
-                    "record_id_b": p.record_id_b,
-                    "geo_classification": p.geo_classification,
-                    "provenance_classification": p.provenance_classification,
-                    "independent_lineages": p.independent_lineages,
-                    "unknown": p.unknown,
-                    "explanation": p.explanation,
-                    "comparison_id": p.comparison_id,
-                    "measurements": p.measurements,
-                }
-                for p in summary.pair_results
-            ]
+            "classifications": classifications,
         }
-        c["evidence_ids"] = summary.signed_case_ids
+        for eid in summary.signed_case_ids:
+            if eid not in c["evidence_ids"]:
+                c["evidence_ids"].append(eid)
 
         audit_log.log(case_id, "ANALYSIS_COMPLETED", "engine", {
             "pairs_examined": summary.candidate_pairs_examined,
             "cases_flagged": summary.cases_flagged,
             "signed_evidence_count": len(summary.signed_case_ids)
         })
+
+        if req and req.record_id_a and req.record_id_b:
+            pair = next(
+                (p for p in classifications if (p["record_id_a"] == req.record_id_a and p["record_id_b"] == req.record_id_b) or (p["record_id_a"] == req.record_id_b and p["record_id_b"] == req.record_id_a)),
+                None
+            )
+            if pair:
+                return {
+                    "case_id": case_id,
+                    "evidence_id": pair["comparison_id"],
+                    "result": {
+                        "geo_classification": pair["geo_classification"],
+                        "intersection_ratio": pair["measurements"].get("intersection_over_union", 0.0),
+                        "symmetric_diff_sq_m": pair["measurements"].get("symmetric_difference_sq_m", 0.0),
+                        "explanation": pair["explanation"],
+                    },
+                    "envelope": pair.get("evidence_envelope"),
+                }
 
         return c["analysis_summary"]
 
@@ -814,36 +861,37 @@ def export_canonical_geojson(case_id: str):
     # Sign the canonical payload
     from app.core.hashing import sha256_canonical
     from app.core.signing import get_signing_key, get_registry
-    from app.core.evidence_envelope import build_evidence_payload, sign_evidence_envelope
+    from app.core.evidence_envelope import sign_evidence
     import uuid as _uuid
 
-    sk  = get_signing_key()
+    sk = get_signing_key()
     reg = get_registry()
     payload_hash = sha256_canonical(geojson_collection).hex_digest
     ev_id = f"GEOEXPORT-{case_id}-{_uuid.uuid4().hex[:8].upper()}"
 
     envelope = None
     if sk:
-        payload = build_evidence_payload(
-            case_id=case_id,
-            operation_id=ev_id,
-            evidence_id=ev_id,
-            evidence_type="CANONICAL_GEOJSON_EXPORT",
-            input_meta={"feature_count": len(features)},
-            operation_meta={"export_format": "GeoJSON_FeatureCollection", "crs": "EPSG:4326"},
-            result_meta={
+        payload = {
+            "evidence_id": ev_id,
+            "case_id": case_id,
+            "evidence_type": "CANONICAL_GEOJSON_EXPORT",
+            "created_at_utc": datetime.now(timezone.utc).isoformat(),
+            "geojson_sha256": payload_hash,
+            "feature_count": len(features),
+            "result": {
                 "geo_classification": "HARMONIZED",
                 "feature_count": len(features),
                 "payload_sha256": payload_hash,
+                "explanation": (
+                    "Canonical GeoJSON export of harmonized parcel records. "
+                    "WFS-T push to external enterprise GIS is an optional integration boundary."
+                ),
             },
-            scope=(
-                "Canonical GeoJSON export of harmonized parcel records. "
-                "WFS-T push to external enterprise GIS is an optional integration boundary."
-            ),
-            key_id=reg.primary_key_id if reg else "EXPORT_KEY",
-        )
-        envelope = sign_evidence_envelope(payload, sk)
-        evidence_store.save(envelope)
+        }
+        envelope = sign_evidence(payload, sk)
+        evidence_store.save(ev_id, envelope)
+        if ev_id not in c.setdefault("evidence_ids", []):
+            c["evidence_ids"].append(ev_id)
 
     return {
         "case_id":          case_id,

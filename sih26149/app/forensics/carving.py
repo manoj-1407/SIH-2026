@@ -174,13 +174,45 @@ def _carve_jpeg(data: bytes, offset: int) -> Optional[CarvedFile]:
             has_sos = True
             factors.append("SOS (Start Of Scan) marker found")
             last_valid_pos = pos + 2 + seg_len
+            pos = last_valid_pos
+            # Scan entropy-coded scan data for contiguous EOI (FF D9)
+            scan_limit = min(pos + 50 * 1024 * 1024, length)
+            found_eoi_pos = -1
+            curr = pos
+            while curr < scan_limit - 1:
+                if data[curr] == 0xFF:
+                    next_b = data[curr + 1]
+                    if next_b == 0xD9:
+                        found_eoi_pos = curr
+                        break
+                    elif next_b == 0x00 or (0xD0 <= next_b <= 0xD7):
+                        curr += 2
+                        continue
+                    elif next_b == 0xFF:
+                        curr += 1
+                        continue
+                curr += 1
+            
+            if found_eoi_pos != -1:
+                factors.append("EOI marker found — intact stream")
+                end = found_eoi_pos + 2
+                raw = data[offset:end]
+                return CarvedFile(
+                    offset=offset, size=end - offset,
+                    file_type="JPEG", confidence=CarvingConfidence.INTACT,
+                    confidence_score=CarvingConfidence.INTACT.score,
+                    sha256=_sha256(raw), evidence_factors=factors
+                )
+            else:
+                pos = scan_limit
+                break
 
         pos += 2 + seg_len
 
-    # No EOI found — attempt bounded gap-scan reconstruction
+    # No contiguous EOI found — attempt bounded gap-scan reconstruction
     if has_sos:
-        gap_search_start = pos
-        gap_search_end   = min(pos + MAX_FRAGMENT_SCAN, length)
+        gap_search_start = last_valid_pos
+        gap_search_end   = min(last_valid_pos + MAX_FRAGMENT_SCAN, length)
         eoi_pos = data.find(_JPEG_EOI, gap_search_start, gap_search_end)
         if eoi_pos != -1:
             gap_bytes = eoi_pos - last_valid_pos

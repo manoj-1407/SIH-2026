@@ -42,8 +42,9 @@ def run_live_forensic_benchmark(num_synthetic_runs: int = 3) -> Dict[str, Any]:
     for i in range(num_synthetic_runs):
         # Generate synthetic disk stream containing known JPEG, PNG, PDF artifacts
         disk_bytes = generate_synthetic_disk_stream()
-        known_count = 3  # The generator embeds exactly 3 valid structural artifacts (1 JPEG, 1 PNG, 1 PDF)
-        total_known_files += known_count
+        from app.forensics.synthetic import get_synthetic_ground_truth
+        ground_truth = get_synthetic_ground_truth()
+        total_known_files += len(ground_truth)
 
         # Run detailed carving
         t_carve = time.time()
@@ -53,12 +54,23 @@ def run_live_forensic_benchmark(num_synthetic_runs: int = 3) -> Dict[str, Any]:
         recovered_count = len(carved)
         total_recovered_files += recovered_count
 
+        matched_gt_indices = set()
         for artifact in carved:
             conf = artifact.confidence_score / 100.0
             status = artifact.reconstruction_strategy
             confidence_scores.append(conf)
 
-            if artifact.is_intact or artifact.confidence.score >= 65:
+            # Independent Ground-Truth Verification: Match against known embedded items
+            is_true_positive = False
+            for gt_idx, gt_item in enumerate(ground_truth):
+                if gt_idx not in matched_gt_indices:
+                    # Match type and verify start offset falls within known structure window
+                    if artifact.file_type == gt_item["type"] and abs(artifact.offset - gt_item["offset"]) <= 8:
+                        is_true_positive = True
+                        matched_gt_indices.add(gt_idx)
+                        break
+
+            if is_true_positive:
                 true_positives += 1
                 actual_outcomes.append(1.0)
             else:
@@ -113,9 +125,10 @@ def run_live_forensic_benchmark(num_synthetic_runs: int = 3) -> Dict[str, Any]:
             "total_seeded_artifacts": total_known_files,
             "total_recovered_artifacts": total_recovered_files,
             "true_positives": true_positives,
-            "false_positives": false_positives,
             "recovery_precision_percentage": round(precision * 100, 1),
             "recovery_recall_percentage": round(recall * 100, 1),
+            "recovery_precision": round(precision, 4),
+            "recovery_recall": round(recall, 4),
             "f1_score": round(f1_score, 3),
             "fragment_reconstruction_accuracy_percentage": round(reconstruction_accuracy * 100, 1),
             "confidence_calibration_mae": round(calib_error, 4),
