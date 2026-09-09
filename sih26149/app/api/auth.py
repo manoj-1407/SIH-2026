@@ -28,7 +28,12 @@ async def require_api_key(request: Request) -> None:
       - SIH26149_API_KEY is not set (treats deployment as open — operator's choice)
       - Request path is /health or /docs* or /openapi.json (always public)
     """
-    public_prefixes = ("/health", "/api/health", "/docs", "/openapi.json", "/redoc", "/static")
+    public_prefixes = (
+        "/health", "/api/health", "/docs", "/openapi.json", "/redoc", "/static",
+        "/cases/CASE-DEMO-2026", "/api/cases/CASE-DEMO-2026",
+        "/cases/seed-demo", "/api/cases/seed-demo",
+        "/benchmark", "/api/benchmark"
+    )
     if any(request.url.path.startswith(p) for p in public_prefixes):
         return
     if _DEMO_MODE or not _API_KEY:

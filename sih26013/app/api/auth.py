@@ -15,7 +15,11 @@ _DEMO_MODE = os.environ.get("DEMO_MODE", "0").strip() == "1"
 
 
 async def require_api_key(request: Request) -> None:
-    public_prefixes = ("/health", "/api/health", "/docs", "/openapi.json", "/redoc", "/static")
+    public_prefixes = (
+        "/health", "/api/health", "/docs", "/openapi.json", "/redoc", "/static",
+        "/benchmark", "/api/benchmark", "/reconcile", "/api/reconcile",
+        "/cases/DEMO-", "/api/cases/DEMO-"
+    )
     if any(request.url.path.startswith(p) for p in public_prefixes):
         return
     if _DEMO_MODE or not _API_KEY:
