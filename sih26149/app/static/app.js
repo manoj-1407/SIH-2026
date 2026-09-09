@@ -75,11 +75,18 @@ const Toast = {
 
 const api = {
   async call(method, path, body, isForm = false) {
-    const opts = { method };
+    const opts = { method, headers: {} };
+
+    // Include API Key if configured in diagnostics/localStorage
+    const apiKey = localStorage.getItem('sih_api_key');
+    if (apiKey && apiKey.trim()) {
+      opts.headers['X-API-Key'] = apiKey.trim();
+    }
+
     if (isForm) {
       opts.body = body;
     } else if (body) {
-      opts.headers = { 'Content-Type': 'application/json' };
+      opts.headers['Content-Type'] = 'application/json';
       opts.body = JSON.stringify(body);
     }
 
@@ -92,6 +99,10 @@ const api = {
         const json = await res.json();
         detail = json.detail || detail;
       } catch (_) {}
+      
+      if (res.status === 401) {
+        detail = 'Authentication required. Please configure API Key in Diagnostics/Settings.';
+      }
       throw new Error(detail);
     }
     return res.json();

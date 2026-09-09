@@ -71,8 +71,12 @@ def get_certificate_pdf(evidence_id: str):
             filename=f"certificate_{evidence_id}.pdf"
         )
     else:
-        # Fallback to HTML
+        # Fallback to HTML if ReportLab is not available
         html_path = pdf_path.replace(".pdf", ".html")
+        if not os.path.exists(html_path):
+            html = generate_html_certificate(pkg, case_title=case_title)
+            with open(html_path, "w", encoding="utf-8") as f:
+                f.write(html)
         return FileResponse(
             html_path,
             media_type="text/html",
