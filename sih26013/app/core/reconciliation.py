@@ -57,22 +57,23 @@ def calculate_tri_reality_reconciliation(
                              [77.6200, 13.0010], [77.6200, 13.0000]]]
         }
     }
-    # CORS GNSS survey: 2026, ±0.05m tolerance — slight shift representing real ground reality
+    # CORS GNSS survey: 2026, ±0.05m tolerance — tight physical survey, very slight shift
     _DEMO_SURVEYED = {
         "source_type": "GNSS",
         "geometry": {
             "type": "Polygon",
-            "coordinates": [[[77.62001, 13.0000], [77.62101, 13.0000], [77.62101, 13.0010],
-                             [77.62001, 13.0010], [77.62001, 13.0000]]]
+            "coordinates": [[[77.62003, 13.0000], [77.62103, 13.0000], [77.62103, 13.0010],
+                             [77.62003, 13.0010], [77.62003, 13.0000]]]
         }
     }
-    # Drone ORI footprint: ±0.35m tolerance — footprint extends 1.42m beyond cadastral
+    # Drone ORI footprint: ±0.35m tolerance — centroid shifted ~3m east (0.000027 deg)
+    # representing building footprint extending beyond registered cadastral parcel boundary
     _DEMO_OBSERVED = {
         "source_type": "DRONE",
         "geometry": {
             "type": "Polygon",
-            "coordinates": [[[77.61987, 12.99997], [77.62113, 12.99997], [77.62113, 13.00103],
-                             [77.61987, 13.00103], [77.61987, 12.99997]]]
+            "coordinates": [[[77.61993, 12.99990], [77.62113, 12.99990], [77.62113, 13.00110],
+                             [77.61993, 13.00110], [77.61993, 12.99990]]]
         }
     }
 
