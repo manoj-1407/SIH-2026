@@ -201,6 +201,15 @@ def calculate_tri_reality_reconciliation(
             "recommended_action": recommendation,
         },
         "conflict_hypotheses": hypotheses,
+        "hypotheses": [
+            {
+                "title": h["title"],
+                "score": round(h["score_weight"] * 100),
+                "description": h["description"],
+            }
+            for h in hypotheses
+        ],
+        "action_recommendation": recommendation,
         "provenance_independence": provenance_summary,
         "reconciliation_latency_ms": total_time_ms,
         "architecture_label": "Hybrid Evidence-Driven Reconciliation Engine",
