@@ -1031,35 +1031,44 @@ class TriRealityRequest(BaseModel):
     observed_record: Optional[Dict[str, Any]] = None
 
 
+@router.post("/cases/{case_id}/reconcile/tri-reality")
 @router.post("/reconcile/tri-reality")
-def reconcile_tri_reality_endpoint(req: TriRealityRequest):
+def reconcile_tri_reality_endpoint(req: Optional[TriRealityRequest] = None, case_id: Optional[str] = None):
     """
     Reconciles Legal Cadastral Boundary, Surveyed GNSS Boundary, and Observed Drone Footprint.
     Evaluates positional uncertainties and evidence-weighted hypotheses.
     """
     from app.core.reconciliation import calculate_tri_reality_reconciliation
+    legal = req.legal_record if req else None
+    surveyed = req.surveyed_record if req else None
+    observed = req.observed_record if req else None
     return calculate_tri_reality_reconciliation(
-        legal_record=req.legal_record,
-        surveyed_record=req.surveyed_record,
-        observed_record=req.observed_record
+        legal_record=legal,
+        surveyed_record=surveyed,
+        observed_record=observed
     )
 
 
+@router.post("/cases/{case_id}/reconcile/counterfactuals")
 @router.post("/reconcile/counterfactuals")
-def simulate_counterfactuals_endpoint(req: TriRealityRequest):
+def simulate_counterfactuals_endpoint(req: Optional[TriRealityRequest] = None, case_id: Optional[str] = None):
     """
     Simulates counterfactual harmonization scenarios: 'What if we trust Cadastral vs GNSS vs Observed?'
     """
     from app.core.reconciliation import simulate_counterfactual_harmonization
+    legal = req.legal_record if req else None
+    surveyed = req.surveyed_record if req else None
+    observed = req.observed_record if req else None
     return simulate_counterfactual_harmonization(
-        legal_record=req.legal_record,
-        surveyed_record=req.surveyed_record,
-        observed_record=req.observed_record
+        legal_record=legal,
+        surveyed_record=surveyed,
+        observed_record=observed
     )
 
 
+@router.get("/cases/{case_id}/benchmark")
 @router.get("/benchmark")
-def run_live_geospatial_benchmark_endpoint(parcels: int = 4):
+def run_live_geospatial_benchmark_endpoint(parcels: int = 4, case_id: Optional[str] = None, runs: int = 2):
     """
     Runs actual dynamic evaluation runs on synthetic spatial datasets to compute real metrics.
     No hardcoded values.
