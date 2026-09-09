@@ -44,7 +44,7 @@ def get_certificate_html(evidence_id: str):
 def get_certificate_pdf(evidence_id: str):
     """
     Generate and download a PDF forensic evidence certificate.
-    Falls back to HTML if reportlab is not installed.
+    Falls back to HTML if reportlab is not installed or errors out.
     """
     validate_evidence_id(evidence_id)
     try:
@@ -55,30 +55,29 @@ def get_certificate_pdf(evidence_id: str):
     case_id = pkg.get("case_id", "general")
     case_title = None
     if case_id:
-        case = case_store.get(case_id)
-        if case:
-            case_title = case.get("title")
+        try:
+            case = case_store.get(case_id)
+            if case:
+                case_title = case.get("title") if isinstance(case, dict) else getattr(case, "title", None)
+        except Exception:
+            pass
 
-    out_dir = os.path.join(os.environ.get("SIH26149_DATA_DIR", "data"), "certificates")
-    os.makedirs(out_dir, exist_ok=True)
-    pdf_path = os.path.join(out_dir, f"{evidence_id}_certificate.pdf")
+    try:
+        out_dir = os.path.join(os.environ.get("SIH26149_DATA_DIR", "data"), "certificates")
+        os.makedirs(out_dir, exist_ok=True)
+        pdf_path = os.path.join(out_dir, f"{evidence_id}_certificate.pdf")
 
-    success = generate_pdf_certificate(pkg, pdf_path, case_title=case_title)
-    if success and os.path.exists(pdf_path):
-        return FileResponse(
-            pdf_path,
-            media_type="application/pdf",
-            filename=f"certificate_{evidence_id}.pdf"
-        )
-    else:
-        # Fallback to HTML if ReportLab is not available
-        html_path = pdf_path.replace(".pdf", ".html")
-        if not os.path.exists(html_path):
-            html = generate_html_certificate(pkg, case_title=case_title)
-            with open(html_path, "w", encoding="utf-8") as f:
-                f.write(html)
-        return FileResponse(
-            html_path,
-            media_type="text/html",
-            filename=f"certificate_{evidence_id}.html"
-        )
+        success = generate_pdf_certificate(pkg, pdf_path, case_title=case_title)
+        if success and os.path.exists(pdf_path):
+            return FileResponse(
+                pdf_path,
+                media_type="application/pdf",
+                filename=f"certificate_{evidence_id}.pdf"
+            )
+    except Exception:
+        pass
+
+    # Unconditional fail-safe fallback: return HTML certificate
+    html = generate_html_certificate(pkg, case_title=case_title)
+    return HTMLResponse(content=html, media_type="text/html")
+
