@@ -28,11 +28,18 @@ async def require_api_key(request: Request) -> None:
       - SIH26149_API_KEY is not set (treats deployment as open — operator's choice)
       - Request path is /health or /docs* or /openapi.json (always public)
     """
+    # Public demo surface: exact showcase routes only.
+    # /benchmark and /proof-loop are NOT globally public —
+    # only the canonical CASE-DEMO-2026 showcase paths are.
     public_prefixes = (
         "/health", "/api/health", "/docs", "/openapi.json", "/redoc", "/static",
-        "/cases/CASE-DEMO-2026", "/api/cases/CASE-DEMO-2026",
+        # Official showcase demo routes (read-only, synthetic media only)
+        "/cases/CASE-DEMO-2026/proof-loop",   "/api/cases/CASE-DEMO-2026/proof-loop",
+        "/cases/CASE-DEMO-2026/benchmark",    "/api/cases/CASE-DEMO-2026/benchmark",
+        "/cases/CASE-DEMO-2026/decision-profile", "/api/cases/CASE-DEMO-2026/decision-profile",
+        # Case seeding and listing for showcase navigation
         "/cases/seed-demo", "/api/cases/seed-demo",
-        "/benchmark", "/api/benchmark"
+        "/cases/CASE-DEMO-2026", "/api/cases/CASE-DEMO-2026",
     )
     if any(request.url.path.startswith(p) for p in public_prefixes):
         return

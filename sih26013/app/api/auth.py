@@ -15,10 +15,22 @@ _DEMO_MODE = os.environ.get("DEMO_MODE", "0").strip() == "1"
 
 
 async def require_api_key(request: Request) -> None:
+    # Public demo surface: exact showcase routes only.
+    # /benchmark and /reconcile are NOT globally public —
+    # only the canonical DEMO-ALIGN and DEMO-FORENSIC showcase paths are.
     public_prefixes = (
         "/health", "/api/health", "/docs", "/openapi.json", "/redoc", "/static",
-        "/benchmark", "/api/benchmark", "/reconcile", "/api/reconcile",
-        "/cases/DEMO-", "/api/cases/DEMO-"
+        # Official showcase demo routes (read-only, synthetic parcels only)
+        "/cases/DEMO-ALIGN/reconcile/tri-reality",  "/api/cases/DEMO-ALIGN/reconcile/tri-reality",
+        "/cases/DEMO-ALIGN/benchmark",               "/api/cases/DEMO-ALIGN/benchmark",
+        "/cases/DEMO-FORENSIC/reconcile/tri-reality","/api/cases/DEMO-FORENSIC/reconcile/tri-reality",
+        "/cases/DEMO-FORENSIC/benchmark",            "/api/cases/DEMO-FORENSIC/benchmark",
+        # Reconcile and benchmark top-level aliases (showcase convenience)
+        "/reconcile/tri-reality", "/api/reconcile/tri-reality",
+        "/benchmark",             "/api/benchmark",
+        # Case seeding and listing
+        "/cases/DEMO-ALIGN",    "/api/cases/DEMO-ALIGN",
+        "/cases/DEMO-FORENSIC", "/api/cases/DEMO-FORENSIC",
     )
     if any(request.url.path.startswith(p) for p in public_prefixes):
         return

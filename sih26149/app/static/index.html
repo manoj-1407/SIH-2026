@@ -211,7 +211,7 @@
               <div class="conf-item"><span class="conf-lbl">Format Integrity</span><span class="conf-val ok">96%</span></div>
             </div>
             <div class="conf-explanation">
-              <strong>Evidence Rationale:</strong> Valid JPEG SOF0/DHT markers + consistent entropy. Confidence slightly adjusted due to bounded gap scan reconstruction over 512KB cluster hop.
+              <strong>Evidence Rationale:</strong> Valid JPEG SOF0/DHT markers + consistent entropy. Confidence slightly adjusted due to bounded gap scan reconstruction over 512KB cluster hop. <span style="color:var(--text-dim,#94a3b8); font-size:11px;">(Illustrative demo weights)</span>
             </div>
           </div>
         </div>
@@ -236,7 +236,7 @@
             <div class="pl-step active" id="pls2">
               <div class="pl-num">2</div>
               <div class="pl-body">
-                <div class="pl-title">Pre-Carve Scan</div>
+                <div class="pl-title">Pre-Sanitization Recovery Scan</div>
                 <div class="pl-sub">Carves &amp; indexes all 3 recoverable artifacts</div>
               </div>
             </div>
@@ -244,7 +244,7 @@
             <div class="pl-step active" id="pls3">
               <div class="pl-num">3</div>
               <div class="pl-body">
-                <div class="pl-title">NIST/IEEE Sanitize</div>
+                <div class="pl-title">Sanitization Execution</div>
                 <div class="pl-sub">Clear / Purge / Destroy execution</div>
               </div>
             </div>
@@ -252,7 +252,7 @@
             <div class="pl-step active" id="pls4">
               <div class="pl-num">4</div>
               <div class="pl-body">
-                <div class="pl-title">Post-Carve Probe</div>
+                <div class="pl-title">Post-Sanitization Recovery Probe</div>
                 <div class="pl-sub">Validation probe confirms 0 residual artifacts</div>
               </div>
             </div>
@@ -304,7 +304,7 @@
         <div class="showcase-grid" style="margin-top:24px;">
           <!-- Benchmark Box -->
           <div class="showcase-card">
-            <div class="sc-tag">04 · MEASURABLE EVIDENCE</div>
+            <div class="sc-tag">04 · LIVE SYNTHETIC BENCHMARK</div>
             <h3 class="sc-title">Live Dynamic Benchmark Suite</h3>
             <p class="sc-desc">Real-time metrics generated dynamically by executing actual synthetic evaluation runs against the carving and proof-loop engines.</p>
             <div class="benchmark-metrics-grid" id="benchMetricsGrid">
