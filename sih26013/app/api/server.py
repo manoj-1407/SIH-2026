@@ -33,6 +33,7 @@ from app.core.topology_repair import repair_cadastral_topology
 from app.core.harmonization_proposal import (
     HarmonizationProposal, create_harmonization_proposal, review_proposal, ProposalStatus
 )
+from app.core.temporal import analyze_temporal, diff_record_history
 
 app = FastAPI(
     title="SIH26013 — Integrated Multi-Source Geospatial Data Platform v2",
@@ -395,6 +396,7 @@ def _records_to_canonical_parcels(records_dict: dict) -> List[CanonicalParcel]:
 
 
 @router.post("/cases/{case_id}/match-ai")
+@router.post("/cases/{case_id}/ai-match")
 def run_ai_matching(case_id: str, req: AIMatchRequest = AIMatchRequest()):
     """
     Run AI-enabled geospatial parcel matching on the case's ingested multi-source records.
@@ -698,9 +700,171 @@ def get_provenance_graph(case_id: str):
     }
 
 
+@router.post("/cases/{case_id}/temporal-analysis")
+def run_temporal_analysis(case_id: str):
+    """
+    Temporal record-history change analysis for the case.
+
+    Groups all ingested records by survey number and computes a structured
+    change vector (AttributeChange list) between pairs, including:
+      - Land-use transitions (AGRICULTURAL → COMMERCIAL, etc.)
+      - Area deltas (absolute + percentage)
+      - Ownership changes
+      - Boundary centroid shifts
+      - Temporal gap classification (same-era vs temporally qualified)
+
+    Note: This is vector/attribute-level analysis on the records ingested.
+    Multi-spectral satellite raster change detection is outside scope.
+    """
+    c = get_case_or_404(case_id)
+    records: dict = c.get("records", {})
+
+    if not records:
+        return {"case_id": case_id, "diffs": [], "message": "No records ingested yet"}
+
+    # Group by survey_number
+    by_survey: dict[str, list] = {}
+    for rec_id, rec in records.items():
+        sn = rec.get("metadata", {}).get("survey_number") or "UNKNOWN"
+        by_survey.setdefault(sn, []).append({**rec.get("metadata", {}),
+                                               "record_id": rec_id,
+                                               "timestamp": rec.get("timestamp"),
+                                               "geometry": rec.get("geometry")})
+
+    diffs = []
+    for sn, recs in by_survey.items():
+        if len(recs) < 2:
+            continue
+        # Sort by timestamp so recs[0] is the older record
+        def _ts_key(r):
+            from app.core.temporal import parse_timestamp
+            dt = parse_timestamp(r.get("timestamp"))
+            return dt.timestamp() if dt else 0.0
+        recs_sorted = sorted(recs, key=_ts_key)
+        # Diff consecutive pairs
+        for i in range(len(recs_sorted) - 1):
+            ra = recs_sorted[i]
+            rb = recs_sorted[i + 1]
+            diff = diff_record_history(
+                record_a={**ra, "record_id": ra["record_id"]},
+                record_b={**rb, "record_id": rb["record_id"]},
+                geometry_a=ra.get("geometry"),
+                geometry_b=rb.get("geometry"),
+            )
+            diffs.append(diff.to_dict())
+
+    return {
+        "case_id": case_id,
+        "total_survey_groups": len(by_survey),
+        "total_diffs": len(diffs),
+        "diffs": diffs,
+        "analysis_note": (
+            "Vector/attribute-level temporal change analysis. "
+            "Multi-spectral satellite imagery diffing is outside the scope of this implementation."
+        ),
+    }
+
+
+@router.get("/cases/{case_id}/canonical-export")
+def export_canonical_geojson(case_id: str):
+    """
+    Export the harmonized canonical GeoJSON FeatureCollection for this case.
+
+    Produces a standards-compliant GeoJSON FeatureCollection where each Feature
+    represents a canonical parcel record with full provenance and attribute metadata.
+    The response is signed with Ed25519 and includes a hash of the canonical payload.
+
+    Enterprise GIS Integration Note:
+      WFS-T (OGC Web Feature Service Transactional) push to an external enterprise
+      GIS server is an optional integration boundary. This endpoint generates the
+      canonical changeset payload that a WFS-T client would consume. The platform
+      does not automatically push to an external GIS — that depends on the target
+      agency's infrastructure configuration.
+    """
+    c = get_case_or_404(case_id)
+    records: dict = c.get("records", {})
+    parcels = _records_to_canonical_parcels(records)
+
+    features = []
+    for p in parcels:
+        features.append({
+            "type": "Feature",
+            "geometry": p.geometry,
+            "properties": {
+                "parcel_id":        p.parcel_id,
+                "survey_number":    p.survey_number,
+                "source_agency":    p.source_agency.value,
+                "area_sq_m":        p.area_sq_m,
+                "land_use":         p.land_use.value,
+                "owner_ref":        p.owner_ref,
+                "crs":              p.crs,
+                "capture_timestamp": p.capture_timestamp,
+                "confidence_weight": p.confidence_weight,
+                "raw_attributes":    p.raw_attributes,
+            },
+        })
+
+    geojson_collection = {
+        "type": "FeatureCollection",
+        "name": f"SIH26013-{case_id}-canonical-export",
+        "crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:EPSG::4326"}},
+        "features": features,
+    }
+
+    # Sign the canonical payload
+    from app.core.hashing import sha256_canonical
+    from app.core.signing import get_signing_key, get_registry
+    from app.core.evidence_envelope import build_evidence_payload, sign_evidence_envelope
+    import uuid as _uuid
+
+    sk  = get_signing_key()
+    reg = get_registry()
+    payload_hash = sha256_canonical(geojson_collection).hex_digest
+    ev_id = f"GEOEXPORT-{case_id}-{_uuid.uuid4().hex[:8].upper()}"
+
+    envelope = None
+    if sk:
+        payload = build_evidence_payload(
+            case_id=case_id,
+            operation_id=ev_id,
+            evidence_id=ev_id,
+            evidence_type="CANONICAL_GEOJSON_EXPORT",
+            input_meta={"feature_count": len(features)},
+            operation_meta={"export_format": "GeoJSON_FeatureCollection", "crs": "EPSG:4326"},
+            result_meta={
+                "geo_classification": "HARMONIZED",
+                "feature_count": len(features),
+                "payload_sha256": payload_hash,
+            },
+            scope=(
+                "Canonical GeoJSON export of harmonized parcel records. "
+                "WFS-T push to external enterprise GIS is an optional integration boundary."
+            ),
+            key_id=reg.primary_key_id if reg else "EXPORT_KEY",
+        )
+        envelope = sign_evidence_envelope(payload, sk)
+        evidence_store.save(envelope)
+
+    return {
+        "case_id":          case_id,
+        "evidence_id":      ev_id,
+        "payload_sha256":   payload_hash,
+        "geojson":          geojson_collection,
+        "feature_count":    len(features),
+        "signed_envelope":  envelope,
+        "wfs_t_note": (
+            "This payload is the canonical changeset for WFS-T synchronization. "
+            "Automated push to an external enterprise GIS server requires the target "
+            "agency's WFS-T endpoint credentials (not configured in this deployment)."
+        ),
+        "algorithm": "Ed25519",
+    }
+
+
 # ── Demo Seeder Endpoint ───────────────────────────────────────────────────────
 
 @router.post("/demo/seed-samples")
+@router.post("/demo/seed")
 def seed_demo_cases():
     """
     Seeds 4 rich real-world test cases highlighting the SIH26013 Problem Statement:

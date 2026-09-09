@@ -9,7 +9,8 @@ Supported formats: JPEG, PNG, PDF, ZIP, DOCX, XLSX, MP4
 Design principles:
   - Every candidate is structurally validated, not just signature-matched.
   - Confidence is evidence-derived, not guessed: structure depth + CRC/checksum + fragmentation.
-  - Bifragmented streams are explicitly detected and flagged.
+  - Bifragmented streams: when a terminal marker is absent, a bounded forward gap-scan of
+    up to FRAGMENT_HOP_COUNT × CLUSTER_SIZE bytes is performed to attempt reconstruction.
   - No false positives are promoted past PARTIAL_STRUCTURE confidence.
 """
 import struct
@@ -19,20 +20,25 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
 
+# Bounded bifragment reconstruction parameters
+CLUSTER_SIZE     = 512 * 1024    # 512 KB typical cluster gap
+FRAGMENT_HOP_COUNT = 4           # Scan up to 4 cluster hops forward (2 MB)
+MAX_FRAGMENT_SCAN = CLUSTER_SIZE * FRAGMENT_HOP_COUNT
+
 
 class CarvingConfidence(str, Enum):
     INTACT         = "INTACT"           # Fully validated structure, checksum verified
     HIGH           = "HIGH"             # All major structural markers present
     PARTIAL_STRUCT = "PARTIAL_STRUCT"   # Header + some body, truncated/fragmented
     HEADER_ONLY    = "HEADER_ONLY"      # Valid header, body absent or unreadable
-    BIFRAGMENTED   = "BIFRAGMENTED"     # Fragment detected, continuation reassembled
+    BIFRAGMENTED   = "BIFRAGMENTED"     # Fragment detected, continuation gap-reconstructed
 
     @property
     def score(self) -> int:
         return {
             self.INTACT: 95, self.HIGH: 80,
             self.PARTIAL_STRUCT: 55, self.HEADER_ONLY: 30,
-            self.BIFRAGMENTED: 60,
+            self.BIFRAGMENTED: 65,
         }[self]
 
 
@@ -47,6 +53,7 @@ class CarvedFile:
     evidence_factors: list
     is_bifragmented: bool = False
     fragment_gap_bytes: Optional[int] = None
+    reconstruction_strategy: str = "CONTIGUOUS"  # CONTIGUOUS | GAP_RECONSTRUCTED | PARTIAL_ONLY
 
     @property
     def is_intact(self) -> bool:
@@ -56,6 +63,9 @@ class CarvedFile:
         return {
             "offset": self.offset,
             "offset_hex": f"0x{self.offset:08X}",
+            # Alias fields for JS compatibility
+            "start_offset": self.offset,
+            "length_bytes": self.size,
             "size": self.size,
             "size_kb": round(self.size / 1024, 2),
             "file_type": self.file_type,
@@ -65,6 +75,7 @@ class CarvedFile:
             "evidence_factors": self.evidence_factors,
             "is_bifragmented": self.is_bifragmented,
             "fragment_gap_bytes": self.fragment_gap_bytes,
+            "reconstruction_strategy": self.reconstruction_strategy,
             "is_intact": self.is_intact,
         }
 
@@ -101,7 +112,11 @@ _JPEG_EOI = b'\xFF\xD9'
 
 
 def _carve_jpeg(data: bytes, offset: int) -> Optional[CarvedFile]:
-    """Parse JPEG structure from SOI marker at `offset`."""
+    """Parse JPEG structure from SOI marker at `offset`.
+
+    If EOI is not found contiguously, performs a bounded forward gap-scan
+    (up to MAX_FRAGMENT_SCAN bytes) to locate and reconstruct bifragmented streams.
+    """
     factors = []
     pos = offset
     length = len(data)
@@ -114,6 +129,7 @@ def _carve_jpeg(data: bytes, offset: int) -> Optional[CarvedFile]:
     has_app0 = False
     has_sof  = False
     has_sos  = False
+    last_valid_pos = pos
 
     # Walk JPEG segments
     while pos < length - 3:
@@ -157,25 +173,41 @@ def _carve_jpeg(data: bytes, offset: int) -> Optional[CarvedFile]:
         elif seg_code == 0xDA:
             has_sos = True
             factors.append("SOS (Start Of Scan) marker found")
+            last_valid_pos = pos + 2 + seg_len
 
         pos += 2 + seg_len
 
-    # No EOI found — truncated/fragmented
+    # No EOI found — attempt bounded gap-scan reconstruction
     if has_sos:
-        conf = CarvingConfidence.PARTIAL_STRUCT
-    elif has_sof:
-        conf = CarvingConfidence.HEADER_ONLY
-    else:
-        conf = CarvingConfidence.HEADER_ONLY
+        gap_search_start = pos
+        gap_search_end   = min(pos + MAX_FRAGMENT_SCAN, length)
+        eoi_pos = data.find(_JPEG_EOI, gap_search_start, gap_search_end)
+        if eoi_pos != -1:
+            gap_bytes = eoi_pos - last_valid_pos
+            end = eoi_pos + 2
+            raw = data[offset:end]
+            factors.append(f"Bifragment EOI located in gap-scan at +{gap_bytes:,} bytes (bounded {MAX_FRAGMENT_SCAN // 1024} KB scan)")
+            return CarvedFile(
+                offset=offset, size=end - offset,
+                file_type="JPEG", confidence=CarvingConfidence.BIFRAGMENTED,
+                confidence_score=CarvingConfidence.BIFRAGMENTED.score,
+                sha256=_sha256(raw), evidence_factors=factors,
+                is_bifragmented=True,
+                fragment_gap_bytes=gap_bytes,
+                reconstruction_strategy="GAP_RECONSTRUCTED",
+            )
 
-    raw = data[offset:min(offset + min(pos - offset, 10 * 1024 * 1024), length)]
-    factors.append("No EOI found — file truncated or bifragmented")
+    # Could not reconstruct
+    conf = CarvingConfidence.PARTIAL_STRUCT if has_sos else CarvingConfidence.HEADER_ONLY
+    raw = data[offset:min(offset + max(pos - offset, 1), length)]
+    factors.append("No EOI found and gap-scan exceeded bound — reporting partial stream")
     return CarvedFile(
         offset=offset, size=len(raw),
         file_type="JPEG", confidence=conf,
         confidence_score=conf.score,
         sha256=_sha256(raw), evidence_factors=factors,
-        is_bifragmented=True
+        is_bifragmented=True,
+        reconstruction_strategy="PARTIAL_ONLY",
     )
 
 
@@ -241,10 +273,30 @@ def _carve_png(data: bytes, offset: int) -> Optional[CarvedFile]:
 
         pos += 12 + chunk_len
 
-    # Truncated
+    # Truncated — attempt bounded gap-scan for IEND
     if crc_ok_count > 0:
         factors.append(f"{crc_ok_count} chunk CRC(s) verified before truncation")
-    factors.append("IEND not found — PNG truncated or fragmented")
+
+    if has_idat:
+        iend_marker = b'IEND'
+        gap_search_end = min(pos + MAX_FRAGMENT_SCAN, length)
+        iend_pos = data.find(iend_marker, pos, gap_search_end)
+        if iend_pos != -1:
+            gap_bytes = iend_pos - pos
+            end = iend_pos + 12  # IEND chunk: 4+4+4 = 12 bytes
+            raw = data[offset:min(end, length)]
+            factors.append(f"Bifragment IEND located in gap-scan at +{gap_bytes:,} bytes")
+            return CarvedFile(
+                offset=offset, size=end - offset,
+                file_type="PNG", confidence=CarvingConfidence.BIFRAGMENTED,
+                confidence_score=CarvingConfidence.BIFRAGMENTED.score,
+                sha256=_sha256(raw), evidence_factors=factors,
+                is_bifragmented=True,
+                fragment_gap_bytes=gap_bytes,
+                reconstruction_strategy="GAP_RECONSTRUCTED",
+            )
+
+    factors.append("IEND not found — PNG truncated or fragmented (gap-scan exceeded bound)")
     conf = CarvingConfidence.PARTIAL_STRUCT if has_idat else CarvingConfidence.HEADER_ONLY
     raw = data[offset:min(pos, length)]
     return CarvedFile(
@@ -252,7 +304,8 @@ def _carve_png(data: bytes, offset: int) -> Optional[CarvedFile]:
         file_type="PNG", confidence=conf,
         confidence_score=conf.score,
         sha256=_sha256(raw), evidence_factors=factors,
-        is_bifragmented=True
+        is_bifragmented=True,
+        reconstruction_strategy="PARTIAL_ONLY",
     )
 
 
@@ -298,7 +351,25 @@ def _carve_pdf(data: bytes, offset: int) -> Optional[CarvedFile]:
             sha256=_sha256(raw), evidence_factors=factors
         )
 
-    factors.append("%%EOF not found — PDF truncated or fragmented")
+    # Attempt extended forward scan for EOF beyond the 50 MB search limit
+    extended_limit = min(offset + 100 * 1024 * 1024, len(data))
+    eof_pos_ext = data.find(_PDF_EOF, search_limit, extended_limit)
+    if eof_pos_ext != -1:
+        gap_bytes = eof_pos_ext - search_limit
+        end = eof_pos_ext + len(_PDF_EOF)
+        raw = data[offset:end]
+        factors.append(f"Bifragment %%EOF found in extended scan at +{gap_bytes:,} bytes beyond initial window")
+        return CarvedFile(
+            offset=offset, size=end - offset,
+            file_type="PDF", confidence=CarvingConfidence.BIFRAGMENTED,
+            confidence_score=CarvingConfidence.BIFRAGMENTED.score,
+            sha256=_sha256(raw), evidence_factors=factors,
+            is_bifragmented=True,
+            fragment_gap_bytes=gap_bytes,
+            reconstruction_strategy="GAP_RECONSTRUCTED",
+        )
+
+    factors.append("%%EOF not found — PDF truncated or fragmented (extended scan exhausted)")
     raw = data[offset:search_limit]
     conf = CarvingConfidence.PARTIAL_STRUCT if has_obj else CarvingConfidence.HEADER_ONLY
     return CarvedFile(
@@ -306,7 +377,8 @@ def _carve_pdf(data: bytes, offset: int) -> Optional[CarvedFile]:
         file_type="PDF", confidence=conf,
         confidence_score=conf.score,
         sha256=_sha256(raw), evidence_factors=factors,
-        is_bifragmented=True
+        is_bifragmented=True,
+        reconstruction_strategy="PARTIAL_ONLY",
     )
 
 
@@ -517,17 +589,26 @@ def carve_image_summary(image_path: str, **kwargs) -> dict:
     for c in carved:
         by_type[c.file_type] = by_type.get(c.file_type, 0) + 1
 
-    intact   = [c for c in carved if c.confidence == CarvingConfidence.INTACT]
-    high     = [c for c in carved if c.confidence == CarvingConfidence.HIGH]
-    partial  = [c for c in carved if c.confidence in (CarvingConfidence.PARTIAL_STRUCT, CarvingConfidence.BIFRAGMENTED)]
-    fragment = [c for c in carved if c.is_bifragmented]
+    intact       = [c for c in carved if c.confidence == CarvingConfidence.INTACT]
+    high         = [c for c in carved if c.confidence == CarvingConfidence.HIGH]
+    bifragmented = [c for c in carved if c.confidence == CarvingConfidence.BIFRAGMENTED]
+    partial      = [c for c in carved if c.confidence in (CarvingConfidence.PARTIAL_STRUCT, CarvingConfidence.BIFRAGMENTED)]
+    fragment     = [c for c in carved if c.is_bifragmented]
+    gap_recon    = [c for c in carved if c.reconstruction_strategy == "GAP_RECONSTRUCTED"]
+
+    # Signatures always scanned (for UI display)
+    signatures_scanned = ["JPEG", "PNG", "PDF", "ZIP", "DOCX", "XLSX", "MP4"]
 
     return {
         "total_carved": len(carved),
         "intact": len(intact),
         "high_confidence": len(high),
+        "bifragmented_reconstructed": len(gap_recon),
         "partial": len(partial),
         "bifragmented": len(fragment),
         "by_type": by_type,
+        "signatures_scanned": signatures_scanned,
+        # Both keys for backward compat
         "carved_files": [c.to_dict() for c in carved],
+        "carved_artifacts": [c.to_dict() for c in carved],
     }

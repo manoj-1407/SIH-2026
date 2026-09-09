@@ -1,68 +1,78 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SIH26013 — Geospatial Harmonization Workstation</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>SIH26013 — Geospatial Harmonization Platform</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2310b981' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolygon points='1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6'/%3E%3Cline x1='8' y1='2' x2='8' y2='18'/%3E%3Cline x1='16' y1='6' x2='16' y2='22'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="/static/style.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js" defer></script>
 </head>
 <body>
-  <div class="shell">
+  <!-- Ambient background canvas for subtle cadastral mesh -->
+  <canvas id="ambientCanvas" class="ambient-canvas"></canvas>
 
-    <aside class="sidebar">
+  <div class="shell">
+    <!-- Mobile drawer backdrop -->
+    <div class="drawer-backdrop" id="drawerBackdrop" onclick="toggleMobileDrawer(false)"></div>
+
+    <!-- Sidebar / Drawer -->
+    <aside class="sidebar" id="sidebar">
       <div class="sidebar-top">
         <div class="wordmark">
-          <span class="wordmark-badge">MoRD</span>
-          <div>
-            <div class="wordmark-title">Geospatial Workstation</div>
-            <div class="wordmark-sub">SIH26013 · Harmonization Engine</div>
+          <div class="brand-badge">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points='1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6'/><line x1='8' y1='2' x2='8' y2='18'/><line x1='16' y1='6' x2='16' y2='22'/></svg>
           </div>
+          <div>
+            <div class="wordmark-title">Geospatial Engine</div>
+            <div class="wordmark-sub">PS SIH26013 · Harmonization</div>
+          </div>
+          <button class="btn-drawer-close" onclick="toggleMobileDrawer(false)" aria-label="Close navigation">✕</button>
         </div>
 
-        <nav class="sidenav">
-          <button class="sidenav-item active" data-tab="cases">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="2.5" width="12" height="9" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M4.5 2.5V1.5a1 1 0 011-1h3a1 1 0 011 1v1" stroke="currentColor" stroke-width="1.3"/></svg>
-            Cases
+        <nav class="sidenav" role="tablist">
+          <button class="sidenav-item active" data-tab="cases" role="tab">
+            <svg width="15" height="15" viewBox="0 0 14 14" fill="none"><rect x="1" y="2.5" width="12" height="9" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M4.5 2.5V1.5a1 1 0 011-1h3a1 1 0 011 1v1" stroke="currentColor" stroke-width="1.3"/></svg>
+            <span>Cases &amp; Registry</span>
           </button>
-          <button class="sidenav-item" data-tab="ingest">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1v8M4 6l3 3 3-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M2 11h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-            Ingest Records
+          <button class="sidenav-item" data-tab="ingest" role="tab">
+            <svg width="15" height="15" viewBox="0 0 14 14" fill="none"><path d="M7 1v8M4 6l3 3 3-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M2 11h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+            <span>Ingest Records</span>
           </button>
-          <button class="sidenav-item" data-tab="aimatch">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="5" cy="5" r="3" stroke="currentColor" stroke-width="1.3"/><circle cx="9" cy="9" r="3" stroke="currentColor" stroke-width="1.3"/></svg>
-            AI Parcel Match
+          <button class="sidenav-item" data-tab="aimatch" role="tab">
+            <svg width="15" height="15" viewBox="0 0 14 14" fill="none"><circle cx="5" cy="5" r="3" stroke="currentColor" stroke-width="1.3"/><circle cx="9" cy="9" r="3" stroke="currentColor" stroke-width="1.3"/></svg>
+            <span>AI Parcel Matcher</span>
           </button>
-          <button class="sidenav-item" data-tab="topology">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 2h5v5H2zM7 7h5v5H7z" stroke="currentColor" stroke-width="1.3"/></svg>
-            Topology Repair
+          <button class="sidenav-item" data-tab="topology" role="tab">
+            <svg width="15" height="15" viewBox="0 0 14 14" fill="none"><path d="M2 2h5v5H2zM7 7h5v5H7z" stroke="currentColor" stroke-width="1.3"/></svg>
+            <span>Topology Repair</span>
           </button>
-          <button class="sidenav-item" data-tab="imagery">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="2" y="2" width="10" height="10" rx="1.5" stroke="currentColor" stroke-width="1.3"/><circle cx="7" cy="7" r="2.5" stroke="currentColor" stroke-width="1.3"/></svg>
-            Drone Footprints
+          <button class="sidenav-item" data-tab="imagery" role="tab">
+            <svg width="15" height="15" viewBox="0 0 14 14" fill="none"><rect x="2" y="2" width="10" height="10" rx="1.5" stroke="currentColor" stroke-width="1.3"/><circle cx="7" cy="7" r="2.5" stroke="currentColor" stroke-width="1.3"/></svg>
+            <span>Drone Footprints</span>
           </button>
-          <button class="sidenav-item" data-tab="proposals">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 2h8a1 1 0 011 1v8a1 1 0 01-1 1H3a1 1 0 01-1-1V3a1 1 0 011-1z" stroke="currentColor" stroke-width="1.3"/><path d="M5 5h4M5 8h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-            Harmonization
+          <button class="sidenav-item" data-tab="proposals" role="tab">
+            <svg width="15" height="15" viewBox="0 0 14 14" fill="none"><path d="M3 2h8a1 1 0 011 1v8a1 1 0 01-1 1H3a1 1 0 01-1-1V3a1 1 0 011-1z" stroke="currentColor" stroke-width="1.3"/><path d="M5 5h4M5 8h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+            <span>Harmonization</span>
           </button>
-          <button class="sidenav-item" data-tab="provenance">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="2" r="1.5" stroke="currentColor" stroke-width="1.2"/><circle cx="3" cy="11" r="1.5" stroke="currentColor" stroke-width="1.2"/><circle cx="11" cy="11" r="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M7 3.5L3 9.5M7 3.5L11 9.5" stroke="currentColor" stroke-width="1.2"/></svg>
-            Provenance
+          <button class="sidenav-item" data-tab="provenance" role="tab">
+            <svg width="15" height="15" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="2" r="1.5" stroke="currentColor" stroke-width="1.2"/><circle cx="3" cy="11" r="1.5" stroke="currentColor" stroke-width="1.2"/><circle cx="11" cy="11" r="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M7 3.5L3 9.5M7 3.5L11 9.5" stroke="currentColor" stroke-width="1.2"/></svg>
+            <span>Provenance DAG</span>
           </button>
-          <button class="sidenav-item" data-tab="analysis">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="5.5" cy="5.5" r="3.5" stroke="currentColor" stroke-width="1.3"/><path d="M8.5 8.5L12 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-            Pairwise Analysis
+          <button class="sidenav-item" data-tab="analysis" role="tab">
+            <svg width="15" height="15" viewBox="0 0 14 14" fill="none"><circle cx="5.5" cy="5.5" r="3.5" stroke="currentColor" stroke-width="1.3"/><path d="M8.5 8.5L12 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            <span>GIS Map Analysis</span>
           </button>
-          <button class="sidenav-item" data-tab="evidence">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="4" width="11" height="9" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M4.5 4V3a2.5 2.5 0 015 0v1" stroke="currentColor" stroke-width="1.3"/><circle cx="7" cy="8.5" r="1.5" fill="currentColor"/></svg>
-            Evidence Vault
+          <button class="sidenav-item" data-tab="evidence" role="tab">
+            <svg width="15" height="15" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="4" width="11" height="9" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M4.5 4V3a2.5 2.5 0 015 0v1" stroke="currentColor" stroke-width="1.3"/><circle cx="7" cy="8.5" r="1.5" fill="currentColor"/></svg>
+            <span>Evidence Vault</span>
           </button>
         </nav>
 
         <div class="sidebar-presets">
-          <div class="presets-label">Official Test Cases</div>
-          <button class="preset-btn" style="color:var(--blue);font-weight:600;" onclick="seedDemoCases()">⚡ Seed 4 Official Cases</button>
+          <div class="presets-label">Official Test Scenarios</div>
+          <button class="preset-btn preset-seed" onclick="seedDemoCases()">⚡ Seed 4 Official Scenarios</button>
           <button class="preset-btn" onclick="switchCase('DEMO-ALIGN')">1. Alignment (Urban)</button>
           <button class="preset-btn" onclick="switchCase('DEMO-ENCROACH')">2. Drone Encroachment</button>
           <button class="preset-btn" onclick="switchCase('DEMO-TOPOLOGY')">3. Topology Overlap</button>
@@ -72,30 +82,64 @@
 
       <div class="sidebar-bottom">
         <div class="subsys">
-          <div class="subsys-row"><span class="dot dot-ok"></span><span>STRtree Spatial Index</span></div>
-          <div class="subsys-row"><span class="dot dot-ok"></span><span>DAG Provenance Engine</span></div>
-          <div class="subsys-row"><span class="dot dot-ok"></span><span>Ed25519 Trust Layer</span></div>
+          <div class="subsys-row"><span class="dot dot-ok" id="dotSpatial"></span><span>STRtree Spatial Index</span></div>
+          <div class="subsys-row"><span class="dot dot-ok" id="dotDAG"></span><span>DAG Lineage Engine</span></div>
+          <div class="subsys-row"><span class="dot dot-ok" id="dotTrust"></span><span>Ed25519 Trust Layer</span></div>
         </div>
         <div class="active-case-strip" id="activeCaseStrip" style="display:none">
-          <div class="acs-label">Active case</div>
+          <div class="acs-label">Active Case</div>
           <div class="acs-id" id="acsCaseId">—</div>
           <div class="acs-records" id="acsRecords">0 records</div>
         </div>
       </div>
     </aside>
 
+    <!-- Main Workspace -->
     <main class="workspace">
+      <!-- Topbar Header -->
       <header class="topbar">
         <div class="topbar-left">
-          <span class="topbar-tab-name" id="topbarTabName">Cases</span>
-          <span class="topbar-sep">/</span>
-          <span class="topbar-case" id="topbarCase">No case selected</span>
-        </div>
-        <div class="topbar-right">
-          <div class="api-base-row">
-            <label class="api-label">API</label>
-            <input type="text" id="apiBase" value="http://127.0.0.1:8001" class="api-input">
+          <button class="btn-hamburger" onclick="toggleMobileDrawer(true)" aria-label="Open navigation menu">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+          </button>
+          <div class="breadcrumbs">
+            <span class="crumb-root" onclick="switchTab('cases')">Workstation</span>
+            <span class="crumb-sep">/</span>
+            <span class="crumb-tab" id="topbarTabName">Cases</span>
+            <span class="crumb-sep">/</span>
+            <span class="crumb-case" id="topbarCase">No case selected</span>
           </div>
+        </div>
+
+        <div class="topbar-right">
+          <!-- Guided Demo Trigger Button -->
+          <button class="btn btn-demo-guide" onclick="toggleJudgeDemoModal()" title="Open Judge Demonstration Stepper">
+            <span class="demo-glow-dot"></span>
+            <span class="demo-label">⚡ Judge Demo Flow</span>
+          </button>
+
+          <!-- Theme Selector -->
+          <div class="theme-picker-wrapper">
+            <button class="btn-theme" id="themeBtn" onclick="toggleThemeMenu()" title="Select Theme">
+              <span id="themeIcon">🌓</span>
+              <span class="theme-text" id="themeLabel">Dark Geo</span>
+            </button>
+            <div class="theme-dropdown" id="themeDropdown" style="display:none">
+              <button class="theme-opt" onclick="setTheme('dark')">🌲 Dark Geo</button>
+              <button class="theme-opt" onclick="setTheme('light')">☀️ Urban Lab</button>
+              <button class="theme-opt" onclick="setTheme('contrast')">⚡ High Contrast</button>
+              <button class="theme-opt" onclick="setTheme('system')">💻 System Default</button>
+            </div>
+          </div>
+
+          <!-- Connection Status Pill -->
+          <button class="conn-pill" id="connPill" onclick="openConnDiagnostics()" title="Click for Connection Diagnostics">
+            <span class="conn-dot dot-ok" id="connDot"></span>
+            <span class="conn-label" id="connLabel">API Online</span>
+            <span class="conn-ping" id="connPing">-- ms</span>
+          </button>
+
+          <button class="btn btn-ghost btn-icon" onclick="refreshCurrentView()" title="Refresh Current View">↻</button>
         </div>
       </header>
 
@@ -103,34 +147,37 @@
       <section class="tab-content active" id="tab-cases">
         <div class="tab-header">
           <div>
-            <h2 class="tab-title">Cases</h2>
-            <p class="tab-desc">Each case holds records, provenance declarations, and signed analysis results.</p>
+            <h1 class="tab-title">Geospatial Cases &amp; Cadastral Registry</h1>
+            <p class="tab-desc">Each case maintains multi-source land records, lineage graphs, and cryptographically signed harmonization records.</p>
           </div>
-          <button class="btn btn-primary" onclick="showNewCaseForm()">+ New case</button>
+          <div class="tab-header-actions">
+            <button class="btn btn-ghost" onclick="seedDemoCases()">⚡ Seed 4 Scenarios</button>
+            <button class="btn btn-primary" onclick="showNewCaseForm()">+ New Case</button>
+          </div>
         </div>
 
         <div class="form-card" id="newCaseForm" style="display:none">
+          <div class="form-section-title">Create New Geospatial Case</div>
           <div class="form-row">
             <div class="field">
-              <label class="field-label">Case ID <span class="optional">(auto-generated if blank)</span></label>
+              <label class="field-label">Case ID <span class="optional">(auto-generated if left blank)</span></label>
               <input type="text" id="newCaseId" class="input" placeholder="PARCEL-PS-2201">
             </div>
             <div class="field">
-              <label class="field-label">Title</label>
-              <input type="text" id="newCaseTitle" class="input" placeholder="Parcel boundary dispute">
+              <label class="field-label">Title / Target Survey Zone</label>
+              <input type="text" id="newCaseTitle" class="input" placeholder="Survey Zone 14 — Discrepancy Resolution">
             </div>
           </div>
           <div class="form-actions">
-            <button class="btn btn-primary" onclick="createCase()">Create</button>
+            <button class="btn btn-primary" onclick="createCase()">Create Case</button>
             <button class="btn btn-ghost" onclick="hideNewCaseForm()">Cancel</button>
           </div>
         </div>
 
         <div id="casesList" class="cases-list">
-          <div class="empty-state">
-            <div class="empty-icon">🗂</div>
-            <div class="empty-title">No cases yet</div>
-            <div class="empty-sub">Create a case or load a demo preset from the sidebar</div>
+          <div class="skeleton-card">
+            <div class="skeleton-line" style="width: 40%"></div>
+            <div class="skeleton-line" style="width: 70%"></div>
           </div>
         </div>
       </section>
@@ -139,105 +186,92 @@
       <section class="tab-content" id="tab-ingest">
         <div class="tab-header">
           <div>
-            <h2 class="tab-title">Ingest Records</h2>
-            <p class="tab-desc">Upload GeoJSON records. Invalid geometry is rejected at ingestion — never reaches the analysis pipeline.</p>
+            <h1 class="tab-title">Ingest Multi-Source Records</h1>
+            <p class="tab-desc">Upload GeoJSON cadastral polygons. Topology anomalies, inverted polygons, and invalid coordinates are validated at ingestion.</p>
           </div>
         </div>
 
         <div class="form-card">
-          <div class="form-section-title">Add record</div>
-          <div class="form-row">
-            <div class="field">
-              <label class="field-label">Record ID</label>
-              <input type="text" id="recId" class="input" placeholder="REC-A">
+          <div class="form-section-title">Add Cadastral Record</div>
+          <div class="form-row" style="flex-wrap: wrap;">
+            <div class="field" style="flex:1; min-width:180px;">
+              <label class="field-label">Record Identifier</label>
+              <input type="text" id="recId" class="input" placeholder="REV-PARCEL-204">
             </div>
-            <div class="field">
-              <label class="field-label">Source label</label>
-              <input type="text" id="recSource" class="input" placeholder="Revenue Department DB">
+            <div class="field" style="flex:1; min-width:180px;">
+              <label class="field-label">Source Agency</label>
+              <input type="text" id="recSource" class="input" placeholder="State Revenue Department">
             </div>
-            <div class="field">
-              <label class="field-label">CRS</label>
+            <div class="field" style="flex:1; min-width:140px;">
+              <label class="field-label">Coordinate Reference (CRS)</label>
               <input type="text" id="recCrs" class="input" value="EPSG:4326">
             </div>
           </div>
           <div class="field" style="margin-top:10px;">
-            <label class="field-label">GeoJSON geometry</label>
-            <textarea id="recGeometry" class="code-area" rows="5" placeholder='{"type":"Polygon","coordinates":[[[78.9,20.5],[78.92,20.5],[78.92,20.518],[78.9,20.518],[78.9,20.5]]]}'></textarea>
-          </div>
-          <div class="field" style="margin-top:10px;">
-            <label class="field-label">Capture timestamp <span class="optional">(optional, ISO 8601)</span></label>
-            <input type="text" id="recTs" class="input" placeholder="2024-03-15T00:00:00Z">
+            <label class="field-label">GeoJSON Geometry (Polygon or MultiPolygon)</label>
+            <textarea id="recGeometry" class="code-area" rows="4" placeholder='{"type": "Polygon", "coordinates": [[[77.6, 12.9], [77.61, 12.9], [77.61, 12.91], [77.6, 12.91], [77.6, 12.9]]]}'></textarea>
           </div>
           <div class="form-actions">
-            <button class="btn btn-primary" onclick="ingestRecord()">Ingest record</button>
+            <button class="btn btn-primary" onclick="addRecord()">Ingest Record</button>
           </div>
-          <div id="ingestResult"></div>
         </div>
 
-        <div id="recordsList" style="margin-top:4px;"></div>
+        <div id="recordsList" class="records-list"></div>
       </section>
 
       <!-- ══ AI PARCEL MATCH TAB ══ -->
       <section class="tab-content" id="tab-aimatch">
         <div class="tab-header">
           <div>
-            <h2 class="tab-title">AI-Enabled Geospatial Matcher</h2>
-            <p class="tab-desc">Multi-dimensional matching combining boundary topology (IoU), centroid proximity, survey number Levenshtein token analysis, and attribute concordance.</p>
+            <h1 class="tab-title">AI Multi-Source Entity Matcher</h1>
+            <p class="tab-desc">Uses spatial IoU geometric overlap, attribute token similarity, and address text normalization to find corresponding parcel records across agencies.</p>
           </div>
-          <div style="display:flex;gap:8px;">
-            <button class="btn btn-ghost btn-sm" onclick="runAttributeHarmonize()">Check Attribute Variance</button>
-            <button class="btn btn-primary btn-sm" onclick="runAIMatch()">Run AI Matching</button>
-          </div>
+          <button class="btn btn-primary" onclick="runAIMatching()">Run AI Matcher</button>
         </div>
-
-        <div id="aimatchResults">
+        <div id="aiMatchResults">
           <div class="empty-state">
             <div class="empty-icon">🤖</div>
-            <div class="empty-title">No matching runs yet</div>
-            <div class="empty-sub">Click "Run AI Matching" or seed official test cases from the sidebar.</div>
+            <div class="empty-title">AI Matching Ready</div>
+            <div class="empty-sub">Ingest multi-agency records or seed an official test case, then run matching.</div>
           </div>
         </div>
-        <div id="attributeHarmonizeResults" style="margin-top:14px;"></div>
       </section>
 
       <!-- ══ TOPOLOGY REPAIR TAB ══ -->
       <section class="tab-content" id="tab-topology">
         <div class="tab-header">
           <div>
-            <h2 class="tab-title">Automated Cadastral Topology Repair</h2>
-            <p class="tab-desc">Eliminate boundary overlaps, double-counted area claims, and sliver gaps with shared edge-snapping and priority trimming.</p>
+            <h1 class="tab-title">Cadastral Topology Repair &amp; Overlap Clean</h1>
+            <p class="tab-desc">Detects and corrects illegal overlaps, silver polygons, and vertex misalignment across cadastral parcel boundaries.</p>
           </div>
-          <div style="display:flex;gap:8px;align-items:center;">
-            <label style="font-size:12px;color:var(--text2);">Snap Tol (m):</label>
-            <input type="number" id="snapTol" class="input input-sm" style="width:70px;" value="1.5" step="0.5">
-            <button class="btn btn-primary btn-sm" onclick="runTopologyRepair()">Snap &amp; Repair Topology</button>
+          <div style="display:flex;gap:10px;align-items:center;">
+            <input type="number" id="snapTol" class="input input-sm" value="1.0" min="0.1" max="10.0" step="0.1" style="width:90px;" title="Snap tolerance in meters">
+            <button class="btn btn-primary" onclick="runTopologyRepair()">Run Topology Repair</button>
           </div>
         </div>
-
         <div id="topologyResults">
           <div class="empty-state">
             <div class="empty-icon">📐</div>
-            <div class="empty-title">Ready for topology correction</div>
-            <div class="empty-sub">Execute repair to detect boundary overlaps and view before/after metric deltas.</div>
+            <div class="empty-title">Topology Repair Engine</div>
+            <div class="empty-sub">Resolves boundary overlaps and snappable vertices across overlapping agency surveys.</div>
           </div>
         </div>
       </section>
 
-      <!-- ══ DRONE IMAGERY TAB ══ -->
+      <!-- ══ DRONE FOOTPRINTS TAB ══ -->
       <section class="tab-content" id="tab-imagery">
         <div class="tab-header">
           <div>
-            <h2 class="tab-title">Drone ORI &amp; Rooftop Footprints</h2>
-            <p class="tab-desc">Photogrammetric feature analysis: detect illegal boundary encroachment and unrecorded construction on vacant/agricultural land.</p>
+            <h1 class="tab-title">Drone Photogrammetry &amp; Encroachment Analysis</h1>
+            <p class="tab-desc">Extracts drone building footprints from ortho-imagery, computes Floor Space Index (FSI) coverage, and flags boundary encroachments.</p>
           </div>
-          <button class="btn btn-primary btn-sm" onclick="runDroneAnalysis()">Run Encroachment CV Engine</button>
+          <button class="btn btn-primary" onclick="runDroneAnalysis()">Run Footprint Analysis</button>
         </div>
-
         <div id="imageryResults">
           <div class="empty-state">
-            <div class="empty-icon">🛰️</div>
-            <div class="empty-title">No drone analysis run</div>
-            <div class="empty-sub">Select "2. Drone Encroachment" preset to load high-resolution rooftop polygons.</div>
+            <div class="empty-icon">🚁</div>
+            <div class="empty-title">Drone Footprint Analyzer</div>
+            <div class="empty-sub">Cross-examines photogrammetric building vectors against official survey property lines.</div>
           </div>
         </div>
       </section>
@@ -246,17 +280,19 @@
       <section class="tab-content" id="tab-proposals">
         <div class="tab-header">
           <div>
-            <h2 class="tab-title">Authoritative Harmonization Proposals</h2>
-            <p class="tab-desc">Evidence-weighted reconciliation of competing cadastral, municipal, and drone claims with official human-in-the-loop review and Ed25519 signing.</p>
+            <h1 class="tab-title">Authoritative Harmonization Proposals</h1>
+            <p class="tab-desc">Synthesizes multi-source claims into a single legal proposal with confidence scores, recommended boundaries, and official digital signing.</p>
           </div>
-          <button class="btn btn-primary btn-sm" onclick="generateHarmonizationProposal()">+ Generate New Proposal</button>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn btn-primary" onclick="generateHarmonizationProposal()">+ Generate New Proposal</button>
+            <button class="btn btn-ghost" onclick="switchTab('evidence');runCanonicalExport()" title="Export signed canonical GeoJSON">⬇ Canonical Export</button>
+          </div>
         </div>
-
         <div id="proposalsList">
           <div class="empty-state">
             <div class="empty-icon">📜</div>
-            <div class="empty-title">No proposals generated</div>
-            <div class="empty-sub">Generate a proposal to review recommended boundaries, area, and land use.</div>
+            <div class="empty-title">No Proposals Generated Yet</div>
+            <div class="empty-sub">Click "+ Generate New Proposal" to reconcile conflicting claims for the active case.</div>
           </div>
         </div>
       </section>
@@ -265,112 +301,183 @@
       <section class="tab-content" id="tab-provenance">
         <div class="tab-header">
           <div>
-            <h2 class="tab-title">Provenance Graph</h2>
-            <p class="tab-desc">Declare lineage relationships. The system traces actual DAG edges — not metadata labels.</p>
+            <h1 class="tab-title">Provenance DAG &amp; Lineage Graph</h1>
+            <p class="tab-desc">Directed Acyclic Graph (DAG) tracking the origin, transformations, and custody of every land record.</p>
           </div>
         </div>
+        <div id="provenanceGraph" class="provenance-container"></div>
 
-        <div class="notice-box notice-blue" style="margin-bottom:16px;">
-          <strong>Why provenance matters:</strong> Three records that disagree geometrically but share a common origin represent only one independent observation — not three. The system establishes this by tracing actual lineage, not trusting source names.
-        </div>
-
-        <div class="form-card">
-          <div class="form-section-title">Add provenance node</div>
-          <div class="form-row">
-            <div class="field">
-              <label class="field-label">Node ID</label>
-              <input type="text" id="nodeId" class="input" placeholder="survey_2021">
+        <!-- Temporal Change Analysis -->
+        <div style="margin-top:24px;border-top:1px solid var(--border-subtle);padding-top:20px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+            <div>
+              <div style="font-weight:700;font-size:15px;">Temporal Record-History Change Analysis</div>
+              <div style="font-size:12px;color:var(--text-dim);margin-top:2px;">Detects land-use transitions, area deltas, ownership changes, and boundary shifts from ingested records. Vector-level analysis — no satellite imagery required.</div>
             </div>
-            <div class="field">
-              <label class="field-label">Node type</label>
-              <select id="nodeType" class="input">
-                <option value="origin">ORIGIN</option>
-                <option value="dataset">DATASET</option>
-                <option value="transformation">TRANSFORMATION</option>
-                <option value="record">RECORD</option>
-              </select>
-            </div>
-            <div class="field">
-              <label class="field-label">Parent node IDs <span class="optional">(comma-separated)</span></label>
-              <input type="text" id="nodeParents" class="input" placeholder="survey_2021">
-            </div>
+            <button class="btn btn-primary btn-sm" onclick="runTemporalAnalysis()" id="btnTemporalAnalysis">▶ Run Analysis</button>
           </div>
-          <div class="form-actions">
-            <button class="btn btn-primary" onclick="addProvenanceNode()">Add node</button>
-          </div>
-          <div id="nodeResult"></div>
+          <div id="temporalResults"></div>
         </div>
-
-        <div id="provenanceGraph" style="margin-top:4px;"></div>
       </section>
 
-      <!-- ══ ANALYSIS TAB ══ -->
+      <!-- ══ ANALYSIS & MAP TAB ══ -->
       <section class="tab-content" id="tab-analysis">
         <div class="tab-header">
           <div>
-            <h2 class="tab-title">Analysis</h2>
-            <p class="tab-desc">Four independent axes: geometry, temporal, CRS, provenance. No single composite score.</p>
+            <h1 class="tab-title">Pairwise Geometric Analysis &amp; GIS Map</h1>
+            <p class="tab-desc">Spatial difference, IoU intersection, and attribute conflict detection between pairs of records.</p>
           </div>
-          <button class="btn btn-primary" id="btnAnalyze" onclick="runAnalysis()">Run analysis</button>
+          <button class="btn btn-primary" onclick="runPairwiseAnalysis()">Analyze Selected Pair</button>
         </div>
 
-        <div id="analysisSummary"></div>
-
-        <!-- Map -->
-        <div id="mapWrap" style="display:none; margin-bottom:14px;">
-          <div class="card-title-row">
-            <span class="card-sublabel">Boundary map</span>
-            <div style="display:flex; gap:6px;" id="mapFilterBtns"></div>
+        <div class="form-row" style="margin-bottom:14px;">
+          <div class="field">
+            <label class="field-label">Record A</label>
+            <select id="selectRecA" class="input"></select>
           </div>
-          <div id="leafletMap" style="height:300px; border-radius:8px; overflow:hidden; border:1px solid var(--border);"></div>
-          <div id="mapLegend" class="map-legend"></div>
+          <div class="field">
+            <label class="field-label">Record B</label>
+            <select id="selectRecB" class="input"></select>
+          </div>
         </div>
 
-        <div id="candidateResults"></div>
+        <div class="map-wrapper">
+          <div id="leafletMap" class="leaflet-container" style="height:380px;border-radius:var(--radius);border:1px solid var(--border-subtle);"></div>
+        </div>
+
+        <div id="analysisResult" style="margin-top:14px;"></div>
       </section>
 
-      <!-- ══ EVIDENCE TAB ══ -->
+      <!-- ══ EVIDENCE VAULT TAB ══ -->
       <section class="tab-content" id="tab-evidence">
         <div class="tab-header">
           <div>
-            <h2 class="tab-title">Evidence</h2>
-            <p class="tab-desc">Every analysis conclusion is signed with Ed25519 and independently verifiable.</p>
+            <h1 class="tab-title">Cryptographic Evidence Vault</h1>
+            <p class="tab-desc">All signed evidence packages for the active case. Signed with Ed25519 for legal defensibility.</p>
           </div>
+          <button class="btn btn-primary btn-sm" onclick="runCanonicalExport()" id="btnCanonicalExport">⬇ Canonical GeoJSON Export</button>
         </div>
-
+        <div id="canonicalExportResult" style="margin-bottom:16px;"></div>
         <div id="evidenceList"></div>
-
-        <!-- Tamper demo -->
-        <div class="form-card" id="tamperSection" style="display:none; margin-top:12px;">
-          <div class="form-section-title">Tamper demonstration</div>
-          <p class="step-sub" style="margin-bottom:12px;">Modify the independence conclusion and watch the verifier reject it.</p>
-          <div class="form-row">
-            <div class="field">
-              <label class="field-label">Evidence ID</label>
-              <input type="text" id="tamperEvidenceId" class="input mono-input">
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="field">
-              <label class="field-label">Field path</label>
-              <input type="text" id="tamperField" class="input mono-input" placeholder="provenance.independent_lineages">
-            </div>
-            <div class="field">
-              <label class="field-label">New value</label>
-              <input type="text" id="tamperValue" class="input mono-input" placeholder="3">
-            </div>
-          </div>
-          <div class="tamper-presets">
-            <span class="preset-label">Presets:</span>
-            <button class="btn-preset" onclick="setTamperPreset('provenance.independent_lineages','3')">lineages 1 → 3</button>
-            <button class="btn-preset" onclick="setTamperPreset('geometry_result.decision','&quot;NO_CONFLICT&quot;')">decision → NO_CONFLICT</button>
-          </div>
-          <button class="btn btn-danger btn-sm" onclick="runTamper()">Attempt tamper &amp; verify</button>
-          <div id="tamperResult"></div>
-        </div>
       </section>
     </main>
   </div>
+
+  <!-- ══ CONNECTION DIAGNOSTICS MODAL ══ -->
+  <div class="modal-backdrop" id="connModalBackdrop" style="display:none;" onclick="closeConnDiagnostics(event)">
+    <div class="modal-card" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <div class="modal-title">API Connection Diagnostics</div>
+        <button class="btn-modal-close" onclick="closeConnDiagnostics()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="diag-status-row">
+          <div class="diag-badge" id="diagStatusBadge">● Operational</div>
+          <div class="diag-latency" id="diagLatency">Ping: 0 ms</div>
+        </div>
+
+        <div class="diag-grid">
+          <div class="diag-item">
+            <span class="diag-k">Active API Origin:</span>
+            <span class="diag-v mono-text" id="diagOrigin">https://...</span>
+          </div>
+          <div class="diag-item">
+            <span class="diag-k">Platform Version:</span>
+            <span class="diag-v" id="diagVersion">2.0.0</span>
+          </div>
+          <div class="diag-item">
+            <span class="diag-k">Cryptographic Layer:</span>
+            <span class="diag-v" id="diagCrypto">Ed25519</span>
+          </div>
+          <div class="diag-item">
+            <span class="diag-k">Active Cases:</span>
+            <span class="diag-v" id="diagCases">4</span>
+          </div>
+        </div>
+
+        <div class="form-section-title" style="margin-top:16px;">Advanced Developer Override</div>
+        <p class="step-sub" style="margin-bottom:8px;">Leave blank to use same-origin automatic API resolution.</p>
+        <div class="form-row">
+          <input type="text" id="apiBaseOverride" class="input mono-input" placeholder="Leave empty for auto (window.location.origin)">
+          <button class="btn btn-primary btn-sm" onclick="saveApiOverride()">Save</button>
+          <button class="btn btn-ghost btn-sm" onclick="resetApiOverride()">Reset</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ JUDGE DEMO FLOW MODAL ══ -->
+  <div class="modal-backdrop" id="demoModalBackdrop" style="display:none;" onclick="closeJudgeDemoModal(event)">
+    <div class="modal-card modal-lg" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <div>
+          <div class="modal-title">⚡ SIH Judge Demonstration Flow</div>
+          <div class="modal-sub">End-to-end evaluation walkthrough covering all PS SIH26013 capabilities</div>
+        </div>
+        <button class="btn-modal-close" onclick="closeJudgeDemoModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="demo-flow-stepper" id="demoStepper">
+          <div class="stepper-item" id="demoStep1">
+            <div class="stepper-dot">1</div>
+            <div class="stepper-content">
+              <div class="stepper-title">Seed 4 Official Scenarios</div>
+              <div class="stepper-desc">Ingests multi-agency records (Revenue, Municipal, Drone, Survey).</div>
+            </div>
+          </div>
+          <div class="stepper-item" id="demoStep2">
+            <div class="stepper-dot">2</div>
+            <div class="stepper-content">
+              <div class="stepper-title">AI Multi-Source Entity Match</div>
+              <div class="stepper-desc">Calculates spatial IoU, attribute token match, and confidence scores.</div>
+            </div>
+          </div>
+          <div class="stepper-item" id="demoStep3">
+            <div class="stepper-dot">3</div>
+            <div class="stepper-content">
+              <div class="stepper-title">Automated Cadastral Topology Repair</div>
+              <div class="stepper-desc">Snaps misaligned boundary vertices and removes illegal overlaps.</div>
+            </div>
+          </div>
+          <div class="stepper-item" id="demoStep4">
+            <div class="stepper-dot">4</div>
+            <div class="stepper-content">
+              <div class="stepper-title">Drone Footprint &amp; Encroachment Analysis</div>
+              <div class="stepper-desc">Detects illegal building protrusions across property lines.</div>
+            </div>
+          </div>
+          <div class="stepper-item" id="demoStep5">
+            <div class="stepper-dot">5</div>
+            <div class="stepper-content">
+              <div class="stepper-title">Harmonization Proposal Synthesis</div>
+              <div class="stepper-desc">Generates authoritative consensus boundary proposal.</div>
+            </div>
+          </div>
+          <div class="stepper-item" id="demoStep6">
+            <div class="stepper-dot">6</div>
+            <div class="stepper-content">
+              <div class="stepper-title">Official Review &amp; Ed25519 Signing</div>
+              <div class="stepper-desc">Cryptographically signs canonical record into immutable evidence.</div>
+            </div>
+          </div>
+        </div>
+
+        <div id="demoProgressStatus" class="demo-status-box" style="display:none">
+          <div class="spinner"></div>
+          <span id="demoProgressText">Executing demonstration workflow...</span>
+        </div>
+
+        <div id="demoResultSummary" style="margin-top:14px;"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary" id="btnStartDemo" onclick="runJudgeDemoSequence()">▶ Run End-to-End Judge Demo</button>
+        <button class="btn btn-ghost" onclick="closeJudgeDemoModal()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast notification container -->
+  <div class="toast-container" id="toastContainer"></div>
 
   <script src="/static/app.js"></script>
 </body>

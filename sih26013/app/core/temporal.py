@@ -1,8 +1,24 @@
-"""Temporal analysis for geospatial records."""
+"""Temporal analysis for geospatial records — SIH26013.
+
+Provides two layers of temporal reasoning:
+
+1. timestamp_analysis: Validates and compares ISO 8601 timestamps on individual records,
+   detecting future timestamps, ancient records, and temporal gaps that qualify a
+   discrepancy as "temporally separated" rather than "concurrent conflict".
+
+2. record_history_diff: When the same survey number appears in multiple records from
+   different agencies or timestamps, computes a structured change vector:
+     - Which attributes changed
+     - Direction of change (e.g. AGRICULTURAL → COMMERCIAL)
+     - Area delta
+     - Temporal gap in days
+   This replaces satellite/raster change detection with pure vector/attribute diffing
+   on available land record data, which is accurate and appropriate for the PS scope.
+"""
 from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
 
 ANCIENT_CUTOFF_YEAR = 1900
@@ -16,6 +32,66 @@ class TemporalResult:
     qualified: bool       # True if temporal gap qualifies the conflict
     gap_days: Optional[float]
     reason: str
+
+
+@dataclass
+class AttributeChange:
+    field: str
+    old_value: Any
+    new_value: Any
+    change_type: str  # LAND_USE_CHANGE | AREA_DELTA | OWNER_CHANGE | BOUNDARY_SHIFT | OTHER
+
+
+@dataclass
+class RecordHistoryDiff:
+    """
+    Structured change vector between two records sharing the same survey number.
+
+    This is a vector/attribute-level temporal change analysis — not raster/satellite
+    imagery diffing. It surfaces what changed between departmental records over time.
+    """
+    survey_number: str
+    record_a_id: str
+    record_b_id: str
+    timestamp_a: Optional[str]
+    timestamp_b: Optional[str]
+    gap_days: Optional[float]
+    temporally_qualified: bool
+    changes: List[AttributeChange]
+    area_delta_sq_m: Optional[float]
+    area_delta_pct: Optional[float]
+    land_use_changed: bool
+    owner_changed: bool
+    geometry_changed: bool
+    change_severity: str  # MINOR | MODERATE | MAJOR | CRITICAL
+    summary: str
+
+    def to_dict(self) -> dict:
+        return {
+            "survey_number": self.survey_number,
+            "record_a_id": self.record_a_id,
+            "record_b_id": self.record_b_id,
+            "timestamp_a": self.timestamp_a,
+            "timestamp_b": self.timestamp_b,
+            "gap_days": self.gap_days,
+            "temporally_qualified": self.temporally_qualified,
+            "changes": [
+                {
+                    "field": c.field,
+                    "old_value": c.old_value,
+                    "new_value": c.new_value,
+                    "change_type": c.change_type,
+                }
+                for c in self.changes
+            ],
+            "area_delta_sq_m": self.area_delta_sq_m,
+            "area_delta_pct": self.area_delta_pct,
+            "land_use_changed": self.land_use_changed,
+            "owner_changed": self.owner_changed,
+            "geometry_changed": self.geometry_changed,
+            "change_severity": self.change_severity,
+            "summary": self.summary,
+        }
 
 
 def parse_timestamp(ts: Optional[str]) -> Optional[datetime]:
@@ -75,3 +151,139 @@ def analyze_temporal(ts_a: Optional[str], ts_b: Optional[str]) -> TemporalResult
             f"temporal gap {gap:.0f} days > {TEMPORAL_QUALIFICATION_DAYS} days: qualifies as temporally qualified discrepancy",
         )
     return TemporalResult(True, False, round(gap, 2), f"temporal gap {gap:.1f} days: same-era conflict")
+
+
+def diff_record_history(
+    record_a: Dict[str, Any],
+    record_b: Dict[str, Any],
+    geometry_a: Optional[Dict] = None,
+    geometry_b: Optional[Dict] = None,
+) -> RecordHistoryDiff:
+    """
+    Compute a structured change vector between two land records.
+
+    record_a and record_b are metadata dicts (typically from RecordInput.metadata)
+    containing fields like: survey_number, area_sq_m, land_use, owner, etc.
+
+    This performs vector/attribute-level temporal change analysis using the
+    records actually ingested — no satellite imagery required.
+    """
+    survey_number = record_a.get("survey_number") or record_b.get("survey_number") or "UNKNOWN"
+    rec_a_id = record_a.get("record_id", "record_A")
+    rec_b_id = record_b.get("record_id", "record_B")
+    ts_a = record_a.get("timestamp") or record_a.get("capture_timestamp")
+    ts_b = record_b.get("timestamp") or record_b.get("capture_timestamp")
+
+    temporal = analyze_temporal(ts_a, ts_b)
+    changes: List[AttributeChange] = []
+
+    # Land use change
+    lu_a = str(record_a.get("land_use", "")).upper()
+    lu_b = str(record_b.get("land_use", "")).upper()
+    land_use_changed = bool(lu_a and lu_b and lu_a != lu_b)
+    if land_use_changed:
+        changes.append(AttributeChange(
+            field="land_use",
+            old_value=lu_a,
+            new_value=lu_b,
+            change_type="LAND_USE_CHANGE",
+        ))
+
+    # Area delta
+    area_a = record_a.get("area_sq_m")
+    area_b = record_b.get("area_sq_m")
+    area_delta_sq_m: Optional[float] = None
+    area_delta_pct: Optional[float] = None
+    if isinstance(area_a, (int, float)) and isinstance(area_b, (int, float)) and area_a > 0:
+        area_delta_sq_m = round(area_b - area_a, 2)
+        area_delta_pct  = round(100 * (area_b - area_a) / area_a, 2)
+        if abs(area_delta_pct) >= 1.0:
+            changes.append(AttributeChange(
+                field="area_sq_m",
+                old_value=area_a,
+                new_value=area_b,
+                change_type="AREA_DELTA",
+            ))
+
+    # Owner change
+    own_a = str(record_a.get("owner", "")).strip().lower()
+    own_b = str(record_b.get("owner", "")).strip().lower()
+    owner_changed = bool(own_a and own_b and own_a != own_b)
+    if owner_changed:
+        changes.append(AttributeChange(
+            field="owner",
+            old_value=record_a.get("owner"),
+            new_value=record_b.get("owner"),
+            change_type="OWNER_CHANGE",
+        ))
+
+    # Geometry changed (simple bbox centroid check)
+    geometry_changed = False
+    if geometry_a and geometry_b:
+        try:
+            coords_a = geometry_a.get("coordinates", [[]])[0]
+            coords_b = geometry_b.get("coordinates", [[]])[0]
+            if coords_a and coords_b:
+                cx_a = sum(c[0] for c in coords_a) / len(coords_a)
+                cy_a = sum(c[1] for c in coords_a) / len(coords_a)
+                cx_b = sum(c[0] for c in coords_b) / len(coords_b)
+                cy_b = sum(c[1] for c in coords_b) / len(coords_b)
+                shift_deg = ((cx_b - cx_a) ** 2 + (cy_b - cy_a) ** 2) ** 0.5
+                # ~111 km per degree → threshold 0.00001° ≈ 1.1 m
+                if shift_deg > 0.00001:
+                    geometry_changed = True
+                    changes.append(AttributeChange(
+                        field="geometry_centroid",
+                        old_value=f"{cx_a:.6f},{cy_a:.6f}",
+                        new_value=f"{cx_b:.6f},{cy_b:.6f}",
+                        change_type="BOUNDARY_SHIFT",
+                    ))
+        except (IndexError, TypeError, ZeroDivisionError):
+            pass
+
+    # Severity classification
+    n_changes = len(changes)
+    if land_use_changed and owner_changed:
+        severity = "CRITICAL"
+    elif land_use_changed or (area_delta_pct is not None and abs(area_delta_pct) > 5):
+        severity = "MAJOR"
+    elif n_changes >= 2:
+        severity = "MODERATE"
+    elif n_changes == 1:
+        severity = "MINOR"
+    else:
+        severity = "MINOR"
+
+    # Summary string
+    parts = []
+    if land_use_changed:
+        parts.append(f"land use {lu_a}→{lu_b}")
+    if area_delta_pct is not None and abs(area_delta_pct) >= 1.0:
+        parts.append(f"area {area_delta_pct:+.1f}%")
+    if owner_changed:
+        parts.append("ownership change")
+    if geometry_changed:
+        parts.append("boundary shift")
+    if temporal.gap_days:
+        parts.append(f"temporal gap {temporal.gap_days:.0f} days")
+    summary = (
+        f"Survey {survey_number}: {'; '.join(parts) if parts else 'no significant attribute changes detected'}"
+    )
+
+    return RecordHistoryDiff(
+        survey_number=survey_number,
+        record_a_id=rec_a_id,
+        record_b_id=rec_b_id,
+        timestamp_a=ts_a,
+        timestamp_b=ts_b,
+        gap_days=temporal.gap_days,
+        temporally_qualified=temporal.qualified,
+        changes=changes,
+        area_delta_sq_m=area_delta_sq_m,
+        area_delta_pct=area_delta_pct,
+        land_use_changed=land_use_changed,
+        owner_changed=owner_changed,
+        geometry_changed=geometry_changed,
+        change_severity=severity,
+        summary=summary,
+    )

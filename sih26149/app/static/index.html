@@ -1,123 +1,191 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SIH26149 — Forensic & Sanitization Workstation</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>SIH26149 — Forensic Evidence Platform</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2338bdf8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z'/%3E%3Cpath d='m9 12 2 2 4-4'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="/app.css">
 </head>
 <body>
-  <div class="shell">
+  <!-- Ambient background canvas for subtle node graph -->
+  <canvas id="ambientCanvas" class="ambient-canvas"></canvas>
 
-    <aside class="sidebar">
+  <div class="shell">
+    <!-- Backdrop for mobile drawer -->
+    <div class="drawer-backdrop" id="drawerBackdrop" onclick="toggleMobileDrawer(false)"></div>
+
+    <!-- Sidebar / Drawer -->
+    <aside class="sidebar" id="sidebar">
       <div class="sidebar-top">
         <div class="wordmark">
-          <span class="wordmark-badge">NTRO</span>
+          <div class="brand-badge">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+          </div>
           <div>
             <div class="wordmark-title">Forensic Workstation</div>
-            <div class="wordmark-sub">SIH26149 · Evidence Platform</div>
+            <div class="wordmark-sub">PS SIH26149 · Evidence Engine</div>
           </div>
+          <button class="btn-drawer-close" onclick="toggleMobileDrawer(false)" aria-label="Close navigation">✕</button>
         </div>
 
-        <nav class="sidenav">
-          <button class="sidenav-item active" data-tab="cases">
-            <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><rect x="1" y="3" width="13" height="10" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M5 3V2a1 1 0 011-1h3a1 1 0 011 1v1" stroke="currentColor" stroke-width="1.3"/></svg>
-            Cases
+        <nav class="sidenav" role="tablist">
+          <button class="sidenav-item active" data-tab="cases" role="tab">
+            <svg width="16" height="16" viewBox="0 0 15 15" fill="none"><rect x="1" y="3" width="13" height="10" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M5 3V2a1 1 0 011-1h3a1 1 0 011 1v1" stroke="currentColor" stroke-width="1.3"/></svg>
+            <span>Cases &amp; Timeline</span>
           </button>
-          <button class="sidenav-item" data-tab="forensics">
-            <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" stroke-width="1.3"/><path d="M10.5 10.5L13.5 13.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-            Recovery
+          <button class="sidenav-item" data-tab="forensics" role="tab">
+            <svg width="16" height="16" viewBox="0 0 15 15" fill="none"><circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" stroke-width="1.3"/><path d="M10.5 10.5L13.5 13.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            <span>Forensic Recovery</span>
           </button>
-          <button class="sidenav-item" data-tab="carving">
-            <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M2 3h11v2H2zM2 7h7v2H2zM2 11h9v2H2z" stroke="currentColor" stroke-width="1.3"/></svg>
-            Raw Carving
+          <button class="sidenav-item" data-tab="carving" role="tab">
+            <svg width="16" height="16" viewBox="0 0 15 15" fill="none"><path d="M2 3h11v2H2zM2 7h7v2H2zM2 11h9v2H2z" stroke="currentColor" stroke-width="1.3"/></svg>
+            <span>Raw File Carving</span>
           </button>
-          <button class="sidenav-item" data-tab="sanitization">
-            <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M7.5 1L2 4v4c0 3.3 2.4 5.7 5.5 6.5C10.6 13.7 13 11.3 13 8V4L7.5 1z" stroke="currentColor" stroke-width="1.3"/></svg>
-            Sanitization & Eraser
+          <button class="sidenav-item" data-tab="sanitization" role="tab">
+            <svg width="16" height="16" viewBox="0 0 15 15" fill="none"><path d="M7.5 1L2 4v4c0 3.3 2.4 5.7 5.5 6.5C10.6 13.7 13 11.3 13 8V4L7.5 1z" stroke="currentColor" stroke-width="1.3"/></svg>
+            <span>Sanitization &amp; Eraser</span>
           </button>
-          <button class="sidenav-item" data-tab="auditchain">
-            <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M4 3h7a2 2 0 012 2v2a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2zM4 9h7a2 2 0 012 2v2a2 2 0 01-2 2H4a2 2 0 01-2-2v-2a2 2 0 012-2z" stroke="currentColor" stroke-width="1.3"/></svg>
-            Audit Chain
+          <button class="sidenav-item" data-tab="auditchain" role="tab">
+            <svg width="16" height="16" viewBox="0 0 15 15" fill="none"><path d="M4 3h7a2 2 0 012 2v2a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2zM4 9h7a2 2 0 012 2v2a2 2 0 01-2 2H4a2 2 0 01-2-2v-2a2 2 0 012-2z" stroke="currentColor" stroke-width="1.3"/></svg>
+            <span>Audit Chain</span>
           </button>
-          <button class="sidenav-item" data-tab="vault">
-            <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><rect x="2" y="5" width="11" height="9" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M5 5V3.5a2.5 2.5 0 015 0V5" stroke="currentColor" stroke-width="1.3"/><circle cx="7.5" cy="9.5" r="1.5" fill="currentColor"/></svg>
-            Evidence Vault
+          <button class="sidenav-item" data-tab="vault" role="tab">
+            <svg width="16" height="16" viewBox="0 0 15 15" fill="none"><rect x="2" y="5" width="11" height="9" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M5 5V3.5a2.5 2.5 0 015 0V5" stroke="currentColor" stroke-width="1.3"/><circle cx="7.5" cy="9.5" r="1.5" fill="currentColor"/></svg>
+            <span>Evidence Vault</span>
           </button>
-          <button class="sidenav-item" data-tab="verification">
-            <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M4 7.5L6.5 10l4.5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="7.5" cy="7.5" r="6" stroke="currentColor" stroke-width="1.3"/></svg>
-            Verifier
+          <button class="sidenav-item" data-tab="verification" role="tab">
+            <svg width="16" height="16" viewBox="0 0 15 15" fill="none"><path d="M4 7.5L6.5 10l4.5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="7.5" cy="7.5" r="6" stroke="currentColor" stroke-width="1.3"/></svg>
+            <span>Independent Verifier</span>
           </button>
         </nav>
+
+        <div class="sidebar-quick-section">
+          <div class="sidebar-sec-label">Demo Quick-Actions</div>
+          <button class="btn-sidebar-quick" onclick="seedOfficialDemoCase()">
+            <span class="quick-icon">⚡</span>
+            <span>Seed Demo Case</span>
+          </button>
+        </div>
       </div>
 
       <div class="sidebar-bottom">
         <div class="subsys" id="sysStatus">
           <div class="subsys-row">
-            <span class="dot dot-ok"></span><span>Sleuth Kit</span>
+            <span class="dot dot-ok" id="dotSleuth"></span><span>Sleuth Kit / Inodes</span>
           </div>
           <div class="subsys-row">
-            <span class="dot dot-ok"></span><span>Ed25519 Trust Layer</span>
+            <span class="dot dot-ok" id="dotCrypto"></span><span>Ed25519 Trust Layer</span>
           </div>
           <div class="subsys-row">
-            <span class="dot dot-ok"></span><span>Atomic Persistence</span>
+            <span class="dot dot-ok" id="dotPersistence"></span><span>Atomic Persistence</span>
           </div>
         </div>
         <div class="active-case-strip" id="activeCaseStrip" style="display:none">
-          <div class="acs-label">Active Case</div>
+          <div class="acs-label">Active Investigation Case</div>
           <div class="acs-id" id="acsCaseId">—</div>
         </div>
       </div>
     </aside>
 
+    <!-- Main Workspace -->
     <main class="workspace">
+      <!-- Topbar Header -->
       <header class="topbar">
         <div class="topbar-left">
-          <span class="topbar-tab-name" id="topbarTabName">Cases &amp; Timeline</span>
-          <span class="topbar-sep">/</span>
-          <span class="topbar-case" id="topbarCase">No case selected</span>
-        </div>
-        <div class="topbar-right">
-          <div class="api-base-row">
-            <label class="api-label">API</label>
-            <input type="text" id="apiBase" value="http://127.0.0.1:8000" class="api-input">
+          <button class="btn-hamburger" onclick="toggleMobileDrawer(true)" aria-label="Open navigation menu">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+          </button>
+          <div class="breadcrumbs">
+            <span class="crumb-root" onclick="switchTab('cases')">Workstation</span>
+            <span class="crumb-sep">/</span>
+            <span class="crumb-tab" id="topbarTabName">Cases &amp; Timeline</span>
+            <span class="crumb-sep">/</span>
+            <span class="crumb-case" id="topbarCase">No case selected</span>
           </div>
-          <button class="btn btn-ghost btn-sm" onclick="refreshCurrentView()">↻</button>
+        </div>
+
+        <div class="topbar-right">
+          <!-- Guided Demo Trigger Button -->
+          <button class="btn btn-demo-guide" onclick="toggleJudgeDemoModal()" title="Open Judge Demonstration Stepper">
+            <span class="demo-glow-dot"></span>
+            <span class="demo-label">⚡ Judge Demo Flow</span>
+          </button>
+
+          <!-- Theme Selector -->
+          <div class="theme-picker-wrapper">
+            <button class="btn-theme" id="themeBtn" onclick="toggleThemeMenu()" title="Select Theme">
+              <span id="themeIcon">🌓</span>
+              <span class="theme-text" id="themeLabel">Dark</span>
+            </button>
+            <div class="theme-dropdown" id="themeDropdown" style="display:none">
+              <button class="theme-opt" onclick="setTheme('dark')">🌙 Dark Slate</button>
+              <button class="theme-opt" onclick="setTheme('light')">☀️ Clean Lab</button>
+              <button class="theme-opt" onclick="setTheme('contrast')">⚡ High Contrast</button>
+              <button class="theme-opt" onclick="setTheme('system')">💻 System Default</button>
+            </div>
+          </div>
+
+          <!-- Connection Status Pill -->
+          <button class="conn-pill" id="connPill" onclick="openConnDiagnostics()" title="Click for Connection Diagnostics">
+            <span class="conn-dot dot-ok" id="connDot"></span>
+            <span class="conn-label" id="connLabel">API Online</span>
+            <span class="conn-ping" id="connPing">-- ms</span>
+          </button>
+
+          <button class="btn btn-ghost btn-icon" onclick="refreshCurrentView()" title="Refresh Current View">↻</button>
         </div>
       </header>
+
+      <!-- Render Cold-Start Alert / Wake-Up Banner -->
+      <div id="coldStartBanner" class="cold-start-banner" style="display:none">
+        <div class="cold-start-icon">◐</div>
+        <div class="cold-start-body">
+          <div class="cold-start-title">Waking server instance...</div>
+          <div class="cold-start-sub">Backend spinning up on Render free tier. Automatic retry in <span id="coldStartSeconds">10</span>s</div>
+        </div>
+        <div class="cold-start-bar"><div class="cold-start-progress" id="coldProgressBar"></div></div>
+      </div>
 
       <!-- ══ CASES TAB ══ -->
       <section class="tab-content active" id="tab-cases">
         <div class="tab-header">
           <div>
-            <h2 class="tab-title">Cases</h2>
-            <p class="tab-desc">Create and manage investigation cases. Each case maintains a full chain of custody.</p>
+            <h1 class="tab-title">Investigation Cases</h1>
+            <p class="tab-desc">Manage digital forensic cases, evidence chain of custody, and persistent audit records.</p>
           </div>
-          <button class="btn btn-primary" onclick="showNewCaseForm()">+ New case</button>
+          <div class="tab-header-actions">
+            <button class="btn btn-ghost" onclick="seedOfficialDemoCase()">⚡ Seed Demo Case</button>
+            <button class="btn btn-primary" onclick="showNewCaseForm()">+ New Case</button>
+          </div>
         </div>
 
         <div class="form-card" id="newCaseForm" style="display:none">
+          <div class="form-section-title">Create New Investigation Case</div>
           <div class="form-row">
             <div class="field">
-              <label class="field-label">Case name</label>
+              <label class="field-label">Case Identifier / Title</label>
               <input type="text" id="newCaseName" class="input" placeholder="e.g. Device-14A Recovery">
             </div>
             <div class="field">
-              <label class="field-label">Examiner</label>
-              <input type="text" id="newCaseExaminer" class="input" placeholder="Officer name">
+              <label class="field-label">Investigator / Examiner Name</label>
+              <input type="text" id="newCaseExaminer" class="input" placeholder="Officer Name / ID">
             </div>
           </div>
+          <div class="field" style="margin-top:10px;">
+            <label class="field-label">Description / Mandate</label>
+            <input type="text" id="newCaseDesc" class="input" placeholder="Authorized forensic extraction and verification under Section 65B">
+          </div>
           <div class="form-actions">
-            <button class="btn btn-primary" onclick="createCase()">Create</button>
+            <button class="btn btn-primary" onclick="createCase()">Create Case</button>
             <button class="btn btn-ghost" onclick="hideNewCaseForm()">Cancel</button>
           </div>
         </div>
 
         <div id="casesList" class="cases-list">
-          <div class="empty-state">
-            <div class="empty-icon">📁</div>
-            <div class="empty-title">No cases yet</div>
-            <div class="empty-sub">Create your first investigation case to get started</div>
+          <div class="skeleton-card">
+            <div class="skeleton-line" style="width: 40%"></div>
+            <div class="skeleton-line" style="width: 70%"></div>
           </div>
         </div>
       </section>
@@ -126,8 +194,8 @@
       <section class="tab-content" id="tab-forensics">
         <div class="tab-header">
           <div>
-            <h2 class="tab-title">Forensic Recovery</h2>
-            <p class="tab-desc">Acquire, detect, discover, recover, and verify — with a signed evidence record at every step.</p>
+            <h1 class="tab-title">Forensic Acquisition &amp; Inode Recovery</h1>
+            <p class="tab-desc">Acquire storage image, compute initial SHA-256 hash, discover unallocated inodes, and verify extracted bytes.</p>
           </div>
         </div>
 
@@ -136,18 +204,21 @@
           <div class="step-card" id="step-acquire">
             <div class="step-num">01</div>
             <div class="step-body">
-              <div class="step-title">Acquire forensic image</div>
-              <div class="step-sub">Upload the storage image to acquire. SHA-256 computed before any operation.</div>
+              <div class="step-title">Acquire Storage Image</div>
+              <div class="step-sub">Upload target disk image or load synthetic demo evidence. SHA-256 computed before any read operation.</div>
+              
               <div class="upload-zone" id="uploadZone" onclick="document.getElementById('imageUpload').click()">
                 <div class="upload-icon">⬆</div>
-                <div class="upload-label">Choose forensic image or drag here</div>
-                <div class="upload-hint" id="uploadHint">ext4, FAT32, NTFS — filesystem will be detected</div>
+                <div class="upload-label">Choose forensic image or drag file here</div>
+                <div class="upload-hint" id="uploadHint">Supports raw .img, .dd, .raw (ext4, FAT32, NTFS)</div>
                 <input type="file" id="imageUpload" style="display:none" onchange="onImageSelect()">
               </div>
-              <div class="step-action">
-                <button class="btn btn-primary" id="btnDetectFs" onclick="detectFilesystem()" disabled>Detect filesystem</button>
+
+              <div class="step-action-row">
+                <button class="btn btn-ghost btn-sm" onclick="seedSyntheticEvidenceForActiveCase()">⚡ Generate Synthetic Evidence Disk</button>
+                <button class="btn btn-primary" id="btnDetectFs" onclick="detectFilesystem()" disabled>Detect Filesystem</button>
               </div>
-              <div id="fsResult"></div>
+              <div id="fsResult" style="margin-top:10px;"></div>
             </div>
           </div>
 
@@ -155,10 +226,10 @@
           <div class="step-card dim" id="step-discover">
             <div class="step-num">02</div>
             <div class="step-body">
-              <div class="step-title">Discover deleted artifacts</div>
-              <div class="step-sub">Scan inode table for deleted entries whose data blocks have not been reallocated.</div>
-              <button class="btn btn-primary" id="btnDiscover" onclick="discoverDeleted()" disabled>Scan deleted inodes</button>
-              <div id="deletedList"></div>
+              <div class="step-title">Discover Deleted Inode Artifacts</div>
+              <div class="step-sub">Scan inode metadata table for unallocated entries whose data blocks have not been overwritten.</div>
+              <button class="btn btn-primary" id="btnDiscover" onclick="discoverDeleted()" disabled>Scan Deleted Inodes</button>
+              <div id="deletedList" style="margin-top:10px;"></div>
             </div>
           </div>
 
@@ -166,16 +237,16 @@
           <div class="step-card dim" id="step-recover">
             <div class="step-num">03</div>
             <div class="step-body">
-              <div class="step-title">Recover &amp; verify</div>
-              <div class="step-sub">Extract raw block content and compare against reference hash if provided.</div>
+              <div class="step-title">Recover &amp; Cryptographically Verify</div>
+              <div class="step-sub">Extract raw block content and compare recovered SHA-256 against reference hash.</div>
               <div class="form-row">
                 <div class="field" style="flex:1">
-                  <label class="field-label">Reference SHA-256 <span class="optional">(optional — enables VERIFIED classification)</span></label>
+                  <label class="field-label">Reference SHA-256 <span class="optional">(optional — produces VERIFIED classification)</span></label>
                   <input type="text" id="refHash" class="input mono-input" placeholder="5d4916829ccdb6ba...">
                 </div>
               </div>
-              <button class="btn btn-primary" id="btnRecover" onclick="runRecovery()" disabled>Run recovery</button>
-              <div id="recoveryResult"></div>
+              <button class="btn btn-primary" id="btnRecover" onclick="runRecovery()" disabled style="margin-top:10px;">Run Inode Recovery</button>
+              <div id="recoveryResult" style="margin-top:10px;"></div>
             </div>
           </div>
         </div>
@@ -185,25 +256,25 @@
       <section class="tab-content" id="tab-carving">
         <div class="tab-header">
           <div>
-            <h2 class="tab-title">Advanced File Carving</h2>
-            <p class="tab-desc">Signature and structure-based file carving on raw unallocated disk images. Recovers files even when filesystem metadata/inodes are destroyed.</p>
+            <h1 class="tab-title">Advanced File Carving</h1>
+            <p class="tab-desc">Signature &amp; structure-based carving on raw unallocated disk streams. Recovers files even when metadata and inodes are destroyed.</p>
           </div>
         </div>
 
         <div class="form-card">
-          <div class="form-section-title">Carving Configuration</div>
-          <div class="form-row">
-            <div class="field" style="flex: 2;">
-              <label class="field-label">Target File Formats</label>
-              <div style="display: flex; gap: 12px; margin-top: 6px; flex-wrap: wrap;">
-                <label style="display:flex;align-items:center;gap:4px;font-size:12px;"><input type="checkbox" id="carveJpeg" checked> JPEG (EXIF/JFIF)</label>
-                <label style="display:flex;align-items:center;gap:4px;font-size:12px;"><input type="checkbox" id="carvePng" checked> PNG (IHDR/IEND)</label>
-                <label style="display:flex;align-items:center;gap:4px;font-size:12px;"><input type="checkbox" id="carvePdf" checked> PDF (xref/trailer)</label>
-                <label style="display:flex;align-items:center;gap:4px;font-size:12px;"><input type="checkbox" id="carveZip" checked> ZIP / DOCX / XLSX</label>
-                <label style="display:flex;align-items:center;gap:4px;font-size:12px;"><input type="checkbox" id="carveMp4" checked> MP4 (ftyp/moov)</label>
+          <div class="form-section-title">Carving Engine Configuration</div>
+          <div class="form-row" style="flex-wrap: wrap; gap: 16px;">
+            <div class="field" style="flex: 2; min-width: 260px;">
+              <label class="field-label">Target File Signatures</label>
+              <div class="checkbox-group">
+                <label class="checkbox-item"><input type="checkbox" id="carveJpeg" checked> JPEG (EXIF/JFIF)</label>
+                <label class="checkbox-item"><input type="checkbox" id="carvePng" checked> PNG (IHDR/IEND)</label>
+                <label class="checkbox-item"><input type="checkbox" id="carvePdf" checked> PDF (xref/trailer)</label>
+                <label class="checkbox-item"><input type="checkbox" id="carveZip" checked> ZIP / DOCX / XLSX</label>
+                <label class="checkbox-item"><input type="checkbox" id="carveMp4" checked> MP4 (ftyp/moov)</label>
               </div>
             </div>
-            <div class="field" style="flex: 1;">
+            <div class="field" style="flex: 1; min-width: 140px;">
               <label class="field-label">Max Carve Limit</label>
               <input type="number" id="carveLimit" class="input" value="100" min="1" max="500">
             </div>
@@ -221,7 +292,7 @@
       <section class="tab-content" id="tab-sanitization">
         <div class="tab-header">
           <div>
-            <h2 class="tab-title">Data Sanitization &amp; Selective Eraser</h2>
+            <h1 class="tab-title">Data Sanitization &amp; Selective Eraser</h1>
             <p class="tab-desc">Standards-compliant media sanitization (NIST SP 800-88 Rev. 2) and targeted file/directory erasure with scope bounds.</p>
           </div>
         </div>
@@ -230,12 +301,12 @@
         <div class="form-card" style="margin-bottom: 20px;">
           <div class="form-section-title">NIST SP 800-88 Rev. 2 Device Capability Detector</div>
           <p class="step-sub" style="margin-bottom: 10px;">Classifies target storage media (Rotational HDD, SATA/NVMe SSD, USB Flash, SD Card, Virtual Disk Image) and provides legally defensible sanitization mapping.</p>
-          <div class="form-row">
-            <div class="field" style="flex: 3;">
-              <label class="field-label">Device or File Path</label>
-              <input type="text" id="detectPath" class="input mono-input" placeholder="/dev/sdb or D:\evidence\disk.img">
+          <div class="form-row" style="flex-wrap: wrap;">
+            <div class="field" style="flex: 3; min-width: 240px;">
+              <label class="field-label">Target Media or Image Path</label>
+              <input type="text" id="detectPath" class="input mono-input" placeholder="/dev/sdb or D:\evidence\disk.raw">
             </div>
-            <div class="field" style="flex: 1; align-self: flex-end;">
+            <div class="field" style="flex: 1; min-width: 160px; align-self: flex-end;">
               <button class="btn btn-ghost" style="width: 100%;" onclick="runDeviceDetect()">Detect Capability</button>
             </div>
           </div>
@@ -243,44 +314,44 @@
         </div>
 
         <!-- Mode Toggle: Drive Sanitization vs Selective File Erasure -->
-        <div style="display: flex; gap: 12px; margin-bottom: 16px;">
-          <button class="btn btn-ghost active" id="btnModeDrive" onclick="setSanMode('drive')">Full Drive/Image Overwrite</button>
-          <button class="btn btn-ghost" id="btnModeFiles" onclick="setSanMode('files')">Selective File &amp; Folder Eraser</button>
+        <div class="segmented-control" style="margin-bottom: 16px;">
+          <button class="seg-btn active" id="btnModeDrive" onclick="setSanMode('drive')">Full Drive/Image Overwrite</button>
+          <button class="seg-btn" id="btnModeFiles" onclick="setSanMode('files')">Selective File &amp; Folder Eraser</button>
         </div>
 
         <!-- Section A: Drive Sanitization -->
         <div id="sanModeDrive">
           <div class="notice-box notice-amber">
-            <strong>Scope limitation</strong>
-            Filesystem-level zero overwrite on a virtual image. This does <em>not</em> establish that every physical NAND cell is erased — SSD wear-leveling, over-provisioning, and controller remapping are outside observable scope. The signed record will state this explicitly.
+            <strong>Scope Limitation &amp; Defense Statement</strong>
+            Filesystem-level zero overwrite on a virtual or raw image. This does <em>not</em> establish that every physical NAND cell is erased — SSD wear-leveling, over-provisioning, and controller remapping are outside observable scope. The signed cryptographic record explicitly documents this boundary.
           </div>
 
           <div class="form-card">
             <div class="form-section-title">Drive Sanitization Authorization</div>
-            <div class="form-row">
-              <div class="field">
+            <div class="form-row" style="flex-wrap: wrap;">
+              <div class="field" style="flex:1; min-width:200px;">
                 <label class="field-label">Operator ID</label>
-                <input type="text" id="opId" class="input" placeholder="NTRO-OPR-001">
+                <input type="text" id="opId" class="input" placeholder="OPR-SAN-001">
               </div>
-              <div class="field">
-                <label class="field-label">Operator name</label>
-                <input type="text" id="opName" class="input" placeholder="Officer R. Sharma">
+              <div class="field" style="flex:1; min-width:200px;">
+                <label class="field-label">Operator Name</label>
+                <input type="text" id="opName" class="input" placeholder="Officer Name">
               </div>
             </div>
-            <div class="field">
-              <label class="field-label">Authorization reason / Court Order</label>
-              <input type="text" id="opReason" class="input" placeholder="Court order #2026-14A — authorized destruction">
+            <div class="field" style="margin-top:10px;">
+              <label class="field-label">Authorization Mandate / Court Order Reference</label>
+              <input type="text" id="opReason" class="input" placeholder="Mandate #2026-SAN-01 — Authorized data destruction">
             </div>
-            <div class="field">
-              <label class="field-label">Target inode (optional for full image)</label>
+            <div class="field" style="margin-top:10px;">
+              <label class="field-label">Target Inode (leave blank for complete image overwrite)</label>
               <input type="text" id="sanInode" class="input" placeholder="All image blocks or specific inode">
             </div>
             <div class="checkbox-row">
               <input type="checkbox" id="scopeAck" class="checkbox">
-              <label for="scopeAck" class="checkbox-label">I acknowledge this operation is bounded to filesystem-level scope and does not constitute physical media destruction</label>
+              <label for="scopeAck" class="checkbox-label">I acknowledge this operation is bounded to filesystem-level scope and does not constitute physical media destruction.</label>
             </div>
             <div class="form-actions">
-              <button class="btn btn-danger" onclick="runSanitization()">Authorize &amp; sanitize image</button>
+              <button class="btn btn-danger" onclick="promptDriveSanitization()">Authorize &amp; Sanitize Image</button>
             </div>
           </div>
           <div id="sanitizationResult"></div>
@@ -291,40 +362,45 @@
           <div class="form-card">
             <div class="form-section-title">Selective File &amp; Folder Eraser (NIST Clear)</div>
             <p class="step-sub" style="margin-bottom: 12px;">Performs targeted multi-pass/zero-fill overwrite of specific confidential files or folders, metadata timestamp epoch resetting, and randomized filename scrambling before deletion.</p>
+            
             <div class="field">
-              <label class="field-label">Target Paths (comma-separated or one per line)</label>
-              <textarea id="eraseTargetPaths" class="code-area" rows="3" placeholder="data/sensitive_doc.pdf, data/exports/"></textarea>
+              <label class="field-label">Target File or Directory Paths (comma-separated or line-separated)</label>
+              <textarea id="eraseTargetPaths" class="code-area" rows="3" placeholder="data/sensitive_artifact.pdf, data/exports/"></textarea>
             </div>
-            <div style="display: flex; gap: 8px; margin-top: 8px;">
+            
+            <div style="display: flex; gap: 8px; margin-top: 10px;">
               <button class="btn btn-ghost btn-sm" onclick="previewEraseScope()">1. Preview Erasure Scope</button>
             </div>
             <div id="erasePreviewResult" style="margin: 12px 0;"></div>
 
-            <div class="form-section-title" style="margin-top: 16px;">Operator Authorization</div>
-            <div class="form-row">
-              <div class="field">
+            <div class="form-section-title" style="margin-top: 18px;">Operator Authorization &amp; Options</div>
+            <div class="form-row" style="flex-wrap: wrap;">
+              <div class="field" style="flex:1; min-width:200px;">
                 <label class="field-label">Operator ID</label>
                 <input type="text" id="fileOpId" class="input" placeholder="OPR-SEC-09">
               </div>
-              <div class="field">
+              <div class="field" style="flex:1; min-width:200px;">
                 <label class="field-label">Operator Name</label>
-                <input type="text" id="fileOpName" class="input" placeholder="Auditor P. Patel">
+                <input type="text" id="fileOpName" class="input" placeholder="Auditor Name">
               </div>
             </div>
-            <div class="field">
+            <div class="field" style="margin-top:10px;">
               <label class="field-label">Sanitization Authorization Mandate</label>
               <input type="text" id="fileOpReason" class="input" placeholder="DPDP compliance / Retention expiration authorization">
             </div>
-            <div class="form-row" style="gap: 16px; margin: 8px 0;">
-              <label style="display:flex;align-items:center;gap:6px;font-size:12px;"><input type="checkbox" id="eraseScrubMeta" checked> Reset Timestamps (Scrub Slack)</label>
-              <label style="display:flex;align-items:center;gap:6px;font-size:12px;"><input type="checkbox" id="eraseScrambleNames" checked> Scramble Filenames Before Unlink</label>
+            
+            <div class="checkbox-group" style="margin: 12px 0;">
+              <label class="checkbox-item"><input type="checkbox" id="eraseScrubMeta" checked> Reset Timestamps (Scrub Slack)</label>
+              <label class="checkbox-item"><input type="checkbox" id="eraseScrambleNames" checked> Scramble Filenames Before Unlink</label>
             </div>
+
             <div class="checkbox-row">
               <input type="checkbox" id="fileScopeAck" class="checkbox">
-              <label for="fileScopeAck" class="checkbox-label">I have verified the previewed file scope and confirm irreversible deletion under NIST SP 800-88</label>
+              <label for="fileScopeAck" class="checkbox-label">I have verified the previewed file scope and confirm irreversible deletion under NIST SP 800-88.</label>
             </div>
+
             <div class="form-actions">
-              <button class="btn btn-danger" onclick="runFileErasure()">2. Authorize &amp; Permanently Erase</button>
+              <button class="btn btn-danger" onclick="promptFileErasure()">2. Authorize &amp; Permanently Erase</button>
             </div>
             <div id="fileErasureResult" style="margin-top: 12px;"></div>
           </div>
@@ -335,10 +411,10 @@
       <section class="tab-content" id="tab-auditchain">
         <div class="tab-header">
           <div>
-            <h2 class="tab-title">Cryptographic Audit Chain</h2>
-            <p class="tab-desc">Immutable append-only JSONL audit ledger. Each entry cryptographically hashes the previous entry, establishing tamper-evident chain of custody.</p>
+            <h1 class="tab-title">Cryptographic Audit Chain</h1>
+            <p class="tab-desc">Immutable append-only JSONL audit ledger. Each entry cryptographically hashes the previous entry, establishing a tamper-evident chain of custody.</p>
           </div>
-          <div style="display: flex; gap: 8px;">
+          <div class="tab-header-actions">
             <button class="btn btn-primary btn-sm" onclick="loadAuditChain()">Refresh Chain</button>
             <button class="btn btn-ghost btn-sm" onclick="verifyAuditChain()">Verify Cryptographic Chain</button>
           </div>
@@ -362,43 +438,44 @@
       <section class="tab-content" id="tab-vault">
         <div class="tab-header">
           <div>
-            <h2 class="tab-title">Evidence Vault</h2>
-            <p class="tab-desc">All signed evidence for the active case. Each package is independently verifiable.</p>
+            <h1 class="tab-title">Evidence Vault</h1>
+            <p class="tab-desc">All signed evidence for the active case. Each package is independently verifiable with Ed25519 digital signatures.</p>
           </div>
           <div class="form-row" style="gap:8px">
             <input type="text" id="vaultCaseId" class="input input-sm" placeholder="Case ID">
             <button class="btn btn-primary btn-sm" onclick="loadVault()">Load</button>
           </div>
         </div>
+
         <div id="vaultList"></div>
 
         <!-- Tamper demo -->
         <div class="form-card" id="tamperSection" style="display:none; margin-top:16px;">
-          <div class="form-section-title">Tamper demonstration</div>
-          <p class="step-sub" style="margin-bottom:12px;">Demonstrates that any modification to a signed package — even a single field — is detected by the verifier.</p>
+          <div class="form-section-title">Evidence Envelope Tamper Demonstration</div>
+          <p class="step-sub" style="margin-bottom:12px;">Demonstrates that any modification to a signed package — even a single byte or status flag — is immediately detected by the verifier.</p>
           <div class="form-row">
             <div class="field" style="flex:1">
               <label class="field-label">Evidence ID</label>
               <input type="text" id="tamperEvidenceId" class="input mono-input">
             </div>
           </div>
-          <div class="form-row">
+          <div class="form-row" style="margin-top:10px;">
             <div class="field" style="flex:1">
-              <label class="field-label">Field path</label>
+              <label class="field-label">Field Path</label>
               <input type="text" id="tamperField" class="input mono-input" placeholder="outcome.status">
             </div>
             <div class="field" style="flex:1">
-              <label class="field-label">New value</label>
+              <label class="field-label">New Value</label>
               <input type="text" id="tamperValue" class="input mono-input" placeholder='"FAILED"'>
             </div>
           </div>
-          <div class="tamper-presets">
+          <div class="tamper-presets" style="margin: 10px 0;">
             <span class="preset-label">Presets:</span>
             <button class="btn-preset" onclick="setTamperPreset('outcome.status','&quot;FAILED&quot;')">status → FAILED</button>
             <button class="btn-preset" onclick="setTamperPreset('outcome.hash_match','false')">hash_match → false</button>
           </div>
-          <button class="btn btn-danger btn-sm" onclick="runTamper()">Attempt tamper &amp; verify</button>
-          <div id="tamperResult"></div>
+          <button class="btn btn-danger btn-sm" onclick="runTamper()">Attempt Tamper &amp; Verify</button>
+          <div id="tamperResult" style="margin-top: 10px;"></div>
         </div>
       </section>
 
@@ -406,22 +483,164 @@
       <section class="tab-content" id="tab-verification">
         <div class="tab-header">
           <div>
-            <h2 class="tab-title">Independent Verifier</h2>
-            <p class="tab-desc">Verify any signed evidence package without access to the case database or signing engine.</p>
+            <h1 class="tab-title">Independent Cryptographic Verifier</h1>
+            <p class="tab-desc">Verify any signed evidence package without access to the case database or signing engine. Validates Ed25519 signature against registered public keys.</p>
           </div>
         </div>
         <div class="form-card">
-          <div class="form-section-title">Paste evidence package JSON</div>
+          <div class="form-section-title">Paste Evidence Package JSON</div>
           <textarea id="verifyPackage" class="code-area" rows="10" placeholder='{"evidence_id": "...", "signed_at": ...}'></textarea>
           <div class="form-actions" style="margin-top:12px;">
-            <button class="btn btn-primary" onclick="runVerify()">Verify package</button>
+            <button class="btn btn-primary" onclick="runVerify()">Verify Evidence Package</button>
           </div>
         </div>
         <div id="verifyResult"></div>
       </section>
-
     </main>
   </div>
+
+  <!-- ══ CONNECTION DIAGNOSTICS MODAL ══ -->
+  <div class="modal-backdrop" id="connModalBackdrop" style="display:none;" onclick="closeConnDiagnostics(event)">
+    <div class="modal-card" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <div class="modal-title">API Connection Diagnostics</div>
+        <button class="btn-modal-close" onclick="closeConnDiagnostics()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="diag-status-row">
+          <div class="diag-badge" id="diagStatusBadge">● Operational</div>
+          <div class="diag-latency" id="diagLatency">Ping: 0 ms</div>
+        </div>
+
+        <div class="diag-grid">
+          <div class="diag-item">
+            <span class="diag-k">Active API Origin:</span>
+            <span class="diag-v mono-text" id="diagOrigin">https://...</span>
+          </div>
+          <div class="diag-item">
+            <span class="diag-k">Platform Version:</span>
+            <span class="diag-v" id="diagVersion">2.0.0</span>
+          </div>
+          <div class="diag-item">
+            <span class="diag-k">Cryptographic Layer:</span>
+            <span class="diag-v" id="diagCrypto">Ed25519</span>
+          </div>
+          <div class="diag-item">
+            <span class="diag-k">SleuthKit Available:</span>
+            <span class="diag-v" id="diagSleuth">Yes</span>
+          </div>
+        </div>
+
+        <div class="form-section-title" style="margin-top:16px;">Advanced Developer Override</div>
+        <p class="step-sub" style="margin-bottom:8px;">Leave blank to use same-origin automatic API resolution.</p>
+        <div class="form-row">
+          <input type="text" id="apiBaseOverride" class="input mono-input" placeholder="Leave empty for auto (window.location.origin)">
+          <button class="btn btn-primary btn-sm" onclick="saveApiOverride()">Save</button>
+          <button class="btn btn-ghost btn-sm" onclick="resetApiOverride()">Reset</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ JUDGE DEMO FLOW MODAL ══ -->
+  <div class="modal-backdrop" id="demoModalBackdrop" style="display:none;" onclick="closeJudgeDemoModal(event)">
+    <div class="modal-card modal-lg" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <div>
+          <div class="modal-title">⚡ SIH Judge Demonstration Flow</div>
+          <div class="modal-sub">Step-by-step evaluation walkthrough covering every PS-required forensic capability</div>
+        </div>
+        <button class="btn-modal-close" onclick="closeJudgeDemoModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="demo-flow-stepper" id="demoStepper">
+          <div class="stepper-item" id="demoStep1">
+            <div class="stepper-dot">1</div>
+            <div class="stepper-content">
+              <div class="stepper-title">Initialize Demo Case</div>
+              <div class="stepper-desc">Creates CASE-DEMO-2026 with full chain of custody.</div>
+            </div>
+          </div>
+          <div class="stepper-item" id="demoStep2">
+            <div class="stepper-dot">2</div>
+            <div class="stepper-content">
+              <div class="stepper-title">Seed Synthetic Evidence</div>
+              <div class="stepper-desc">Injects unallocated disk stream with valid JPEG, PNG, and PDF.</div>
+            </div>
+          </div>
+          <div class="stepper-item" id="demoStep3">
+            <div class="stepper-dot">3</div>
+            <div class="stepper-content">
+              <div class="stepper-title">Deep Stream File Carving</div>
+              <div class="stepper-desc">Recovers deleted files via structural signatures &amp; confidence scores.</div>
+            </div>
+          </div>
+          <div class="stepper-item" id="demoStep4">
+            <div class="stepper-dot">4</div>
+            <div class="stepper-content">
+              <div class="stepper-title">NIST 800-88 Sanitization Preview</div>
+              <div class="stepper-desc">Evaluates media type and validates scope bounds.</div>
+            </div>
+          </div>
+          <div class="stepper-item" id="demoStep5">
+            <div class="stepper-dot">5</div>
+            <div class="stepper-content">
+              <div class="stepper-title">Simulated Sanitization</div>
+              <div class="stepper-desc">Executes simulated NIST Clear on synthetic artifacts.</div>
+            </div>
+          </div>
+          <div class="stepper-item" id="demoStep6">
+            <div class="stepper-dot">6</div>
+            <div class="stepper-content">
+              <div class="stepper-title">Cryptographic Audit Chain</div>
+              <div class="stepper-desc">Verifies SHA-256 hash links and tamper detection.</div>
+            </div>
+          </div>
+          <div class="stepper-item" id="demoStep7">
+            <div class="stepper-dot">7</div>
+            <div class="stepper-content">
+              <div class="stepper-title">Signed Evidence Certificate</div>
+              <div class="stepper-desc">Produces verifiable Ed25519 certificate envelope.</div>
+            </div>
+          </div>
+        </div>
+
+        <div id="demoProgressStatus" class="demo-status-box" style="display:none">
+          <div class="spinner"></div>
+          <span id="demoProgressText">Executing demonstration workflow...</span>
+        </div>
+
+        <div id="demoResultSummary" style="margin-top:14px;"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary" id="btnStartDemo" onclick="runJudgeDemoSequence()">▶ Run End-to-End Judge Demo</button>
+        <button class="btn btn-ghost" onclick="closeJudgeDemoModal()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ CONFIRMATION MODAL FOR DESTRUCTIVE ACTIONS ══ -->
+  <div class="modal-backdrop" id="confirmModalBackdrop" style="display:none;" onclick="closeConfirmModal(false)">
+    <div class="modal-card" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <div class="modal-title" style="color:var(--red);">⚠️ Confirm Irreversible Action</div>
+        <button class="btn-modal-close" onclick="closeConfirmModal(false)">✕</button>
+      </div>
+      <div class="modal-body">
+        <p id="confirmModalPrompt" style="margin-bottom:12px;font-size:13px;color:var(--text);">Are you sure you want to proceed?</p>
+        <div class="notice-box notice-red" id="confirmNoticeBox">
+          This operation permanently overwrites target blocks or unlinks files according to NIST SP 800-88 guidelines.
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-danger" id="confirmModalActionBtn" onclick="onConfirmModalConfirmed()">Confirm &amp; Execute</button>
+        <button class="btn btn-ghost" onclick="closeConfirmModal(false)">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ TOAST NOTIFICATIONS CONTAINER ══ -->
+  <div class="toast-container" id="toastContainer"></div>
 
   <script src="/app.js"></script>
 </body>

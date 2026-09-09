@@ -101,5 +101,6 @@ def run_carving(case_id: str, req: CarvingRequest):
         'operation_id': op_id,
         'evidence_id': evid_id,
         'carved': summary,
+        'summary': summary,
         'signed_evidence': signed_pkg,
     }

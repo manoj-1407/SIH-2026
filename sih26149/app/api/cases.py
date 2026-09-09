@@ -51,3 +51,39 @@ def get_case(case_id: str):
 def get_timeline(case_id: str):
     validate_case_id(case_id)
     return audit_logger.get_timeline(case_id)
+
+
+@router.post('/seed-demo')
+def seed_demo_case():
+    """Seeds an official demonstration case ready for full forensic analysis."""
+    from app.api.forensics import seed_synthetic_evidence
+    demo_id = 'CASE-DEMO-2026'
+    try:
+        case = case_store.get(demo_id)
+    except Exception:
+        case = case_store.create(
+            workflow=WorkflowType.FORENSIC,
+            title="Forensic Evidence Recovery Demo (SIH26149)",
+            description="Official demonstration case containing synthetic disk image with embedded JPEG, PNG, and PDF artifacts."
+        )
+        # override case_id for consistency
+        case.case_id = demo_id
+        case_store.save(case)
+
+    # Seed the synthetic evidence
+    acq = seed_synthetic_evidence(demo_id)
+
+    audit_logger.log(
+        case_id=demo_id,
+        event_type='CASE_SEEDED',
+        actor='SYSTEM_DEMO_SEEDER',
+        details={'workflow': 'FORENSIC', 'title': case.title},
+    )
+
+    return {
+        'status': 'seeded',
+        'case': case.to_dict(),
+        'acquisition': acq,
+        'message': 'Successfully seeded official forensic demo case.',
+    }
+

@@ -243,3 +243,77 @@ def run_forensic_recovery(case_id: str, req: ForensicRecoveryRequest):
         'size_bytes': rec.size_bytes,
         'signed_evidence': signed_pkg,
     }
+
+
+def generate_synthetic_disk_stream() -> bytes:
+    """Creates a deterministic synthetic disk stream with valid JPEG, PNG, and PDF for safe demonstration."""
+    padding_front = b"\xaa\xbb\xcc\xdd" * 128
+    jpeg_data = (
+        b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00\xff\xdb\x00\x43\x00"
+        + (b"\x01" * 64)
+        + b"\xff\xc0\x00\x0b\x08\x00\x10\x00\x10\x01\x01\x11\x00\xff\xda\x00\x08\x01\x01\x00\x00?\x00\x00\xff\xd9"
+    )
+    padding_mid = b"\x00" * 512
+    png_ihdr = b"\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
+    png_iend = b"\x00\x00\x00\x00IEND\xaeB`\x82"
+    png_data = b"\x89PNG\r\n\x1a\n" + png_ihdr + png_iend
+    padding_mid2 = b"\x00" * 256
+    pdf_data = (
+        b"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
+        b"2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n"
+        b"3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]>>endobj\n"
+        b"xref\n0 4\n0000000000 65535 f\n0000000009 00000 n\n0000000058 00000 n\n0000000115 00000 n\n"
+        b"trailer<</Size 4/Root 1 0 R>>\nstartxref\n185\n%%EOF\n"
+    )
+    padding_end = b"\x55" * 256
+    return padding_front + jpeg_data + padding_mid + png_data + padding_mid2 + pdf_data + padding_end
+
+
+@router.post('/seed-synthetic-evidence')
+def seed_synthetic_evidence(case_id: str):
+    """
+    [DEMO / EVALUATOR] Generates synthetic unallocated disk media with embedded valid artifacts.
+    Enables instant demonstration of carving and recovery without uploading local files.
+    """
+    validate_case_id(case_id)
+    try:
+        case = case_store.get(case_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail='Case not found')
+
+    UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+    safe_filename = 'synthetic_evidence_disk.raw'
+    file_path = UPLOADS_DIR / f'{case_id}_{safe_filename}'
+
+    data = generate_synthetic_disk_stream()
+    with open(file_path, 'wb') as f:
+        f.write(data)
+
+    hash_res = hash_file(str(file_path))
+    acq_id = f'ACQ-SYNTH-{uuid.uuid4().hex[:6].upper()}'
+
+    case_store.update_acquisition(
+        case_id=case_id,
+        acquisition_id=acq_id,
+        source_path=str(file_path),
+        sha256=hash_res.hex_digest,
+        size_bytes=hash_res.size_bytes,
+    )
+
+    audit_logger.log(
+        case_id=case_id,
+        event_type='EVIDENCE_ACQUIRED',
+        actor='SYNTHETIC_EVIDENCE_GENERATOR',
+        details={'filename': safe_filename, 'size_bytes': hash_res.size_bytes, 'synthetic': True},
+        hash_ref=hash_res.hex_digest,
+    )
+
+    return {
+        'acquisition_id': acq_id,
+        'filename': safe_filename,
+        'sha256': hash_res.hex_digest,
+        'size_bytes': hash_res.size_bytes,
+        'synthetic': True,
+        'description': 'Deterministic synthetic disk image containing valid JPEG, PNG, and PDF artifacts',
+    }
+
