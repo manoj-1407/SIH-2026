@@ -1,0 +1,20 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+*.log
+*.img
+*.bin
+uploads/
+.env
+
+# Runtime data — never commit
+data/cases/
+data/evidence/
+data/audit/
+data/artifacts/
+data/uploads/*
+!data/uploads/.gitkeep
+data/keys/*
+!data/keys/.gitkeep

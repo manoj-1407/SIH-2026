@@ -1,0 +1,10 @@
+# Exact-pinned to the versions this codebase is tested against (88/88 unit
+# tests passing on this pin set, including the real Sleuth Kit integration
+# tests). See sih26013/requirements.txt for the same rationale.
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+pydantic==2.13.5
+cryptography==46.0.6
+python-multipart==0.0.32
+pytest==9.1.1
+httpx==0.28.1

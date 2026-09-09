@@ -1,0 +1,60 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Caches & Environment
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+ENV/
+env/
+.env
+node_modules/
+
+# Submission Archives & Binaries
+*.zip
+*.tar.gz
+*.7z
+*.rar
+
+# Private keys & secrets (Strict: never commit private keys)
+*.priv
+*.key
+*.pem
+id_rsa
+id_ed25519
+
+# Forensic / Attack payloads
+*.img
+*_shadow
+*_evil_payload*
+
+# Runtime dynamic data (Preserve directory structure via .gitkeep only)
+sih26149/data/uploads/*
+!sih26149/data/uploads/.gitkeep
+sih26149/data/audit/*
+!sih26149/data/audit/.gitkeep
+sih26149/data/evidence/*
+!sih26149/data/evidence/.gitkeep
+sih26149/data/cases/*
+!sih26149/data/cases/.gitkeep
+sih26149/data/keys/*
+!sih26149/data/keys/.gitkeep
+sih26149/data/certificates/*
+!sih26149/data/certificates/.gitkeep
+
+sih26013/data/audit/*
+!sih26013/data/audit/.gitkeep
+sih26013/data/evidence/*
+!sih26013/data/evidence/.gitkeep
+sih26013/data/cases/*
+!sih26013/data/cases/.gitkeep
+sih26013/data/keys/*
+!sih26013/data/keys/.gitkeep
+
+# OS generated files
+.DS_Store
+Thumbs.db

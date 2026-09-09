@@ -1,0 +1,18 @@
+# Exact-pinned to the versions this codebase is tested against (51/51 unit
+# tests passing on this pin set). A bare `>=` here means any future breaking
+# release of any dependency silently breaks the build with no signal until
+# something fails in prod. Bump deliberately and re-run the full suite when
+# you do.
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+pydantic==2.13.5
+shapely==2.1.2
+pyproj==3.8.0
+rtree==1.4.1
+cryptography==46.0.6
+httpx==0.28.1
+pytest==9.1.1
+pytest-cov==7.1.0
+python-multipart==0.0.32
+python-dotenv==1.2.2
+anyio==4.15.1

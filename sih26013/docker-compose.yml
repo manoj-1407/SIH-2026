@@ -1,0 +1,29 @@
+services:
+  sih26013:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sih26013-harmonizer
+    ports:
+      - "8001:8000"
+    volumes:
+      - sih26013_data:/app/data
+    environment:
+      # Routes all key and evidence writes to the mounted persistent volume.
+      # Must match the volume target path above.
+      SIH26013_DATA_DIR: /app/data
+      # Set DEMO_MODE=1 to enable tamper demo endpoint and bypass API key.
+      DEMO_MODE: "0"
+      # Uncomment and set to protect the API with a shared key:
+      # SIH26013_API_KEY: "your-secret-key-here"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+volumes:
+  sih26013_data:
+    name: sih26013_persistent_data

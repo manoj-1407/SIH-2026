@@ -1,0 +1,878 @@
+"""FastAPI application server for SIH26013 Integrated Geospatial Analysis (v2)."""
+from __future__ import annotations
+import os
+import re
+import copy
+import threading
+import uuid
+from typing import Any, Optional, List, Dict
+from datetime import datetime, timezone
+from pathlib import Path
+
+from fastapi import FastAPI, APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
+
+from app.core.pipeline import (
+    AnalysisPipeline, IngestionRecord, analyze_pair
+)
+from app.core.provenance import LineageGraph, LineageNode
+from app.core.signing import init_signing, get_signing_key, get_registry
+from app.core.evidence_envelope import verify_envelope
+from app.core.persistence import EvidenceStore, AuditLog
+from app.api.auth import require_api_key
+from app.core.rate_limit import check_rate_limit
+
+# New Track A AI & Harmonization modules
+from app.core.canonical_model import CanonicalParcel, AgencyType, LandUseType
+from app.core.ai_matcher import match_parcels, match_multi_source_catalog, MatchResult
+from app.core.attribute_harmonizer import map_raw_record_to_canonical, compare_parcel_attributes
+from app.core.imagery_features import BuildingFootprint, analyze_drone_footprints
+from app.core.topology_repair import repair_cadastral_topology
+from app.core.harmonization_proposal import (
+    HarmonizationProposal, create_harmonization_proposal, review_proposal, ProposalStatus
+)
+
+app = FastAPI(
+    title="SIH26013 — Integrated Multi-Source Geospatial Data Platform v2",
+    description=(
+        "Automated Integration and Intelligent Harmonization of Multi-source "
+        "Geospatial Data for Urban Land Record Management. MoRD Problem Statement SIH26013."
+    ),
+    version="2.0.0",
+)
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request, call_next):
+    """Runs before auth so a rejected request costs nothing further."""
+    allowed, retry_after = check_rate_limit(request)
+    if not allowed:
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "Rate limit exceeded. Please slow down."},
+            headers={"Retry-After": str(retry_after)},
+        )
+    return await call_next(request)
+
+
+@app.middleware("http")
+async def api_key_middleware(request, call_next):
+    """Apply API key check to non-public routes."""
+    try:
+        await require_api_key(request)
+    except HTTPException as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail},
+            headers=exc.headers or {},
+        )
+    return await call_next(request)
+
+
+_repo_data = Path(__file__).resolve().parents[2] / "data"
+_default_data = "/app/data" if Path("/app").is_dir() else str(_repo_data)
+DATA_DIR = Path(os.environ.get("SIH26013_DATA_DIR", _default_data))
+evidence_store = EvidenceStore(DATA_DIR / "evidence")
+audit_log = AuditLog(DATA_DIR / "audit")
+
+# Initialise signing on module import
+init_signing(DATA_DIR)
+registry = get_registry()
+signing_key = get_signing_key()
+
+CASE_ID_REGEX = re.compile(r"^[A-Za-z0-9_\-]+$")
+cases: dict[str, dict] = {}
+
+_case_locks_guard = threading.Lock()
+_case_locks: dict[str, threading.Lock] = {}
+
+
+def _lock_for(case_id: str) -> threading.Lock:
+    with _case_locks_guard:
+        lock = _case_locks.get(case_id)
+        if lock is None:
+            lock = threading.Lock()
+            _case_locks[case_id] = lock
+        return lock
+
+
+def get_case_or_404(case_id: str) -> dict:
+    if not CASE_ID_REGEX.match(case_id):
+        raise HTTPException(status_code=400, detail=f"Invalid case_id format: {case_id!r}")
+    if case_id not in cases:
+        raise HTTPException(status_code=404, detail=f"Case {case_id!r} not found")
+    return cases[case_id]
+
+
+# --- Request/Response Models ---
+class CreateCaseRequest(BaseModel):
+    case_id: Optional[str] = None
+    title: Optional[str] = "Geospatial Analysis Case"
+    description: Optional[str] = ""
+
+class ProvenanceNodeInput(BaseModel):
+    node_id: str
+    node_type: str  # origin, dataset, transformation, record
+    parent_ids: list[str] = Field(default_factory=list)
+    metadata: dict = Field(default_factory=dict)
+
+class RecordInput(BaseModel):
+    record_id: str
+    geometry: dict
+    source_crs: str = "EPSG:4326"
+    timestamp: Optional[str] = None
+    provenance_node_id: Optional[str] = None
+    metadata: dict = Field(default_factory=dict)
+
+class IngestBatchRequest(BaseModel):
+    nodes: list[ProvenanceNodeInput] = Field(default_factory=list)
+    records: list[RecordInput] = Field(default_factory=list)
+
+class VerifyRequest(BaseModel):
+    envelope: Optional[dict] = None
+
+class AIMatchRequest(BaseModel):
+    min_probability: float = 0.35
+
+class ImageryAnalysisRequest(BaseModel):
+    footprints: List[dict]
+
+class TopologyRepairRequest(BaseModel):
+    snap_tolerance_m: float = 1.0
+
+class ProposalReviewRequest(BaseModel):
+    action: str  # APPROVE, REJECT, REQUEST_INSPECTION
+    reviewer_id: str
+    notes: str = ""
+
+class TamperDemoRequest(BaseModel):
+    field_path: str = "result.geo_classification"
+    new_value: Any = "TAMPERED_CLASSIFICATION"
+
+
+# ── Create Core Router to allow dual-mounting (/ and /api) ──────────────────────
+router = APIRouter()
+
+
+@router.get("/health")
+def health():
+    return {
+        "status": "OPERATIONAL",
+        "service": "SIH26013-Geospatial-Harmonization-v2",
+        "version": "2.0.0",
+        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+        "active_cases": len(cases),
+        "signing_key_id": signing_key.key_id if signing_key else get_signing_key().key_id,
+        "subsystems": {
+            "spatial_index": "active",
+            "geometry_engine": "active",
+            "temporal_engine": "active",
+            "crs_validator": "active",
+            "provenance_graph": "active",
+            "cryptographic_trust": "active",
+            "audit_log": "active",
+            "ai_matcher": "active",
+            "topology_repair": "active",
+            "imagery_analyzer": "active",
+            "harmonization_proposals": "active",
+        }
+    }
+
+
+@router.post("/cases", status_code=status.HTTP_201_CREATED)
+def create_case(req: CreateCaseRequest):
+    case_id = req.case_id or f"CASE-{uuid.uuid4().hex[:8].upper()}"
+    if not CASE_ID_REGEX.match(case_id):
+        raise HTTPException(status_code=400, detail="case_id contains invalid characters")
+    if case_id in cases:
+        raise HTTPException(status_code=409, detail=f"Case {case_id!r} already exists")
+
+    cases[case_id] = {
+        "case_id": case_id,
+        "title": req.title,
+        "description": req.description,
+        "created_at_utc": datetime.now(timezone.utc).isoformat(),
+        "graph": LineageGraph(),
+        "pipeline": AnalysisPipeline(case_id, evidence_store),
+        "records": {},
+        "evidence_ids": [],
+        "analysis_summary": None,
+        "proposals": {},
+        "topology_results": None,
+        "imagery_results": None,
+    }
+    audit_log.log(case_id, "CASE_CREATED", "operator", {"title": req.title})
+    return {"case_id": case_id, "status": "created", "created_at_utc": cases[case_id]["created_at_utc"]}
+
+
+@router.get("/cases")
+def list_cases():
+    return [
+        {
+            "case_id": c["case_id"],
+            "title": c["title"],
+            "created_at_utc": c["created_at_utc"],
+            "records_count": len(c["records"]),
+            "evidence_count": len(c["evidence_ids"]),
+            "has_analysis": c["analysis_summary"] is not None,
+            "proposals_count": len(c.get("proposals", {})),
+        }
+        for c in cases.values()
+    ]
+
+
+@router.get("/cases/{case_id}")
+def get_case(case_id: str):
+    c = get_case_or_404(case_id)
+    return {
+        "case_id": c["case_id"],
+        "title": c["title"],
+        "description": c["description"],
+        "created_at_utc": c["created_at_utc"],
+        "records_count": len(c["records"]),
+        "evidence_ids": c["evidence_ids"],
+        "analysis_summary": c["analysis_summary"],
+        "proposals_count": len(c.get("proposals", {})),
+    }
+
+
+@router.post("/cases/{case_id}/ingest")
+def ingest_data(case_id: str, batch: IngestBatchRequest):
+    c = get_case_or_404(case_id)
+    graph: LineageGraph = c["graph"]
+    pipeline: AnalysisPipeline = c["pipeline"]
+
+    with _lock_for(case_id):
+        added_nodes = 0
+        for n in batch.nodes:
+            graph.add_node(LineageNode(
+                node_id=n.node_id,
+                node_type=n.node_type,
+                parent_ids=n.parent_ids,
+                metadata=n.metadata
+            ))
+            added_nodes += 1
+
+        accepted_records = 0
+        rejected_records = []
+        for r in batch.records:
+            rec = IngestionRecord(
+                record_id=r.record_id,
+                geom_dict=r.geometry,
+                crs=r.source_crs,
+                timestamp=r.timestamp,
+                provenance_node_id=r.provenance_node_id,
+                metadata=r.metadata
+            )
+            ok, reason = pipeline.ingest_record(rec)
+            if ok:
+                c["records"][r.record_id] = {
+                    "record_id": r.record_id,
+                    "geometry": r.geometry,
+                    "source_crs": r.source_crs,
+                    "timestamp": r.timestamp,
+                    "provenance_node_id": r.provenance_node_id,
+                    "metadata": r.metadata
+                }
+                accepted_records += 1
+            else:
+                rejected_records.append({"record_id": r.record_id, "reason": reason})
+
+        audit_log.log(case_id, "DATA_INGESTED", "operator", {
+            "nodes_added": added_nodes,
+            "records_accepted": accepted_records,
+            "records_rejected": len(rejected_records)
+        })
+
+        return {
+            "case_id": case_id,
+            "nodes_added": added_nodes,
+            "records_accepted": accepted_records,
+            "records_rejected": rejected_records,
+            "total_records_in_case": len(c["records"])
+        }
+
+
+@router.post("/cases/{case_id}/records")
+def add_single_record(case_id: str, r: RecordInput):
+    """Convenience endpoint to add a single record."""
+    c = get_case_or_404(case_id)
+    node_id = r.provenance_node_id or f"origin_{r.record_id}"
+    node = ProvenanceNodeInput(node_id=node_id, node_type="origin", metadata={"source": "single_ingest"})
+    return ingest_data(case_id, IngestBatchRequest(nodes=[node], records=[r]))
+
+
+@router.post("/cases/{case_id}/provenance/node")
+def add_provenance_node(case_id: str, n: ProvenanceNodeInput):
+    """Convenience endpoint to add a single lineage node."""
+    c = get_case_or_404(case_id)
+    with _lock_for(case_id):
+        c["graph"].add_node(LineageNode(
+            node_id=n.node_id,
+            node_type=n.node_type,
+            parent_ids=n.parent_ids,
+            metadata=n.metadata
+        ))
+    return {"status": "ok", "node_id": n.node_id}
+
+
+@router.post("/cases/{case_id}/analyze")
+def run_analysis(case_id: str):
+    c = get_case_or_404(case_id)
+    pipeline: AnalysisPipeline = c["pipeline"]
+    graph: LineageGraph = c["graph"]
+
+    if len(c["records"]) < 2:
+        raise HTTPException(status_code=400, detail="At least 2 records are required for comparison analysis")
+
+    with _lock_for(case_id):
+        audit_log.log(case_id, "ANALYSIS_STARTED", "engine", {"record_count": len(c["records"])})
+        summary = pipeline.run_analysis(graph, sign=True)
+
+        c["analysis_summary"] = {
+            "total_ingested": summary.total_ingested,
+            "rejected_at_ingestion": summary.rejected_at_ingestion,
+            "valid_after_ingestion": summary.valid_after_ingestion,
+            "candidate_pairs_examined": summary.candidate_pairs_examined,
+            "cases_flagged": summary.cases_flagged,
+            "signed_evidence_ids": summary.signed_case_ids,
+            "classifications": [
+                {
+                    "record_id_a": p.record_id_a,
+                    "record_id_b": p.record_id_b,
+                    "geo_classification": p.geo_classification,
+                    "provenance_classification": p.provenance_classification,
+                    "independent_lineages": p.independent_lineages,
+                    "unknown": p.unknown,
+                    "explanation": p.explanation,
+                    "comparison_id": p.comparison_id,
+                    "measurements": p.measurements,
+                }
+                for p in summary.pair_results
+            ]
+        }
+        c["evidence_ids"] = summary.signed_case_ids
+
+        audit_log.log(case_id, "ANALYSIS_COMPLETED", "engine", {
+            "pairs_examined": summary.candidate_pairs_examined,
+            "cases_flagged": summary.cases_flagged,
+            "signed_evidence_count": len(summary.signed_case_ids)
+        })
+
+        return c["analysis_summary"]
+
+
+# ── Track A New Feature Endpoints ──────────────────────────────────────────────
+
+def _records_to_canonical_parcels(records_dict: dict) -> List[CanonicalParcel]:
+    """Helper to convert stored case records to CanonicalParcel instances."""
+    parcels = []
+    for r_id, r_data in records_dict.items():
+        meta = r_data.get("metadata", {})
+        agency_str = meta.get("agency") or meta.get("department") or "REVENUE"
+        agency = AgencyType.REVENUE
+        for a in AgencyType:
+            if a.value in agency_str.upper():
+                agency = a
+                break
+
+        p = map_raw_record_to_canonical(
+            raw_dict={
+                "survey_number": meta.get("survey_number") or meta.get("plot_no") or r_id,
+                "area_sq_m": meta.get("area_sq_m") or meta.get("area") or 1000.0,
+                "owner_ref": meta.get("owner") or meta.get("owner_name") or "UNSPECIFIED",
+                "land_use": meta.get("land_use") or meta.get("usage") or "RESIDENTIAL",
+                **meta
+            },
+            source_agency=agency,
+            geometry=r_data["geometry"],
+            default_crs=r_data.get("source_crs", "EPSG:4326"),
+        )
+        parcels.append(p)
+    return parcels
+
+
+@router.post("/cases/{case_id}/match-ai")
+def run_ai_matching(case_id: str, req: AIMatchRequest = AIMatchRequest()):
+    """
+    Run AI-enabled geospatial parcel matching on the case's ingested multi-source records.
+    Computes multi-factor probability (IoU, Centroid, Survey Token Levenshtein, Land-use).
+    """
+    c = get_case_or_404(case_id)
+    parcels = _records_to_canonical_parcels(c["records"])
+    if len(parcels) < 2:
+        raise HTTPException(status_code=400, detail="At least 2 ingested records required for matching")
+
+    results = []
+    for i in range(len(parcels)):
+        for j in range(i + 1, len(parcels)):
+            res = match_parcels(parcels[i], parcels[j])
+            if res.match_probability >= req.min_probability:
+                results.append(res.to_dict())
+
+    results.sort(key=lambda r: r["match_probability"], reverse=True)
+
+    audit_log.log(case_id, "AI_MATCHING_COMPLETED", "ai_engine", {
+        "candidate_pairs": len(results),
+        "top_match": results[0] if results else None
+    })
+
+    return {
+        "case_id": case_id,
+        "total_matches_found": len(results),
+        "matches": results,
+    }
+
+
+@router.post("/cases/{case_id}/attribute-harmonize")
+def run_attribute_harmonization(case_id: str):
+    """
+    Cross-agency attribute mapping and discrepancy analysis.
+    Identifies area variance, land-use contradictions, and ownership divergence.
+    """
+    c = get_case_or_404(case_id)
+    parcels = _records_to_canonical_parcels(c["records"])
+    if len(parcels) < 2:
+        raise HTTPException(status_code=400, detail="At least 2 records required for cross-department comparison")
+
+    reports = []
+    for i in range(len(parcels)):
+        for j in range(i + 1, len(parcels)):
+            rep = compare_parcel_attributes(parcels[i], parcels[j])
+            reports.append(rep.to_dict())
+
+    return {
+        "case_id": case_id,
+        "discrepancy_reports": reports,
+    }
+
+
+@router.post("/cases/{case_id}/imagery-analysis")
+def run_imagery_analysis(case_id: str, req: ImageryAnalysisRequest):
+    """
+    Drone imagery & photogrammetry feature analysis.
+    Computes spatial intersections of building footprints with parcel boundaries to
+    detect legal encroachment and unrecorded construction.
+    """
+    c = get_case_or_404(case_id)
+    parcels = _records_to_canonical_parcels(c["records"])
+    if not parcels:
+        raise HTTPException(status_code=400, detail="No parcel geometry available in case")
+
+    target_parcel = parcels[0]
+
+    fps = []
+    for f in req.footprints:
+        fp_id = f.get("footprint_id", f"FP-{uuid.uuid4().hex[:6].upper()}")
+        fps.append(BuildingFootprint(
+            footprint_id=fp_id,
+            geometry=f.get("geometry", {}),
+            area_sq_m=float(f.get("area_sq_m", 0.0)),
+            height_m=f.get("height_m"),
+            estimated_floors=int(f.get("estimated_floors", 1)),
+        ))
+
+    result = analyze_drone_footprints(target_parcel, fps)
+    c["imagery_results"] = result.to_dict()
+
+    audit_log.log(case_id, "IMAGERY_ANALYSIS_COMPLETED", "drone_cv_engine", {
+        "parcel_id": target_parcel.parcel_id,
+        "encroachment_count": len(result.encroachments),
+        "unrecorded_construction": result.unrecorded_construction,
+    })
+
+    return result.to_dict()
+
+
+@router.post("/cases/{case_id}/topology-repair")
+def run_topology_repair(case_id: str, req: TopologyRepairRequest = TopologyRepairRequest()):
+    """
+    Automated cadastral topology correction engine.
+    Detects and eliminates boundary overlaps and snaps vertices between adjoining plots.
+    """
+    c = get_case_or_404(case_id)
+    parcels = _records_to_canonical_parcels(c["records"])
+    if len(parcels) < 2:
+        raise HTTPException(status_code=400, detail="At least 2 parcels required for boundary topology repair")
+
+    result = repair_cadastral_topology(parcels, snap_tolerance_m=req.snap_tolerance_m)
+    c["topology_results"] = result.to_dict()
+
+    audit_log.log(case_id, "TOPOLOGY_REPAIR_COMPLETED", "topology_engine", {
+        "initial_overlap_sq_m": result.initial_overlap_sq_m,
+        "residual_overlap_sq_m": result.residual_overlap_sq_m,
+        "vertices_adjusted": result.vertices_adjusted,
+    })
+
+    return result.to_dict()
+
+
+@router.post("/cases/{case_id}/proposals")
+def generate_proposal(case_id: str):
+    """
+    Synthesize multi-source inputs into an official Harmonization Proposal.
+    """
+    c = get_case_or_404(case_id)
+    parcels = _records_to_canonical_parcels(c["records"])
+    if not parcels:
+        raise HTTPException(status_code=400, detail="No records available to harmonize")
+
+    match_res = None
+    discrepancy = None
+    if len(parcels) >= 2:
+        match_res = match_parcels(parcels[0], parcels[1])
+        discrepancy = compare_parcel_attributes(parcels[0], parcels[1])
+
+    prop = create_harmonization_proposal(
+        case_id=case_id,
+        parcels=parcels,
+        match_result=match_res,
+        discrepancy_report=discrepancy,
+    )
+    c.setdefault("proposals", {})[prop.proposal_id] = prop
+
+    audit_log.log(case_id, "PROPOSAL_GENERATED", "harmonizer", {
+        "proposal_id": prop.proposal_id,
+        "confidence_score": prop.confidence_score,
+        "status": prop.status.value,
+    })
+
+    return prop.to_dict()
+
+
+@router.get("/cases/{case_id}/proposals")
+def list_proposals(case_id: str):
+    """List all harmonization proposals for a case."""
+    c = get_case_or_404(case_id)
+    props = c.get("proposals", {})
+    return [p.to_dict() for p in props.values()]
+
+
+@router.post("/cases/{case_id}/proposals/{proposal_id}/review")
+def review_harmonization_proposal(case_id: str, proposal_id: str, req: ProposalReviewRequest):
+    """
+    Official review action (APPROVE, REJECT, FIELD_INSPECTION).
+    Upon approval, issues a signed Ed25519 evidence envelope.
+    """
+    c = get_case_or_404(case_id)
+    props = c.get("proposals", {})
+    if proposal_id not in props:
+        raise HTTPException(status_code=404, detail=f"Proposal {proposal_id} not found")
+
+    prop = props[proposal_id]
+    key_mgr = get_signing_key()
+
+    updated = review_proposal(
+        proposal=prop,
+        action=req.action,
+        reviewer_id=req.reviewer_id,
+        notes=req.notes,
+        signing_key=key_mgr,
+    )
+
+    if updated.signed_evidence_envelope:
+        ev_id = updated.signed_evidence_envelope["evidence_id"]
+        evidence_store.save(ev_id, updated.signed_evidence_envelope)
+        if ev_id not in c["evidence_ids"]:
+            c["evidence_ids"].append(ev_id)
+
+    audit_log.log(case_id, "PROPOSAL_REVIEWED", req.reviewer_id, {
+        "proposal_id": proposal_id,
+        "decision": req.action,
+        "has_envelope": bool(updated.signed_evidence_envelope),
+    })
+
+    return updated.to_dict()
+
+
+@router.get("/cases/{case_id}/evidence")
+def list_case_evidence(case_id: str):
+    """List all evidence packages associated with this case."""
+    c = get_case_or_404(case_id)
+    ev_ids = c.get("evidence_ids", [])
+    packages = []
+    for eid in ev_ids:
+        try:
+            packages.append(evidence_store.load(eid))
+        except FileNotFoundError:
+            pass
+    return {"case_id": case_id, "evidence": packages}
+
+
+@router.get("/evidence/{evidence_id}")
+def get_evidence(evidence_id: str):
+    if not CASE_ID_REGEX.match(evidence_id):
+        raise HTTPException(status_code=400, detail="Invalid evidence_id format")
+    try:
+        env = evidence_store.load(evidence_id)
+        return env
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Evidence {evidence_id!r} not found in vault")
+
+
+@router.post("/evidence/{evidence_id}/verify")
+def verify_stored_evidence(evidence_id: str, req: VerifyRequest = VerifyRequest()):
+    if not CASE_ID_REGEX.match(evidence_id):
+        raise HTTPException(status_code=400, detail="Invalid evidence_id format")
+
+    if req.envelope is not None:
+        target_env = req.envelope
+    else:
+        try:
+            target_env = evidence_store.load(evidence_id)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail=f"Evidence {evidence_id!r} not found in vault")
+
+    is_valid, explanation = verify_envelope(target_env, registry)
+    return {
+        "evidence_id": evidence_id,
+        "verified": is_valid,
+        "explanation": explanation,
+        "algorithm": target_env.get("signing", {}).get("algorithm"),
+        "key_id": target_env.get("signing", {}).get("key_id"),
+        "independent_lineages": target_env.get("result", {}).get("independent_lineages"),
+        "geo_classification": target_env.get("result", {}).get("geo_classification"),
+    }
+
+
+@router.post("/evidence/{evidence_id}/tamper-demo")
+def tamper_demo_evidence(evidence_id: str, req: TamperDemoRequest):
+    """
+    [DEMO ONLY] Mutates a field in a signed evidence envelope to show cryptographic tamper detection.
+    """
+    try:
+        orig = evidence_store.load(evidence_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Evidence {evidence_id} not found")
+
+    tampered = copy.deepcopy(orig)
+    # Mutate field
+    keys = req.field_path.split(".")
+    curr = tampered
+    for k in keys[:-1]:
+        if k not in curr or not isinstance(curr[k], dict):
+            curr[k] = {}
+        curr = curr[k]
+    curr[keys[-1]] = req.new_value
+
+    is_valid, reason = verify_envelope(tampered, registry)
+    return {
+        "evidence_id": evidence_id,
+        "tampered_field": req.field_path,
+        "original_value": orig.get("result", {}).get("geo_classification", "ORIGINAL"),
+        "tampered_value": req.new_value,
+        "verification": {
+            "valid": is_valid,
+            "reason": reason,
+        }
+    }
+
+
+@router.get("/cases/{case_id}/timeline")
+def get_timeline(case_id: str):
+    get_case_or_404(case_id)
+    return audit_log.get_timeline(case_id)
+
+
+@router.get("/cases/{case_id}/provenance")
+def get_provenance_graph(case_id: str):
+    c = get_case_or_404(case_id)
+    graph: LineageGraph = c["graph"]
+    nodes_export = []
+    edges_export = []
+    for nid, node in graph._nodes.items():
+        nodes_export.append({
+            "id": node.node_id,
+            "type": node.node_type,
+            "metadata": node.metadata
+        })
+        for pid in node.parent_ids:
+            edges_export.append({"from": pid, "to": node.node_id})
+
+    return {
+        "case_id": case_id,
+        "nodes": nodes_export,
+        "edges": edges_export
+    }
+
+
+# ── Demo Seeder Endpoint ───────────────────────────────────────────────────────
+
+@router.post("/demo/seed-samples")
+def seed_demo_cases():
+    """
+    Seeds 4 rich real-world test cases highlighting the SIH26013 Problem Statement:
+      1. DEMO-ALIGN: Cadastral vs Municipal concordance with minor boundary shift
+      2. DEMO-ENCROACH: Drone photogrammetry detecting unauthorized building encroachment
+      3. DEMO-TOPOLOGY: Boundary overlaps requiring automated topological edge-snapping
+      4. DEMO-CONFLICT: Discrepancy between Revenue RoR (Agricultural) and Municipal Tax (Commercial)
+    """
+    # 1. DEMO-ALIGN
+    c1_id = "DEMO-ALIGN"
+    if c1_id in cases:
+        del cases[c1_id]
+    create_case(CreateCaseRequest(case_id=c1_id, title="Urban Core Boundary Alignment", description="Cadastral vs Municipal spatial alignment in Sector 14"))
+    ingest_data(c1_id, IngestBatchRequest(
+        nodes=[
+            ProvenanceNodeInput(node_id="cadastral_survey_2024", node_type="origin", metadata={"agency": "CADASTRAL", "method": "ETS_Total_Station"}),
+            ProvenanceNodeInput(node_id="municipal_gis_2025", node_type="origin", metadata={"agency": "MUNICIPAL", "method": "DGPS_Survey"}),
+        ],
+        records=[
+            RecordInput(
+                record_id="CADASTRAL-42",
+                source_crs="EPSG:4326",
+                provenance_node_id="cadastral_survey_2024",
+                timestamp="2024-03-15T09:00:00Z",
+                geometry={
+                    "type": "Polygon",
+                    "coordinates": [[[77.5945, 12.9715], [77.5955, 12.9715], [77.5955, 12.9725], [77.5945, 12.9725], [77.5945, 12.9715]]]
+                },
+                metadata={"survey_number": "42/1", "area_sq_m": 12100.0, "owner": "Rajesh Rao", "land_use": "RESIDENTIAL"}
+            ),
+            RecordInput(
+                record_id="MUNICIPAL-42",
+                source_crs="EPSG:4326",
+                provenance_node_id="municipal_gis_2025",
+                timestamp="2025-01-10T14:30:00Z",
+                geometry={
+                    "type": "Polygon",
+                    "coordinates": [[[77.59452, 12.97152], [77.59552, 12.97152], [77.59552, 12.97252], [77.59452, 12.97252], [77.59452, 12.97152]]]
+                },
+                metadata={"survey_number": "42-1", "area_sq_m": 12050.0, "owner": "Rajesh Rao", "land_use": "RESIDENTIAL"}
+            )
+        ]
+    ))
+
+    # 2. DEMO-ENCROACH
+    c2_id = "DEMO-ENCROACH"
+    if c2_id in cases:
+        del cases[c2_id]
+    create_case(CreateCaseRequest(case_id=c2_id, title="Drone ORI Encroachment Detection", description="Drone imagery detects building extending past surveyed cadastral parcel boundary"))
+    ingest_data(c2_id, IngestBatchRequest(
+        nodes=[
+            ProvenanceNodeInput(node_id="revenue_ror_2020", node_type="origin", metadata={"agency": "REVENUE"}),
+            ProvenanceNodeInput(node_id="drone_ortho_2026", node_type="origin", metadata={"agency": "DRONE_SURVEY"}),
+        ],
+        records=[
+            RecordInput(
+                record_id="PARCEL-78A",
+                source_crs="EPSG:4326",
+                provenance_node_id="revenue_ror_2020",
+                timestamp="2020-06-12T10:00:00Z",
+                geometry={
+                    "type": "Polygon",
+                    "coordinates": [[[77.6000, 12.9800], [77.6010, 12.9800], [77.6010, 12.9810], [77.6000, 12.9810], [77.6000, 12.9800]]]
+                },
+                metadata={"survey_number": "78/A", "area_sq_m": 11800.0, "owner": "M. Kumar", "land_use": "RESIDENTIAL"}
+            )
+        ]
+    ))
+    # Pre-load imagery footprints on DEMO-ENCROACH
+    run_imagery_analysis(c2_id, ImageryAnalysisRequest(footprints=[
+        {
+            "footprint_id": "BLDG-ROOF-01",
+            "area_sq_m": 240.0,
+            "estimated_floors": 3,
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [[[77.6008, 12.9805], [77.6012, 12.9805], [77.6012, 12.9809], [77.6008, 12.9809], [77.6008, 12.9805]]]
+            }
+        }
+    ]))
+
+    # 3. DEMO-TOPOLOGY
+    c3_id = "DEMO-TOPOLOGY"
+    if c3_id in cases:
+        del cases[c3_id]
+    create_case(CreateCaseRequest(case_id=c3_id, title="Cadastral Boundary Overlap Resolution", description="Adjoining parcels 101 and 102 have 18-meter overlapping sliver"))
+    ingest_data(c3_id, IngestBatchRequest(
+        nodes=[
+            ProvenanceNodeInput(node_id="village_map_north", node_type="origin", metadata={"agency": "CADASTRAL"}),
+            ProvenanceNodeInput(node_id="village_map_south", node_type="origin", metadata={"agency": "CADASTRAL"}),
+        ],
+        records=[
+            RecordInput(
+                record_id="PARCEL-101",
+                source_crs="EPSG:4326",
+                provenance_node_id="village_map_north",
+                geometry={
+                    "type": "Polygon",
+                    "coordinates": [[[77.6100, 12.9900], [77.6110, 12.9900], [77.6110, 12.9912], [77.6100, 12.9912], [77.6100, 12.9900]]]
+                },
+                metadata={"survey_number": "101", "area_sq_m": 14500.0, "owner": "K. V. Reddy", "land_use": "AGRICULTURAL"}
+            ),
+            RecordInput(
+                record_id="PARCEL-102",
+                source_crs="EPSG:4326",
+                provenance_node_id="village_map_south",
+                geometry={
+                    "type": "Polygon",
+                    "coordinates": [[[77.6100, 12.9910], [77.6110, 12.9910], [77.6110, 12.9922], [77.6100, 12.9922], [77.6100, 12.9910]]]
+                },
+                metadata={"survey_number": "102", "area_sq_m": 14500.0, "owner": "Sunita Verma", "land_use": "AGRICULTURAL"}
+            )
+        ]
+    ))
+    run_topology_repair(c3_id, TopologyRepairRequest(snap_tolerance_m=1.5))
+
+    # 4. DEMO-CONFLICT
+    c4_id = "DEMO-CONFLICT"
+    if c4_id in cases:
+        del cases[c4_id]
+    create_case(CreateCaseRequest(case_id=c4_id, title="Revenue vs Municipal Land-Use Conflict", description="Archaic Revenue record claims Agricultural, Municipal tax lists Commercial complex"))
+    ingest_data(c4_id, IngestBatchRequest(
+        nodes=[
+            ProvenanceNodeInput(node_id="revenue_jamabandi_2015", node_type="origin", metadata={"agency": "REVENUE"}),
+            ProvenanceNodeInput(node_id="municipal_tax_2025", node_type="origin", metadata={"agency": "MUNICIPAL"}),
+        ],
+        records=[
+            RecordInput(
+                record_id="REV-204",
+                source_crs="EPSG:4326",
+                provenance_node_id="revenue_jamabandi_2015",
+                timestamp="2015-08-20T11:00:00Z",
+                geometry={
+                    "type": "Polygon",
+                    "coordinates": [[[77.6200, 13.0000], [77.6210, 13.0000], [77.6210, 13.0010], [77.6200, 13.0010], [77.6200, 13.0000]]]
+                },
+                metadata={"survey_number": "204", "area_sq_m": 12000.0, "owner": "Anil Deshmukh", "land_use": "AGRICULTURAL"}
+            ),
+            RecordInput(
+                record_id="MUN-204",
+                source_crs="EPSG:4326",
+                provenance_node_id="municipal_tax_2025",
+                timestamp="2025-02-01T15:00:00Z",
+                geometry={
+                    "type": "Polygon",
+                    "coordinates": [[[77.6200, 13.0000], [77.6210, 13.0000], [77.6210, 13.0010], [77.6200, 13.0010], [77.6200, 13.0000]]]
+                },
+                metadata={"survey_number": "204", "area_sq_m": 11450.0, "owner": "Anil Deshmukh & Sons", "land_use": "COMMERCIAL"}
+            )
+        ]
+    ))
+    generate_proposal(c4_id)
+
+    return {
+        "status": "seeded",
+        "cases_seeded": [c1_id, c2_id, c3_id, c4_id],
+        "message": "Successfully initialized 4 official SIH26013 test cases."
+    }
+
+
+# ── Mount router at root AND at /api ──────────────────────────────────────────
+app.include_router(router)
+app.include_router(router, prefix="/api")
+
+# Static Workstation UI files
+STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+if STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+@app.get("/", response_class=HTMLResponse)
+def index_page():
+    index_file = STATIC_DIR / "index.html"
+    if index_file.exists():
+        return FileResponse(index_file)
+    return "<h1>SIH26013 Geospatial Engine Running</h1>"

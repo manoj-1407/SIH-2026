@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  sih26149-workstation:
+    build: .
+    container_name: sih26149-forensics
+    ports:
+      - "8000:8000"
+    environment:
+      # Routes all key and evidence writes to the mounted persistent volume.
+      SIH26149_DATA_DIR: /app/data
+      # Set to "1" to enable the tamper-demo endpoint and bypass API key check.
+      DEMO_MODE: "0"
+      # Uncomment and set to protect the API with a shared key:
+      # SIH26149_API_KEY: "your-secret-key-here"
+    volumes:
+      - sih26149_data:/app/data
+    restart: unless-stopped
+    # Required: Sleuth Kit forensic tools (fls, icat) use syscalls blocked by
+    # default seccomp profile. This is intentional — document as a security tradeoff.
+    security_opt:
+      - seccomp:unconfined
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+volumes:
+  sih26149_data:
+    name: sih26149_persistent_data

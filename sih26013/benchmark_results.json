@@ -1,0 +1,32 @@
+[
+  {
+    "scale": 1000,
+    "ingest_throughput_recs_sec": 5118.6,
+    "p50_query_ms": 0.03994,
+    "p50_geom_ms": 0.0751,
+    "p50_sign_ms": 0.2379,
+    "injected_detected": 50,
+    "injected_total": 50,
+    "candidate_reduction_ratio": 9990.0
+  },
+  {
+    "scale": 10000,
+    "ingest_throughput_recs_sec": 3627.8,
+    "p50_query_ms": 0.0542,
+    "p50_geom_ms": 0.1129,
+    "p50_sign_ms": 0.1076,
+    "injected_detected": 50,
+    "injected_total": 50,
+    "candidate_reduction_ratio": 166650.0
+  },
+  {
+    "scale": 100000,
+    "ingest_throughput_recs_sec": 2921.0,
+    "p50_query_ms": 0.05589,
+    "p50_geom_ms": 0.1441,
+    "p50_sign_ms": 0.1488,
+    "injected_detected": 50,
+    "injected_total": 50,
+    "candidate_reduction_ratio": 207466.8
+  }
+]

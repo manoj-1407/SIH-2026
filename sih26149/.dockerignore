@@ -1,0 +1,14 @@
+# Never bake private keys or test data into the image
+data/
+tests/
+scripts/
+docs/
+*.pyc
+__pycache__
+.git
+.gitignore
+*.md
+setup.sh
+run.sh
+pytest.ini
+conftest.py

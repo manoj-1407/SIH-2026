@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.env
+data/cases/*.json
+data/evidence/*.json
+data/audit/*.jsonl
+.pytest_cache/
+*.log
+data/
+__pycache__/
+.pytest_cache/
+*.pyc

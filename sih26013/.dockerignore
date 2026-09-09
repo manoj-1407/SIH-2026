@@ -1,0 +1,13 @@
+data/
+tests/
+scripts/
+benchmarks/
+docs/
+*.pyc
+__pycache__
+.git
+.gitignore
+*.md
+pytest.ini
+conftest.py
+benchmark_results.json
