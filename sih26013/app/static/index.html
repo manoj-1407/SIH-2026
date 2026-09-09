@@ -181,7 +181,7 @@
           <div class="showcase-card">
             <div class="sc-tag">01 · THREE REALITIES OF LAND</div>
             <h3 class="sc-title">Legal vs. Surveyed vs. Observed</h3>
-            <p class="sc-desc">A single parcel exists in 3 distinct contexts across government departments. The system never silently overwrites legal records with drone imagery — it highlights discrepancies for official ground-truth verification.</p>
+            <p class="sc-desc">A single parcel exists in 3 distinct contexts across government departments. The system never silently overwrites legal records with drone imagery — it highlights discrepancies for official field verification.</p>
             <div class="tri-reality-box">
               <div class="tr-row">
                 <span class="tr-tag legal">LEGAL REALITY</span>
@@ -196,6 +196,7 @@
                 <span class="tr-src">Drone ORI Building Footprint (High-Res Ortho · ±0.35m tolerance)</span>
               </div>
             </div>
+            <div style="color:var(--text-dim,#94a3b8); font-size:11px; margin-top:8px;">* Configured demonstration uncertainty profiles (RSS error propagation)</div>
           </div>
 
           <div class="showcase-card">
@@ -223,7 +224,7 @@
           <div class="sc-tag">03 · CORE RECONCILIATION ENGINE</div>
           <h2 class="section-headline">Why Do These Maps Disagree?</h2>
           <p class="section-subtext">
-            Instead of simply reporting a conflict flag, our engine evaluates positional error bounds and generates <strong>Evidence-Weighted Hypotheses</strong> with actionable recommendations for land revenue officials.
+            Instead of simply reporting a conflict flag, our engine evaluates positional error bounds and generates <strong>Evidence-Weighted Hypotheses</strong> with actionable field-verification recommendations for revenue officials. <span style="color:var(--text-dim,#94a3b8); font-size:12px;">(Evidence-Weighted Score — illustrative rule-based weighting, not calibrated probability)</span>
           </p>
 
           <div class="reconciliation-demo-card">
@@ -239,28 +240,28 @@
                 <div class="hyp-card">
                   <div class="hyp-top">
                     <span class="hyp-title">① Legacy Georeferencing / Digitization Error</span>
-                    <span class="hyp-score">Score: 55/100 (Illustrative Weight)</span>
+                    <span class="hyp-score">Score: 55/100 (Evidence-Weighted)</span>
                   </div>
                   <div class="hyp-desc">Cadastral map vintage digitization offset exceeds GNSS tolerance (±2.0m vs ±0.05m).</div>
                 </div>
                 <div class="hyp-card">
                   <div class="hyp-top">
                     <span class="hyp-title">② Actual Ground Occupation / Building Overhang</span>
-                    <span class="hyp-score">Score: 30/100 (Illustrative Weight)</span>
+                    <span class="hyp-score">Score: 30/100 (Evidence-Weighted)</span>
                   </div>
                   <div class="hyp-desc">Observed building footprint extends 1.42m beyond registered cadastral parcel boundary.</div>
                 </div>
                 <div class="hyp-card">
                   <div class="hyp-top">
                     <span class="hyp-title">③ Drone ORI Roof Eaves Extraction Uncertainty</span>
-                    <span class="hyp-score">Score: 10/100 (Illustrative Weight)</span>
+                    <span class="hyp-score">Score: 10/100 (Evidence-Weighted)</span>
                   </div>
                   <div class="hyp-desc">Roof overhang extracted as property boundary during automated segmentation.</div>
                 </div>
               </div>
               <div class="rec-action-box">
                 <div class="rec-action-label">RECOMMENDED OFFICIAL ACTION:</div>
-                <div class="rec-action-text" id="recActionText">Request Field Verification &amp; Ground-Truthing (Do not automatically alter registered cadastral boundary)</div>
+                <div class="rec-action-text" id="recActionText">Request Field Verification &amp; Inspection (The system recommends · The authority decides)</div>
               </div>
             </div>
           </div>
