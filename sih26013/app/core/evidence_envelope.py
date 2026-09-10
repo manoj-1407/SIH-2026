@@ -31,7 +31,9 @@ def build_evidence_payload(
     """Assemble the canonical evidence dict for signing."""
     return {
         "comparison_id": comparison_id,
+        "evidence_id": comparison_id,  # UI / vault alias
         "case_id": case_id,
+        "evidence_type": "GEOSPATIAL_PAIRWISE_ANALYSIS",
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
         "record_ids": sorted(record_ids),
         "result": {

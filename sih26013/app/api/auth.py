@@ -13,7 +13,8 @@ from fastapi import Request, HTTPException, status
 _API_KEY = os.environ.get("SIH26013_API_KEY", "")
 _DEMO_MODE = os.environ.get("DEMO_MODE", "0").strip() == "1"
 
-# Exact public showcase routes
+# Exact public routes — health/docs + read-only showcase GETs.
+# Mutating endpoints (seed, reconcile, tamper) are NEVER public; use DEMO_MODE=1 locally.
 EXACT_PUBLIC_PATHS = {
     "/",
     "/health",
@@ -21,27 +22,10 @@ EXACT_PUBLIC_PATHS = {
     "/docs",
     "/openapi.json",
     "/redoc",
-    # Official showcase demo routes (read-only, synthetic parcels only)
-    "/cases/DEMO-ALIGN/reconcile/tri-reality",
-    "/api/cases/DEMO-ALIGN/reconcile/tri-reality",
     "/cases/DEMO-ALIGN/benchmark",
     "/api/cases/DEMO-ALIGN/benchmark",
-    "/cases/DEMO-FORENSIC/reconcile/tri-reality",
-    "/api/cases/DEMO-FORENSIC/reconcile/tri-reality",
-    "/cases/DEMO-FORENSIC/benchmark",
-    "/api/cases/DEMO-FORENSIC/benchmark",
-    # Reconcile and benchmark top-level aliases (showcase convenience)
-    "/reconcile/tri-reality",
-    "/api/reconcile/tri-reality",
-    "/reconcile/counterfactuals",
-    "/api/reconcile/counterfactuals",
     "/benchmark",
     "/api/benchmark",
-    # Case seeding and demo access
-    "/demo/seed",
-    "/api/demo/seed",
-    "/demo/seed-samples",
-    "/api/demo/seed-samples",
     "/cases/DEMO-ALIGN",
     "/api/cases/DEMO-ALIGN",
     "/cases/DEMO-ENCROACH",

@@ -87,11 +87,16 @@ class BatchErasureResult:
             "classification": classification,
             "total_files": self.total_files,
             "total_bytes_erased": self.total_bytes,
+            "total_bytes": self.total_bytes,  # UI alias
             "verified_files": self.verified_files,
             "failed_files": self.failed_files,
             "method": self.method.value,
             "file_results": [r.to_dict() for r in self.file_results],
             "errors": self.errors,
+            "explanation": (
+                f"{classification}: {self.verified_files}/{self.total_files} files verified erased"
+                if self.total_files else f"{classification}: no files in scope"
+            ),
             "nist_reference": "NIST SP 800-88 Rev. 2 §2.3 Clear — single-pass overwrite",
         }
 

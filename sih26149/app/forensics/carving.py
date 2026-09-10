@@ -229,7 +229,7 @@ def _carve_jpeg(data: bytes, offset: int) -> Optional[CarvedFile]:
                 reconstruction_strategy="GAP_RECONSTRUCTED",
             )
 
-    # Could not reconstruct
+    # Could not reconstruct — truncated/partial is NOT the same as bifragmented
     conf = CarvingConfidence.PARTIAL_STRUCT if has_sos else CarvingConfidence.HEADER_ONLY
     raw = data[offset:min(offset + max(pos - offset, 1), length)]
     factors.append("No EOI found and gap-scan exceeded bound — reporting partial stream")
@@ -238,7 +238,7 @@ def _carve_jpeg(data: bytes, offset: int) -> Optional[CarvedFile]:
         file_type="JPEG", confidence=conf,
         confidence_score=conf.score,
         sha256=_sha256(raw), evidence_factors=factors,
-        is_bifragmented=True,
+        is_bifragmented=False,
         reconstruction_strategy="PARTIAL_ONLY",
     )
 
@@ -336,7 +336,7 @@ def _carve_png(data: bytes, offset: int) -> Optional[CarvedFile]:
         file_type="PNG", confidence=conf,
         confidence_score=conf.score,
         sha256=_sha256(raw), evidence_factors=factors,
-        is_bifragmented=True,
+        is_bifragmented=False,
         reconstruction_strategy="PARTIAL_ONLY",
     )
 
@@ -409,7 +409,7 @@ def _carve_pdf(data: bytes, offset: int) -> Optional[CarvedFile]:
         file_type="PDF", confidence=conf,
         confidence_score=conf.score,
         sha256=_sha256(raw), evidence_factors=factors,
-        is_bifragmented=True,
+        is_bifragmented=False,
         reconstruction_strategy="PARTIAL_ONLY",
     )
 
@@ -471,7 +471,8 @@ def _carve_zip(data: bytes, offset: int) -> Optional[CarvedFile]:
         file_type=file_type, confidence=conf,
         confidence_score=conf.score,
         sha256=_sha256(raw), evidence_factors=factors,
-        is_bifragmented=True
+        is_bifragmented=False,
+        reconstruction_strategy="PARTIAL_ONLY",
     )
 
 

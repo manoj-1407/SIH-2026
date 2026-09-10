@@ -217,29 +217,54 @@ def diff_record_history(
             change_type="OWNER_CHANGE",
         ))
 
-    # Geometry changed (simple bbox centroid check)
+    # Geometry changed — use IoU / Hausdorff style metrics, not centroid alone
     geometry_changed = False
     if geometry_a and geometry_b:
         try:
-            coords_a = geometry_a.get("coordinates", [[]])[0]
-            coords_b = geometry_b.get("coordinates", [[]])[0]
-            if coords_a and coords_b:
-                cx_a = sum(c[0] for c in coords_a) / len(coords_a)
-                cy_a = sum(c[1] for c in coords_a) / len(coords_a)
-                cx_b = sum(c[0] for c in coords_b) / len(coords_b)
-                cy_b = sum(c[1] for c in coords_b) / len(coords_b)
-                shift_deg = ((cx_b - cx_a) ** 2 + (cy_b - cy_a) ** 2) ** 0.5
-                # ~111 km per degree → threshold 0.00001° ≈ 1.1 m
-                if shift_deg > 0.00001:
+            from shapely.geometry import shape as shapely_shape
+            from app.core.geometry import compare_geometries
+            ga = shapely_shape(geometry_a)
+            gb = shapely_shape(geometry_b)
+            if ga is not None and gb is not None and not ga.is_empty and not gb.is_empty:
+                cmp = compare_geometries(ga, gb)
+                iou = cmp.measurements.get("iou") if cmp.measurements else None
+                if iou is None:
+                    iou = cmp.iou if cmp.iou >= 0 else None
+                hd = cmp.measurements.get("hausdorff_m") if cmp.measurements else cmp.hausdorff_m
+                hd = hd or 0.0
+                # Material change: IoU drops below 0.98 or Hausdorff > ~2 m
+                if (iou is not None and iou < 0.98) or hd > 2.0:
                     geometry_changed = True
                     changes.append(AttributeChange(
-                        field="geometry_centroid",
-                        old_value=f"{cx_a:.6f},{cy_a:.6f}",
-                        new_value=f"{cx_b:.6f},{cy_b:.6f}",
+                        field="geometry",
+                        old_value=f"iou={iou}",
+                        new_value=f"hausdorff_m={hd}",
                         change_type="BOUNDARY_SHIFT",
                     ))
-        except (IndexError, TypeError, ZeroDivisionError):
-            pass
+        except Exception:
+            # Fallback: ring-mean centroid if shapely path fails
+            try:
+                coords_a = geometry_a.get("coordinates", [[]])[0]
+                coords_b = geometry_b.get("coordinates", [[]])[0]
+                if coords_a and coords_b:
+                    # Exclude closing vertex if duplicated
+                    a = coords_a[:-1] if len(coords_a) > 1 and coords_a[0] == coords_a[-1] else coords_a
+                    b = coords_b[:-1] if len(coords_b) > 1 and coords_b[0] == coords_b[-1] else coords_b
+                    cx_a = sum(c[0] for c in a) / len(a)
+                    cy_a = sum(c[1] for c in a) / len(a)
+                    cx_b = sum(c[0] for c in b) / len(b)
+                    cy_b = sum(c[1] for c in b) / len(b)
+                    shift_deg = ((cx_b - cx_a) ** 2 + (cy_b - cy_a) ** 2) ** 0.5
+                    if shift_deg > 0.00001:
+                        geometry_changed = True
+                        changes.append(AttributeChange(
+                            field="geometry_centroid",
+                            old_value=f"{cx_a:.6f},{cy_a:.6f}",
+                            new_value=f"{cx_b:.6f},{cy_b:.6f}",
+                            change_type="BOUNDARY_SHIFT",
+                        ))
+            except (IndexError, TypeError, ZeroDivisionError):
+                pass
 
     # Severity classification
     n_changes = len(changes)

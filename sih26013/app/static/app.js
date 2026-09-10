@@ -845,7 +845,12 @@ async function submitProposalReview(proposalId, action) {
       reviewer_id: reviewer,
       notes: notes || '',
     });
-    Toast.success('Proposal Endorsed', `Record cryptographically signed by ${reviewer}`);
+    Toast.success(
+      action === 'APPROVE' ? 'Proposal Endorsed' : 'Review Recorded',
+      action === 'APPROVE'
+        ? `Approved and cryptographically signed by ${reviewer}`
+        : `${action} recorded for reviewer ${reviewer}`
+    );
     await loadProposals();
   } catch (e) {
     Toast.error('Review Failed', e.message);
@@ -965,12 +970,12 @@ async function runCanonicalExport() {
             text-decoration:none;font-weight:600;">
             ⬇ Download GeoJSON
           </a>
-          ${res.signed_envelope?.evidence_id ? `<a href="${cfg.base}/evidence/${res.signed_envelope.evidence_id}/certificate.html"
+          ${res.evidence_id || res.signed_envelope?.evidence_id ? `<a href="${cfg.base}/evidence/${res.evidence_id || res.signed_envelope.evidence_id}"
             target="_blank" rel="noopener"
             style="display:inline-block;padding:5px 14px;border-radius:4px;
             background:transparent;border:1px solid var(--accent-primary,#3b82f6);
             color:var(--accent-primary,#3b82f6);font-size:12px;text-decoration:none;font-weight:600;">
-            🔐 Signed Certificate
+            🔐 View Signed Envelope
           </a>` : ''}
         </div>
       </div>
@@ -1094,7 +1099,7 @@ async function loadEvidence() {
         <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:var(--radius);padding:14px;margin-bottom:12px;">
           <div style="display:flex;justify-content:space-between;align-items:center;">
             <div>
-              <div style="font-weight:700;font-size:13.5px;color:var(--text-main);">Envelope: ${ui.esc(p.evidence_id)}</div>
+              <div style="font-weight:700;font-size:13.5px;color:var(--text-main);">Envelope: ${ui.esc(p.evidence_id || p.comparison_id || '—')}</div>
               <div style="font-size:11.5px;color:var(--text-dim);">Signed: ${dateStr} · Alg: ${ui.esc(alg)}</div>
             </div>
             ${ui.badge(evType, 'geo')}

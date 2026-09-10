@@ -95,19 +95,25 @@ def preview_erase_scope(case_id: str, req: PreviewRequest):
 
     resolved = _validate_erasure_paths(case_id, req.target_paths)
     items = preview_scope(resolved)
+    scope_items = [
+        {
+            'path': item.path,
+            'size_bytes': item.size_bytes,
+            'is_dir': item.is_dir,
+            'child_count': item.child_count,
+        }
+        for item in items
+    ]
+    total_size = sum(i.size_bytes for i in items)
+    total_files = sum(1 for i in items if not i.is_dir) + sum(i.child_count for i in items if i.is_dir)
+    files_to_erase = [i.path for i in items]
     return {
         'case_id': case_id,
-        'scope_items': [
-            {
-                'path': item.path,
-                'size_bytes': item.size_bytes,
-                'is_dir': item.is_dir,
-                'child_count': item.child_count,
-            }
-            for item in items
-        ],
-        'total_files': sum(1 for i in items if not i.is_dir) + sum(i.child_count for i in items if i.is_dir),
-        'total_size_bytes': sum(i.size_bytes for i in items),
+        'scope_items': scope_items,
+        'files_to_erase': files_to_erase,  # UI alias
+        'total_files': total_files,
+        'total_size_bytes': total_size,
+        'total_bytes': total_size,  # UI alias
         'warning': 'Review scope carefully. File erasure is irreversible.',
     }
 

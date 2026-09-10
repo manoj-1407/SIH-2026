@@ -45,7 +45,9 @@ async def upload_evidence_image(case_id: str, file: UploadFile = File(...)):
             safe_filename = 'upload.img'
 
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
-    file_path = UPLOADS_DIR / f'{case_id}_{safe_filename}'
+    acq_id = f'ACQ-{uuid.uuid4().hex[:8].upper()}'
+    # Immutable acquisition filename — never overwrite a prior upload of the same name
+    file_path = UPLOADS_DIR / f'{case_id}_{acq_id}_{safe_filename}'
 
     # Write uploaded file with size bound check
     total_written = 0
@@ -63,7 +65,6 @@ async def upload_evidence_image(case_id: str, file: UploadFile = File(...)):
             buffer.write(chunk)
 
     hash_res = hash_file(str(file_path))
-    acq_id = f'ACQ-{uuid.uuid4().hex[:8].upper()}'
 
     case_store.update_acquisition(
         case_id=case_id,

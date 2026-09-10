@@ -32,7 +32,9 @@ class FilesystemCapability:
     recovery_method: str       # 'INODE_METADATA' | 'RAW_CARVING_FALLBACK' | 'UNAVAILABLE'
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        d = asdict(self)
+        d["detection_method"] = self.recovery_method  # UI alias
+        return d
 
 
 def detect_filesystem(image_path: str) -> FilesystemCapability:

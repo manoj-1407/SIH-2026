@@ -41,17 +41,20 @@ def execute_forensic_proof_loop(
     pre_carve_time_ms = round((time.time() - t_pre_start) * 1000, 2)
     pre_artifacts_found = pre_carve_summary.get("total_carved", 0)
 
-    # 3. SANITIZATION EXECUTION (STAGE 2)
+    # 3. SANITIZATION EXECUTION (STAGE 2) — in-memory validation probe only
     t_san_start = time.time()
     san_method = method.upper() if method.upper() in ["CLEAR", "PURGE", "DESTROY"] else "CLEAR"
-    
+
     if san_method == "PURGE" or san_method == "DESTROY":
-        # Crypto erase or block overwrite simulation: replace stream with crypto pseudo-random bytes
+        # Simulated in-memory probe (NOT hardware Purge/Destroy)
         import secrets
         sanitized_bytes = secrets.token_bytes(media_size)
+        method_applied = f"SIMULATED_{san_method}"
+        execution_mode = "IN_MEMORY_VALIDATION_PROBE"
     else:
-        # Clear: overwrite stream with zero bytes
         sanitized_bytes = b'\x00' * media_size
+        method_applied = "CLEAR_ZERO_FILL"
+        execution_mode = "IN_MEMORY_VALIDATION_PROBE"
 
     san_time_ms = round((time.time() - t_san_start) * 1000, 2)
     post_hash = hashlib.sha256(sanitized_bytes).hexdigest()
@@ -81,13 +84,14 @@ def execute_forensic_proof_loop(
         validation_status = "VALIDATED_ZERO_RECOVERABLE"
         validation_notes = (
             f"Validation Probe Confirmed: 0 / {pre_artifacts_found} pre-existing artifacts recoverable "
-            f"under {san_method} method for {data_sensitivity} sensitivity."
+            f"under {method_applied} ({execution_mode}) for {data_sensitivity} sensitivity."
         )
     else:
         validation_status = "VALIDATION_FAILED_RESIDUAL_ARTIFACTS"
         validation_notes = (
-            f"Validation Warning: {post_artifacts_found} residual artifact(s) detected after {san_method} execution. "
-            "Higher sanitization level (PURGE/DESTROY) required."
+            f"Validation Warning: {post_artifacts_found} residual artifact(s) detected after "
+            f"{method_applied} in-memory probe. Escalate sanitization policy as required for "
+            f"{data_sensitivity} sensitivity (media-specific Purge/Destroy is out of scope here)."
         )
 
     total_duration_ms = round((time.time() - t0) * 1000, 2)
@@ -109,10 +113,18 @@ def execute_forensic_proof_loop(
             "scan_time_ms": pre_carve_time_ms,
         },
         "sanitization_execution": {
-            "method_applied": san_method,
+            "method_requested": san_method,
+            "method_applied": method_applied,
+            "execution_mode": execution_mode,
             "post_sha256": post_hash,
             "passes_completed": 1,
             "execution_time_ms": san_time_ms,
+            "note": (
+                "PURGE/DESTROY in this proof loop are SIMULATED in-memory probes only — "
+                "not NIST hardware Purge/Destroy."
+                if san_method in ("PURGE", "DESTROY") else
+                "CLEAR applied as in-memory zero-fill validation probe."
+            ),
         },
         "post_sanitization_probe": {
             "artifacts_recovered": post_artifacts_found,
@@ -146,7 +158,9 @@ def execute_forensic_proof_loop(
         evidence_type="SANITIZATION_PROOF_LOOP",
         input_meta={
             "initial_hash": initial_hash,
-            "sanitization_method": san_method,
+            "sanitization_method_requested": san_method,
+            "sanitization_method_applied": method_applied,
+            "execution_mode": execution_mode,
             "media_size_bytes": media_size,
         },
         operation_meta={

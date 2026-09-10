@@ -172,7 +172,8 @@ def compare_parcel_attributes(p_a: CanonicalParcel, p_b: CanonicalParcel) -> Dis
     if delta_pct > 15.0 or delta_sq_m > 500.0:
         severity = "CRITICAL"
         discrepancies.append(
-            f"Area discrepancy of {delta_sq_m:.1f} m² ({delta_pct:.1f}%) exceeds statutory threshold. "
+            f"Area discrepancy of {delta_sq_m:.1f} m² ({delta_pct:.1f}%) exceeds configured "
+            f"reconciliation threshold (15% or 500 m²). "
             f"({p_a.source_agency.value}: {p_a.area_sq_m} m² vs {p_b.source_agency.value}: {p_b.area_sq_m} m²)"
         )
     elif delta_pct > 5.0:

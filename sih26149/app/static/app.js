@@ -637,6 +637,43 @@ async function seedOfficialDemoCase() {
 
 // ── Forensics Module ───────────────────────────────────────────────────────────
 
+async function onImageSelect() {
+  if (!state.activeCaseId) {
+    Toast.warning('No Active Case', 'Select or create a case before uploading an image');
+    const input = document.getElementById('imageUpload');
+    if (input) input.value = '';
+    return;
+  }
+  const input = document.getElementById('imageUpload');
+  const file = input?.files?.[0];
+  if (!file) return;
+
+  ui.html('uploadHint', `Uploading ${file.name}…`);
+  const form = new FormData();
+  form.append('file', file, file.name);
+  try {
+    const res = await api.upload(`/cases/${state.activeCaseId}/upload`, form);
+    ui.html('fsResult', ui.resultCard(
+      '✓ Evidence Image Acquired',
+      `SHA-256: ${(res.sha256 || '').substring(0, 24)}…`,
+      'ok',
+      `Acquisition ${res.acquisition_id} · ${(res.size_bytes || 0).toLocaleString()} bytes · ${res.filename || file.name}`
+    ));
+    ui.text('uploadHint', `${res.filename || file.name} registered (${res.acquisition_id})`);
+    ui.stepOn('step-discover');
+    ui.stepOn('step-recover');
+    ui.setBtn('btnDetectFs', false);
+    ui.setBtn('btnDiscover', false);
+    ui.setBtn('btnRecover', false);
+    Toast.success('Upload Complete', `Acquisition ${res.acquisition_id}`);
+  } catch (e) {
+    ui.html('fsResult', ui.err(e.message));
+    Toast.error('Upload Failed', e.message);
+  } finally {
+    if (input) input.value = '';
+  }
+}
+
 async function seedSyntheticEvidenceForActiveCase() {
   if (!state.activeCaseId) {
     Toast.warning('No Active Case', 'Please select or create a case first');
@@ -668,7 +705,7 @@ async function detectFilesystem() {
     const cap = await api.get(`/cases/${state.activeCaseId}/filesystem`);
     ui.html('fsResult', ui.resultCard(
       `Filesystem: ${cap.status_label}`,
-      `Detection Method: ${cap.detection_method} | Recovery Supported: ${cap.recovery_supported ? 'Yes' : 'No'}`,
+      `Detection Method: ${cap.detection_method || cap.recovery_method || '—'} | Recovery Supported: ${cap.recovery_supported ? 'Yes' : 'No'}`,
       cap.recovery_supported ? 'ok' : 'warn'
     ));
   } catch (e) {
@@ -949,12 +986,15 @@ async function previewEraseScope() {
   const paths = rawPaths.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
   try {
     const data = await api.post(`/cases/${caseId}/erase-preview`, { target_paths: paths });
+    const totalBytes = data.total_bytes ?? data.total_size_bytes ?? 0;
+    const fileList = data.files_to_erase
+      || (data.scope_items || []).map(i => (typeof i === 'string' ? i : i.path));
     ui.html('erasePreviewResult', `
       <div class="result-card ok">
-        <div class="result-status">Scope Bounds: ${data.total_files} Files to be Sanitized</div>
-        <div style="font-size:12px;margin-top:4px;">Total Footprint: ${(data.total_bytes).toLocaleString()} Bytes</div>
+        <div class="result-status">Scope Bounds: ${data.total_files || fileList.length} Files to be Sanitized</div>
+        <div style="font-size:12px;margin-top:4px;">Total Footprint: ${Number(totalBytes).toLocaleString()} Bytes</div>
         <div style="max-height:100px;overflow-y:auto;margin-top:6px;font-family:var(--font-mono);font-size:11px;">
-          ${data.files_to_erase.map(f => `<div>• ${ui.esc(f)}</div>`).join('')}
+          ${(fileList || []).map(f => `<div>• ${ui.esc(f)}</div>`).join('')}
         </div>
       </div>
     `);
@@ -1004,7 +1044,7 @@ async function executeFileErasure() {
       `Selective Erasure Completed — ${res.classification || 'VERIFIED'}`,
       res.explanation || 'Files overwritten and unlinked',
       'ok',
-      `Erased ${res.total_files || 0} files (${(res.total_bytes || 0).toLocaleString()} bytes)`
+      `Erased ${res.total_files || 0} files (${(res.total_bytes ?? res.total_bytes_erased ?? 0).toLocaleString()} bytes)`
     ));
     Toast.success('Selective Erasure Complete', `Signed Evidence: ${data.evidence_id}`);
   } catch (e) {
@@ -1050,8 +1090,8 @@ async function loadAuditChain() {
         </div>
         <div style="margin:6px 0;font-size:13px;color:var(--text-main);">Actor: <strong>${ui.esc(entry.actor || 'SYSTEM')}</strong></div>
         <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-dim);background:var(--bg-surface-elevated);padding:8px;border-radius:4px;word-break:break-all;">
-          <strong>Block SHA-256:</strong> ${ui.esc(entry.current_hash || '—')}<br>
-          <strong>Prev Hash Link:</strong> ${ui.esc(entry.prev_hash || 'GENESIS')}
+          <strong>Block SHA-256:</strong> ${ui.esc(entry.entry_hash || entry.current_hash || '—')}<br>
+          <strong>Prev Hash Link:</strong> ${ui.esc(entry.previous_hash || entry.prev_hash || 'GENESIS')}
         </div>
       </div>
     `).join('');

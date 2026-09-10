@@ -59,14 +59,28 @@ def run_sanitization(case_id: str, req: SanitizationRequest):
         details=auth.to_dict(),
     )
 
-    # Step 2: Execute ZERO_FILL
+    # Step 2: Execute requested Clear-class method (ZERO_FILL or PSEUDO_RANDOM only)
     try:
-        op_res = execute_sanitization(case.source_path, method=SanitizationMethod.ZERO_FILL)
+        method = SanitizationMethod(req.method.upper())
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f'Invalid method: {req.method}. Supported: ZERO_FILL, PSEUDO_RANDOM '
+                   f'(NIST Clear-class overwrite). PURGE/DESTROY require media-specific tooling '
+                   f'outside this workstation scope.',
+        )
+
+    try:
+        op_res = execute_sanitization(case.source_path, method=method)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Sanitization execution failed: {e}')
 
-    # Step 3: Readback Verification
-    verify_res = verify_sanitization(case.source_path)
+    # Step 3: Readback Verification (method-aware)
+    verify_res = verify_sanitization(
+        case.source_path,
+        method=method,
+        pre_sha256=case.input_sha256,
+    )
 
     # Step 4: Build signed evidence package
     key_id, priv_key = get_or_create_primary_key()
@@ -80,7 +94,7 @@ def run_sanitization(case_id: str, req: SanitizationRequest):
         evidence_type='SANITIZATION',
         input_meta={'target_path': case.source_path, 'input_sha256': case.input_sha256},
         operation_meta={
-            'method': SanitizationMethod.ZERO_FILL.value,
+            'method': method.value,
             'operator': auth.to_dict(),
             'bytes_written': op_res.bytes_written,
             'passes': op_res.passes_completed,

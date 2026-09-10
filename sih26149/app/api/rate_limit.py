@@ -85,6 +85,8 @@ def check_rate_limit(request) -> tuple[bool, int]:
     if any(path.startswith(p) for p in EXEMPT_PREFIXES):
         return True, 0
     key = _client_key(request)
-    if path.startswith(UPLOAD_PATH_PREFIX) and path.endswith(UPLOAD_PATH_SUFFIX):
+    if path.startswith("/cases/") and path.endswith(UPLOAD_PATH_SUFFIX):
+        return _upload_limiter.check(f"upload:{key}", UPLOAD_LIMIT, UPLOAD_WINDOW_SECONDS)
+    if path.startswith("/api/cases/") and path.endswith(UPLOAD_PATH_SUFFIX):
         return _upload_limiter.check(f"upload:{key}", UPLOAD_LIMIT, UPLOAD_WINDOW_SECONDS)
     return _general_limiter.check(key, GENERAL_LIMIT, GENERAL_WINDOW_SECONDS)

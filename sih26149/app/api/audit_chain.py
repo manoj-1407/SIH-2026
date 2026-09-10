@@ -1,5 +1,6 @@
 """Audit Chain verification API router — SIH26149."""
-from fastapi import APIRouter, HTTPException
+import os
+from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
 from typing import Optional
 
@@ -44,11 +45,20 @@ class TamperDemoRequest(BaseModel):
 
 
 @router.post('/demo-tamper')
-def demo_tamper_audit_chain(case_id: str, req: TamperDemoRequest):
+def demo_tamper_audit_chain(
+    case_id: str,
+    req: TamperDemoRequest,
+    x_demo_mode: Optional[str] = Header(None),
+):
     """
     [DEMO ONLY] Demonstrate cryptographic tamper detection in the audit chain.
     Modifies a field in one entry, verifies the chain breaks, then restores.
     """
+    if os.environ.get("DEMO_MODE", "").strip() != "1" and x_demo_mode != "1":
+        raise HTTPException(
+            status_code=403,
+            detail="Audit chain tamper demo is only available when DEMO_MODE=1 (or X-Demo-Mode: 1).",
+        )
     validate_case_id(case_id)
     timeline = audit_logger.get_timeline(case_id)
     if not timeline:

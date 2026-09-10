@@ -397,13 +397,15 @@ def run_analysis(case_id: str, req: Optional[AnalysisRequest] = None):
                 None
             )
             if pair:
+                m = pair.get("measurements") or {}
                 return {
                     "case_id": case_id,
                     "evidence_id": pair["comparison_id"],
                     "result": {
                         "geo_classification": pair["geo_classification"],
-                        "intersection_ratio": pair["measurements"].get("intersection_over_union", 0.0),
-                        "symmetric_diff_sq_m": pair["measurements"].get("symmetric_difference_sq_m", 0.0),
+                        "intersection_ratio": m.get("iou", m.get("intersection_over_union", 0.0)) or 0.0,
+                        "symmetric_diff_sq_m": m.get("symmetric_difference_sq_m", 0.0) or 0.0,
+                        "hausdorff_m": m.get("hausdorff_m"),
                         "explanation": pair["explanation"],
                     },
                     "envelope": pair.get("evidence_envelope"),
@@ -724,6 +726,11 @@ def tamper_demo_evidence(evidence_id: str, req: TamperDemoRequest):
     """
     [DEMO ONLY] Mutates a field in a signed evidence envelope to show cryptographic tamper detection.
     """
+    if os.environ.get("DEMO_MODE", "").strip() != "1":
+        raise HTTPException(
+            status_code=403,
+            detail="Evidence tamper demo is only available when DEMO_MODE=1.",
+        )
     try:
         orig = evidence_store.load(evidence_id)
     except FileNotFoundError:
@@ -862,26 +869,48 @@ def export_canonical_geojson(case_id: str):
       agency's infrastructure configuration.
     """
     c = get_case_or_404(case_id)
-    records: dict = c.get("records", {})
-    parcels = _records_to_canonical_parcels(records)
+    # Prefer approved proposal / topology corrections over raw ingest defaults
+    parcels = _parcels_for_proposal(c)
+    if not parcels:
+        records: dict = c.get("records", {})
+        parcels = _records_to_canonical_parcels(records)
 
     features = []
     for p in parcels:
+        props = {
+            "parcel_id": p.parcel_id,
+            "survey_number": p.survey_number,
+            "source_agency": p.source_agency.value if hasattr(p.source_agency, "value") else str(p.source_agency),
+            "owner_ref": p.owner_ref,
+            "crs": p.crs,
+            "capture_timestamp": p.capture_timestamp,
+            "confidence_weight": p.confidence_weight,
+            "raw_attributes": p.raw_attributes,
+        }
+        # Do not invent area/land_use when absent from source
+        area = getattr(p, "area_sq_m", None)
+        if area is not None and area != 1000.0:
+            props["area_sq_m"] = area
+        elif p.raw_attributes and (p.raw_attributes.get("area_sq_m") or p.raw_attributes.get("area")):
+            props["area_sq_m"] = p.raw_attributes.get("area_sq_m") or p.raw_attributes.get("area")
+        else:
+            props["area_sq_m"] = None
+            props["area_sq_m_note"] = "not supplied by source record"
+
+        lu = p.land_use.value if hasattr(p.land_use, "value") else str(p.land_use)
+        if lu and lu != "RESIDENTIAL":
+            props["land_use"] = lu
+        elif p.raw_attributes and (p.raw_attributes.get("land_use") or p.raw_attributes.get("usage")):
+            props["land_use"] = p.raw_attributes.get("land_use") or p.raw_attributes.get("usage")
+        else:
+            props["land_use"] = lu if lu else None
+            if lu == "RESIDENTIAL" and not (p.raw_attributes or {}).get("land_use"):
+                props["land_use_note"] = "defaulted only when source omitted land_use"
+
         features.append({
             "type": "Feature",
             "geometry": p.geometry,
-            "properties": {
-                "parcel_id":        p.parcel_id,
-                "survey_number":    p.survey_number,
-                "source_agency":    p.source_agency.value,
-                "area_sq_m":        p.area_sq_m,
-                "land_use":         p.land_use.value,
-                "owner_ref":        p.owner_ref,
-                "crs":              p.crs,
-                "capture_timestamp": p.capture_timestamp,
-                "confidence_weight": p.confidence_weight,
-                "raw_attributes":    p.raw_attributes,
-            },
+            "properties": props,
         })
 
     geojson_collection = {
