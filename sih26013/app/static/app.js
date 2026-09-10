@@ -150,7 +150,7 @@ const tabNames = {
   showcase:   'Showcase & Story',
   cases:      'Cases & Registry',
   ingest:     'Ingest Records',
-  aimatch:    'AI Parcel Matcher',
+  aimatch:    'Hybrid Matcher',
   topology:   'Topology Repair',
   imagery:    'Drone Footprints',
   proposals:  'Harmonization',
@@ -260,7 +260,7 @@ function toggleMobileDrawer(open) {
 // ── Theme Manager ──────────────────────────────────────────────────────────────
 
 function initTheme() {
-  const saved = localStorage.getItem('sih_theme') || 'dark';
+  const saved = localStorage.getItem('sih_theme') || 'light';
   setTheme(saved, false);
 }
 
@@ -290,8 +290,8 @@ function setTheme(theme, save = true) {
 
   document.documentElement.setAttribute('data-theme', effective);
 
-  const icons = { dark: '🌲', light: '☀️', contrast: '⚡', system: '💻' };
-  const labels = { dark: 'Dark Geo', light: 'Urban Lab', contrast: 'High Contrast', system: 'System' };
+  const icons = { dark: '◆', light: '☀', contrast: '▣', system: '◌' };
+  const labels = { dark: 'Night Atlas', light: 'Cadastral Atlas', contrast: 'High Contrast', system: 'System' };
   ui.text('themeIcon', icons[theme] || '🌓');
   ui.text('themeLabel', labels[theme] || 'Theme');
 

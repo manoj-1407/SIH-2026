@@ -293,7 +293,7 @@ function toggleMobileDrawer(open) {
 // ── Theme Manager ──────────────────────────────────────────────────────────────
 
 function initTheme() {
-  const saved = localStorage.getItem('sih_theme') || 'dark';
+  const saved = localStorage.getItem('sih_theme') || 'light';
   setTheme(saved, false);
 }
 
@@ -323,8 +323,8 @@ function setTheme(theme, save = true) {
 
   document.documentElement.setAttribute('data-theme', effective);
 
-  const icons = { dark: '🌙', light: '☀️', contrast: '⚡', system: '💻' };
-  const labels = { dark: 'Dark Slate', light: 'Clean Lab', contrast: 'High Contrast', system: 'System' };
+  const icons = { dark: '◆', light: '☀', contrast: '▣', system: '◌' };
+  const labels = { dark: 'Ink Navy', light: 'Evidence Lab', contrast: 'High Contrast', system: 'System' };
   ui.text('themeIcon', icons[theme] || '🌓');
   ui.text('themeLabel', labels[theme] || 'Theme');
 

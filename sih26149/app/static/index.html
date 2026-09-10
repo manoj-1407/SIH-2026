@@ -1,10 +1,13 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>SIH26149 — Forensic Evidence Platform</title>
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2338bdf8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z'/%3E%3Cpath d='m9 12 2 2 4-4'/%3E%3C/svg%3E">
+  <title>Evidence Lab — SIH26149 · NTRO Forensic Workstation</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23b87333' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z'/%3E%3Cpath d='m9 12 2 2 4-4'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Sora:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/app.css">
 </head>
 <body>
@@ -23,16 +26,16 @@
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
           </div>
           <div>
-            <div class="wordmark-title">Forensic Workstation</div>
-            <div class="wordmark-sub">PS SIH26149 · Evidence Engine</div>
+            <div class="wordmark-title">Evidence Lab</div>
+            <div class="wordmark-sub">SIH26149 · NTRO Forensic</div>
           </div>
           <button class="btn-drawer-close" onclick="toggleMobileDrawer(false)" aria-label="Close navigation">✕</button>
         </div>
 
         <nav class="sidenav" role="tablist">
-          <button class="sidenav-item active" data-tab="showcase" role="tab" style="background: linear-gradient(135deg, rgba(56, 189, 248, 0.15), rgba(99, 102, 241, 0.15)); border: 1px solid rgba(56, 189, 248, 0.3);">
+          <button class="sidenav-item active" data-tab="showcase" role="tab">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
-            <span style="font-weight:600; color:var(--text-bright,#fff)">✦ Showcase &amp; Story</span>
+            <span>Showcase &amp; Story</span>
           </button>
           <button class="sidenav-item" data-tab="cases" role="tab">
             <svg width="16" height="16" viewBox="0 0 15 15" fill="none"><rect x="1" y="3" width="13" height="10" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M5 3V2a1 1 0 011-1h3a1 1 0 011 1v1" stroke="currentColor" stroke-width="1.3"/></svg>
@@ -67,7 +70,7 @@
         <div class="sidebar-quick-section">
           <div class="sidebar-sec-label">Demo Quick-Actions</div>
           <button class="btn-sidebar-quick" onclick="seedOfficialDemoCase()">
-            <span class="quick-icon">⚡</span>
+            <span class="quick-icon">●</span>
             <span>Seed Demo Case</span>
           </button>
         </div>
@@ -113,20 +116,20 @@
           <!-- Guided Demo Trigger Button -->
           <button class="btn btn-demo-guide" onclick="toggleJudgeDemoModal()" title="Open Judge Demonstration Stepper">
             <span class="demo-glow-dot"></span>
-            <span class="demo-label">⚡ Judge Demo Flow</span>
+            <span class="demo-label">Judge Demo Flow</span>
           </button>
 
           <!-- Theme Selector -->
           <div class="theme-picker-wrapper">
             <button class="btn-theme" id="themeBtn" onclick="toggleThemeMenu()" title="Select Theme">
-              <span id="themeIcon">🌓</span>
-              <span class="theme-text" id="themeLabel">Dark</span>
+              <span id="themeIcon">☀</span>
+              <span class="theme-text" id="themeLabel">Evidence Lab</span>
             </button>
             <div class="theme-dropdown" id="themeDropdown" style="display:none">
-              <button class="theme-opt" onclick="setTheme('dark')">🌙 Dark Slate</button>
-              <button class="theme-opt" onclick="setTheme('light')">☀️ Clean Lab</button>
-              <button class="theme-opt" onclick="setTheme('contrast')">⚡ High Contrast</button>
-              <button class="theme-opt" onclick="setTheme('system')">💻 System Default</button>
+              <button class="theme-opt" onclick="setTheme('light')">Evidence Lab</button>
+              <button class="theme-opt" onclick="setTheme('dark')">Ink Navy</button>
+              <button class="theme-opt" onclick="setTheme('contrast')">High Contrast</button>
+              <button class="theme-opt" onclick="setTheme('system')">System Default</button>
             </div>
           </div>
 
