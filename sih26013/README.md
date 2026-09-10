@@ -29,16 +29,23 @@ Three datasets with a shared origin (same satellite pass, same ground survey, sa
 
 ## Quick start
 
+> **Recommended local mode:** `DEMO_MODE=1` (default in `./run.sh` and `run_windows.bat`). When no API key env is set, the workstation allows open localhost access.
+
 ### Native Linux / WSL2
 ```bash
 # 1. Install dependencies
 ./setup.sh
 
-# 2. Start the workstation
+# 2. Start the workstation (DEMO_MODE=1 by default)
 ./run.sh
 
 # Access UI:       http://127.0.0.1:8001
 # Access API docs: http://127.0.0.1:8001/docs
+```
+
+### Windows
+```bat
+run_windows.bat
 ```
 
 ### Docker (recommended for demo)
@@ -67,7 +74,7 @@ python3 benchmarks/benchmark_scale.py
 |---|---|---|
 | `SIH26013_DATA_DIR` | `/app/data` (container) or `<repo>/data` (local) | Root for evidence, keys, audit logs |
 | `SIH26013_API_KEY` | *(optional in dev)* | When set in production, all API requests must supply `X-API-Key` header |
-| `DEMO_MODE` | `0` | Set to `1` in local sandbox to enable tamper-demo endpoint and allow interactive testing |
+| `DEMO_MODE` | `1` (via `run.sh` / `run_windows.bat`) | Recommended for local sandbox; allows interactive testing without an API key |
 | `PORT` | `8000` | Port for web server to listen on (Render / Docker standard) |
 
 ### Running the tamper demonstration

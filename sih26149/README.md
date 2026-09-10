@@ -21,16 +21,23 @@ This system does not just perform recovery or erasure. It:
 
 ## Quick start
 
+> **Recommended local mode:** `DEMO_MODE=1` (default in `./run.sh` and `run_windows.bat`). When no API key env is set, the workstation allows open localhost access.
+
 ### Native Linux / WSL2
 ```bash
 # 1. Install dependencies
 ./setup.sh
 
-# 2. Start the workstation
+# 2. Start the workstation (DEMO_MODE=1 by default)
 ./run.sh
 
 # Access UI:       http://127.0.0.1:8000
 # Access API docs: http://127.0.0.1:8000/docs
+```
+
+### Windows
+```bat
+run_windows.bat
 ```
 
 ### Docker (recommended for demo)
@@ -60,11 +67,11 @@ python3 -m app.cli.verify path/to/evidence_package.json \
 |---|---|---|
 | `SIH26149_DATA_DIR` | `/app/data` (container) or `<repo>/data` (local) | Root for all evidence, keys, cases |
 | `SIH26149_API_KEY` | *(unset = open)* | When set, all API requests must supply `X-API-Key` header |
-| `DEMO_MODE` | `0` | Set to `1` to enable tamper-demo endpoint and bypass API key |
+| `DEMO_MODE` | `1` (via `run.sh` / `run_windows.bat`) | Recommended for local use; enables tamper-demo and open access when no API key is set |
 
 ### Running the tamper demonstration
 ```bash
-# Start with demo mode enabled
+# Start with demo mode enabled (default in run scripts)
 DEMO_MODE=1 ./run.sh
 
 # The tamper endpoint is now accessible — shown in the Evidence Vault tab.

@@ -12,6 +12,10 @@ echo  Press Ctrl+C to stop
 echo =========================================
 echo.
 
+REM Local/demo default: open access without API key
+if not defined DEMO_MODE set DEMO_MODE=1
+echo [CONFIG] DEMO_MODE=%DEMO_MODE%
+
 REM Check if requirements are installed
 python -c "import fastapi" 2>nul || (
     echo [SETUP] Installing Python dependencies...

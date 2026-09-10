@@ -371,21 +371,29 @@ async function pingHealth() {
     state.demoMode = health.demo_mode === true;
     if (state.demoMode) ui.show('tamperSection');
   } catch (err) {
-    // Distinguish between authentication failure (401) and actual network outage
+    // Distinguish network offline vs auth (401) vs other service errors
     const errMsg = String(err.message || '');
-    const isAuthError = errMsg.includes('401') || errMsg.toLowerCase().includes('authentication') || errMsg.toLowerCase().includes('api key');
+    const lower = errMsg.toLowerCase();
+    const isAuthError = errMsg.includes('401') || lower.includes('authentication') || lower.includes('api key');
+    const isNetwork = err instanceof TypeError
+      || /failed to fetch|networkerror|load failed|err_connection|err_name_not_resolved/i.test(errMsg);
 
     if (isAuthError) {
       if (connDot) connDot.className = 'conn-dot dot-warn';
       if (connLabel) connLabel.textContent = 'Auth Required';
       if (connPing) connPing.textContent = '-- ms';
-      // Don't show cold-start banner for auth issues
+    } else if (isNetwork) {
+      if (connDot) connDot.className = 'conn-dot dot-err';
+      if (connLabel) connLabel.textContent = 'Network Offline';
+      if (connPing) connPing.textContent = '-- ms';
+      if (coldBanner && window.location.hostname.includes('render.com')) {
+        coldBanner.style.display = 'flex';
+        startColdStartCountdown();
+      }
     } else {
       if (connDot) connDot.className = 'conn-dot dot-err';
-      if (connLabel) connLabel.textContent = 'Service Offline';
+      if (connLabel) connLabel.textContent = 'Service Error';
       if (connPing) connPing.textContent = '-- ms';
-
-      // Show friendly cold-start notice if on Render
       if (coldBanner && window.location.hostname.includes('render.com')) {
         coldBanner.style.display = 'flex';
         startColdStartCountdown();
@@ -449,6 +457,17 @@ function saveApiKey() {
 }
 
 function saveApiOverride() {
+  // Persist API key from diagnostics modal when present
+  const keyInput = document.getElementById('diagApiKeyInput');
+  if (keyInput) {
+    const keyVal = ui.val('diagApiKeyInput');
+    if (keyVal) {
+      localStorage.setItem('sih_api_key', keyVal);
+    } else {
+      localStorage.removeItem('sih_api_key');
+    }
+  }
+
   const val = ui.val('apiBaseOverride');
   if (val) {
     localStorage.setItem('sih_api_override', val);
@@ -1063,14 +1082,18 @@ async function simulateTamperDemo() {
       field: 'actor',
       new_value: 'ROGUE_ADVERSARY_MUTATION',
     });
-    const v = data.tampered_verification || {};
+    const v = data.tampered_verification || {
+      chain_valid: data.chain_valid_after_tamper === true,
+      violations: data.violations || [],
+    };
+    const fieldName = data.tampered_field || data.field || 'actor';
     ui.html('tamperDemoResult', `
       <div class="result-card err" style="margin-top:10px;">
         <div class="result-status">🚨 Cryptographic Tamper Detected!</div>
         <div style="margin-top:6px;font-size:12.5px;">
-          Adversary mutated <code>${ui.esc(data.tampered_field)}</code> on block line ${data.tampered_entry_index + 1}.<br>
+          Adversary mutated <code>${ui.esc(fieldName)}</code> on block line ${(data.tampered_entry_index ?? 0) + 1}.<br>
           <strong>Chain Status:</strong> ${v.chain_valid ? 'Valid' : 'INVALID (Break detected)'}<br>
-          <strong>Pinpointed Violation:</strong> ${ui.esc(JSON.stringify(v.violations?.[0] || 'Broken linkage'))}
+          <strong>Pinpointed Violation:</strong> ${ui.esc(JSON.stringify(v.violations?.[0] || data.explanation || 'Broken linkage'))}
         </div>
         <div style="margin-top:8px;font-size:11.5px;color:var(--accent-success);">
           ✓ Original chain automatically restored after verification proof.
@@ -1141,13 +1164,13 @@ async function runTamper() {
     const res = await api.post(`/evidence/${evId}/demo-tamper`, {});
     const v = res.verification || {};
     const reason = v.reason || res.explanation || 'Tampered payload rejected by Ed25519 signature verifier.';
-    const valid = v.valid ?? false;
+    const valid = (typeof v.valid === 'boolean') ? v.valid : (res.is_valid === true);
     const classification = valid ? 'VALID' : (res.classification || 'TAMPERED_OR_CORRUPT');
     ui.html('tamperResult', `
       <div class="result-card err">
         <div class="result-status">🚨 Cryptographic Tamper Detected!</div>
         <div style="margin-top:6px;font-size:12.5px;">
-          Mutated Field: <code>${ui.esc(res.tampered_field || 'payload')}</code><br>
+          Mutated Field: <code>${ui.esc(res.tampered_field || 'result.classification')}</code><br>
           Verification Detail: <strong>${ui.esc(reason)}</strong>
         </div>
         <div style="margin-top:8px;font-size:11.5px;color:var(--accent-success);">

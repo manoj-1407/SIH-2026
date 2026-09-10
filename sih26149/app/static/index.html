@@ -720,49 +720,6 @@
     </main>
   </div>
 
-  <!-- ══ CONNECTION DIAGNOSTICS MODAL ══ -->
-  <div class="modal-backdrop" id="connModalBackdrop" style="display:none;" onclick="closeConnDiagnostics(event)">
-    <div class="modal-card" onclick="event.stopPropagation()">
-      <div class="modal-header">
-        <div class="modal-title">API Connection Diagnostics</div>
-        <button class="btn-modal-close" onclick="closeConnDiagnostics()">✕</button>
-      </div>
-      <div class="modal-body">
-        <div class="diag-status-row">
-          <div class="diag-badge" id="diagStatusBadge">● Operational</div>
-          <div class="diag-latency" id="diagLatency">Ping: 0 ms</div>
-        </div>
-
-        <div class="diag-grid">
-          <div class="diag-item">
-            <span class="diag-k">Active API Origin:</span>
-            <span class="diag-v mono-text" id="diagOrigin">https://...</span>
-          </div>
-          <div class="diag-item">
-            <span class="diag-k">Platform Version:</span>
-            <span class="diag-v" id="diagVersion">2.0.0</span>
-          </div>
-          <div class="diag-item">
-            <span class="diag-k">Cryptographic Layer:</span>
-            <span class="diag-v" id="diagCrypto">Ed25519</span>
-          </div>
-          <div class="diag-item">
-            <span class="diag-k">SleuthKit Available:</span>
-            <span class="diag-v" id="diagSleuth">Yes</span>
-          </div>
-        </div>
-
-        <div class="form-section-title" style="margin-top:16px;">Advanced Developer Override</div>
-        <p class="step-sub" style="margin-bottom:8px;">Leave blank to use same-origin automatic API resolution.</p>
-        <div class="form-row">
-          <input type="text" id="apiBaseOverride" class="input mono-input" placeholder="Leave empty for auto (window.location.origin)">
-          <button class="btn btn-primary btn-sm" onclick="saveApiOverride()">Save</button>
-          <button class="btn btn-ghost btn-sm" onclick="resetApiOverride()">Reset</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <!-- ══ JUDGE DEMO FLOW MODAL ══ -->
   <div class="modal-backdrop" id="demoModalBackdrop" style="display:none;" onclick="closeJudgeDemoModal(event)">
     <div class="modal-card modal-lg" onclick="event.stopPropagation()">

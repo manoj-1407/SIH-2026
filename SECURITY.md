@@ -10,7 +10,8 @@ Both platforms implement Ed25519 digital signatures and SHA-256 canonical envelo
 
 - **Private Key Isolation**: Private signing keys (`.priv`) are generated at first startup on the host/volume and are strictly excluded from source control (`.gitignore`). They are never exposed over any API endpoint.
 - **Independent Trust Registry**: Public keys are indexed by `key_id` in `trust_registry.json`. Independent verification resolves keys exclusively from this registry, preventing untrusted key substitution attacks.
-- **Hash-Chained Audit Logs**: Every administrative and forensic operation is logged with SHA-256 block hashing (`prev_hash` -> `entry_hash`), creating a tamper-evident chain of custody (`GET /timeline/verify`).
+- **Hash-Chained Audit Logs (SIH26149)**: Every administrative and forensic operation is logged with SHA-256 block hashing (`previous_hash` → `entry_hash`), creating a tamper-evident chain of custody verified via `GET /cases/{id}/timeline/verify`.
+- **Structured JSONL Audit Logs (SIH26013)**: Case operations are appended to per-case JSONL audit files with SHA-256 `entry_hash` linked via `previous_hash` for tamper evidence. SIH26013 does not expose a dedicated chain-verify API like SIH26149; treat the logs as structured, hash-linked custody records rather than a full verify UI surface.
 
 ---
 

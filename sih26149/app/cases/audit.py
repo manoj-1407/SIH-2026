@@ -250,13 +250,24 @@ class AuditLogger:
         return {
             'tampered_entry_index': entry_index,
             'field': field,
+            'tampered_field': field,
             'original_value': original_value,
             'injected_value': new_value,
             'chain_valid_after_tamper': is_valid,
             'tamper_detected': not is_valid,
             'violations': violations,
+            'classification': 'INVALID' if not is_valid else 'VERIFIED',
             'explanation': (
                 "Tamper detected — SHA-256 chain integrity failed." if not is_valid
                 else "⚠ Tamper NOT detected (unexpected — check chain implementation)."
-            )
+            ),
+            'tampered_verification': {
+                'chain_valid': is_valid,
+                'valid': is_valid,
+                'reason': (
+                    "Tamper detected — SHA-256 chain integrity failed." if not is_valid
+                    else "⚠ Tamper NOT detected (unexpected — check chain implementation)."
+                ),
+                'violations': violations,
+            },
         }

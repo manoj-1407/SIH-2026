@@ -329,17 +329,24 @@ async function pingHealth() {
     if (dotDAG) dotDAG.className = `dot ${subs.provenance_graph === 'active' ? 'dot-ok' : 'dot-warn'}`;
     if (dotTrust) dotTrust.className = `dot ${subs.cryptographic_trust === 'active' ? 'dot-ok' : 'dot-warn'}`;
   } catch (err) {
-    // Distinguish between authentication failure (401) and actual network outage
+    // Distinguish network offline vs auth (401) vs other service errors
     const errMsg = String(err.message || '');
-    const isAuthError = errMsg.includes('401') || errMsg.toLowerCase().includes('authentication') || errMsg.toLowerCase().includes('api key');
+    const lower = errMsg.toLowerCase();
+    const isAuthError = errMsg.includes('401') || lower.includes('authentication') || lower.includes('api key');
+    const isNetwork = err instanceof TypeError
+      || /failed to fetch|networkerror|load failed|err_connection|err_name_not_resolved/i.test(errMsg);
 
     if (isAuthError) {
       if (connDot) connDot.className = 'conn-dot dot-warn';
       if (connLabel) connLabel.textContent = 'Auth Required';
       if (connPing) connPing.textContent = '-- ms';
+    } else if (isNetwork) {
+      if (connDot) connDot.className = 'conn-dot dot-err';
+      if (connLabel) connLabel.textContent = 'Network Offline';
+      if (connPing) connPing.textContent = '-- ms';
     } else {
       if (connDot) connDot.className = 'conn-dot dot-err';
-      if (connLabel) connLabel.textContent = 'Service Offline';
+      if (connLabel) connLabel.textContent = 'Service Error';
       if (connPing) connPing.textContent = '-- ms';
     }
   }
@@ -389,6 +396,19 @@ function saveApiKey() {
 }
 
 function saveApiOverride() {
+  // Persist API key from diagnostics modal when present
+  const keyInput = document.getElementById('diagApiKeyInput');
+  if (keyInput) {
+    const keyVal = ui.val('diagApiKeyInput');
+    if (keyVal) {
+      localStorage.setItem('sih26013_api_key', keyVal);
+      localStorage.setItem('sih_api_key', keyVal);
+    } else {
+      localStorage.removeItem('sih26013_api_key');
+      localStorage.removeItem('sih_api_key');
+    }
+  }
+
   const val = ui.val('apiBaseOverride');
   if (val) {
     localStorage.setItem('sih_api_override', val);

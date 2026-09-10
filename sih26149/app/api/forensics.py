@@ -238,6 +238,8 @@ def run_forensic_recovery(case_id: str, req: ForensicRecoveryRequest):
         'evidence_id': evid_id,
         'classification': classified.classification.value,
         'explanation': classified.explanation,
+        'artifact_name': req.artifact_name or f'inode_{req.inode}',
+        'inode': req.inode,
         'recovered_sha256': rec.sha256,
         'reference_sha256': req.reference_sha256,
         'match': req.reference_sha256 is not None and rec.sha256.lower() == req.reference_sha256.lower(),

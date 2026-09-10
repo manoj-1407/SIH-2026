@@ -442,6 +442,37 @@ def _records_to_canonical_parcels(records_dict: dict) -> List[CanonicalParcel]:
     return parcels
 
 
+def _parcels_for_proposal(c: dict) -> List[CanonicalParcel]:
+    """Prefer topology-corrected geometries when available; else original records."""
+    topo = c.get("topology_results") or {}
+    corrected = topo.get("corrected_parcels") if isinstance(topo, dict) else None
+    if corrected:
+        parcels = []
+        for item in corrected:
+            try:
+                if isinstance(item, dict) and "geometry" in item and "survey_number" in item:
+                    parcels.append(CanonicalParcel.from_dict(item))
+                elif isinstance(item, dict) and "geometry" in item:
+                    # Partial corrected dict — merge via raw mapper
+                    agency_str = str(item.get("source_agency") or "REVENUE")
+                    agency = AgencyType.REVENUE
+                    for a in AgencyType:
+                        if a.value in agency_str.upper():
+                            agency = a
+                            break
+                    parcels.append(map_raw_record_to_canonical(
+                        raw_dict=item,
+                        source_agency=agency,
+                        geometry=item["geometry"],
+                        default_crs=item.get("crs", "EPSG:4326"),
+                    ))
+            except Exception:
+                continue
+        if parcels:
+            return parcels
+    return _records_to_canonical_parcels(c.get("records") or {})
+
+
 @router.post("/cases/{case_id}/match-ai")
 @router.post("/cases/{case_id}/ai-match")
 def run_ai_matching(case_id: str, req: AIMatchRequest = AIMatchRequest()):
@@ -562,9 +593,10 @@ def run_topology_repair(case_id: str, req: TopologyRepairRequest = TopologyRepai
 def generate_proposal(case_id: str):
     """
     Synthesize multi-source inputs into an official Harmonization Proposal.
+    Prefers topology-corrected parcel geometries when a prior repair exists.
     """
     c = get_case_or_404(case_id)
-    parcels = _records_to_canonical_parcels(c["records"])
+    parcels = _parcels_for_proposal(c)
     if not parcels:
         raise HTTPException(status_code=400, detail="No records available to harmonize")
 
@@ -586,6 +618,7 @@ def generate_proposal(case_id: str):
         "proposal_id": prop.proposal_id,
         "confidence_score": prop.confidence_score,
         "status": prop.status.value,
+        "used_topology_corrections": bool((c.get("topology_results") or {}).get("corrected_parcels")),
     })
 
     return prop.to_dict()

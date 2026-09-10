@@ -109,9 +109,14 @@ def demo_tamper_test(evidence_id: str, x_demo_mode: Optional[str] = Header(None)
 
     return {
         'evidence_id': evidence_id,
+        'tampered_field': 'result.classification',
         'tamper_description': f"Altered signed result field: {orig_val} -> 'TAMPERED_VERIFIED_FAKE'",
         'is_valid': is_valid,
         'classification': cl_result.classification.value,
         'explanation': cl_result.explanation,
         'tamper_detected': cl_result.details.get('tamper_detected', False),
+        'verification': {
+            'valid': is_valid,
+            'reason': cl_result.explanation,
+        },
     }

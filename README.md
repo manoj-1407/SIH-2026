@@ -98,12 +98,7 @@ cd sih26013 && python -m pytest tests/ -v
 cd sih26149 && python -m pytest tests/ -v
 ```
 
-Total verification: **148 automated tests passed** (0 failures).
-
-Cross-system integration test (21 audit criteria):
-```bash
-python scratch_test_everything.py
-```
+Total verification: **148+ automated tests** with **0 failures** under `pytest -q` (live-container scripts are opt-in and not collected).
 
 See [AUDIT_REVIEW_GUIDE.md](AUDIT_REVIEW_GUIDE.md) for full step-by-step evaluator instructions.  
 See [DEPLOYMENT.md](DEPLOYMENT.md) for cloud and Render deployment steps.  
