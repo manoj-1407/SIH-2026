@@ -45,6 +45,8 @@ sih26149/data/keys/*
 !sih26149/data/keys/.gitkeep
 sih26149/data/certificates/*
 !sih26149/data/certificates/.gitkeep
+sih26149/demo/workdir/*
+!sih26149/demo/workdir/.gitkeep
 
 sih26013/data/audit/*
 !sih26013/data/audit/.gitkeep
