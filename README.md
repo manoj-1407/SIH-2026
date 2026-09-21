@@ -36,7 +36,8 @@ SIH_FINAL_v5/
   - **Standards-Informed Sanitization**: Storage-device capability classification informed by NIST SP 800-88 Rev. 2 and IEEE 2883-2022.
   - **Scope-Confined Selective Eraser**: Multi-pass zero-fill with filesystem metadata scrubbing and directory name scrambling.
   - **Tamper-Evident SHA-256 Audit Trail**: Cryptographic append-only hash chain with real-time mutation detection.
-  - **Independent Verification**: Ed25519 digital signature verification without database dependencies.
+  - **Independent Verification & Adversarial Resilience**: Ed25519 digital signature verification with 14-vector attack rejection (independent DB-free verifier).
+  - **RC2 Real-World Certification**: Master verification gate enforcing 6 tracks of operational and stress-testing assurance.
 
 ---
 
@@ -86,20 +87,30 @@ docker-compose up --build -d
 
 ---
 
-## Test Suites & Validation
+## Single-Command Master Verification & Test Suites
 
-Both applications contain automated unit, integration, and security test suites:
+Both applications contain automated unit, integration, adversarial, and security test suites:
 
+### SIH26149 RC2 Master Verification Gate (6 Validation Tracks)
+```bash
+cd sih26149
+python scripts/bootstrap_and_verify.py
+```
+*Executes all 6 tracks:* 220 Automated Tests, 20/20 Operational Gate Checks, 14 Verifier Adversarial Attacks, 6 Crash Resilience Invariants, 6 NIST Storage Profiles, and 12 Real-World Corpus Evaluations (**100% Pass / RC2 Certified**).
+
+### Individual Test Commands
 ```bash
 # Test SIH26013 (59 passed / 1 skipped on Windows, 60 passed on Linux)
 cd sih26013 && python -m pytest tests/ -v
 
-# Test SIH26149 (89 passed, 7 skipped)
+# Test SIH26149 (220 passed, 7 skipped)
 cd sih26149 && python -m pytest tests/ -v
 ```
 
-Total verification: **148+ automated tests** with **0 failures** under `pytest -q` (live-container scripts are opt-in and not collected).
+Total verification: **279+ automated tests** with **0 failures** under `pytest -q`.
 
 See [AUDIT_REVIEW_GUIDE.md](AUDIT_REVIEW_GUIDE.md) for full step-by-step evaluator instructions.  
 See [DEPLOYMENT.md](DEPLOYMENT.md) for cloud and Render deployment steps.  
-See [SECURITY.md](SECURITY.md) for cryptographic signing and defense details.
+See [SECURITY.md](SECURITY.md) for cryptographic signing and defense details.  
+See [sih26149/docs/RC2_VALIDATION_REPORT.md](sih26149/docs/RC2_VALIDATION_REPORT.md) for RC2 evaluation metrics.
+

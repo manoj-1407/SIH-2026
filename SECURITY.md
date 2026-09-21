@@ -34,3 +34,17 @@ Both platforms implement Ed25519 digital signatures and SHA-256 canonical envelo
 
 - **Atomic File Replacement**: File persistence operations follow an atomic sequence (`write temp` -> `fsync` -> `atomic replace` with 30-attempt backoff retry) to prevent torn reads and partial writes under high thread contention.
 - **Per-Case Isolation**: All evidence vault queries and timeline audits are scoped strictly to the authenticated `case_id`.
+
+---
+
+## 5. Independent Verifier Adversarial Defenses (RC2 Gate)
+
+The standalone cryptographic verifier (`app/core/independent_verifier.py`) enforces strict validation against 14 adversarial attack vectors:
+
+- **Manifest Hash Tampering**: Raw payload mutations fail SHA-256 canonical hashing before signature verification.
+- **Signature Truncation & Bit Flips**: Ed25519 signatures are verified in constant time; bit-flipped or truncated signatures fail verification.
+- **Key Substitution Attacks**: Public keys embedded inside untrusted evidence packages are ignored; public keys are resolved exclusively from the registered `trust_registry.json`.
+- **Unmanifested / Extra Injected Files (DEF-005)**: Reverse directory walking detects any unmanifested file within an evidence package and flags it immediately.
+- **Directory Traversal in Package Extraction**: Package paths containing `..`, absolute drives, or symlinks outside target directory boundaries trigger immediate extraction rejection.
+- **Fail-Closed Purge Boundary**: Requests targeting non-volatile flash or SSD media without physical hardware access return `VERIFIED_WITHIN_SCOPE` with documented hardware boundaries, avoiding false claims.
+

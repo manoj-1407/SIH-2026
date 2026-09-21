@@ -1,10 +1,10 @@
 # SIH26149 Release Candidate 2 (RC2) Real-World Validation Report
 
 ## Executive Summary
-- **Evaluation Date**: `2026-09-21 05:56:57 UTC`
+- **Evaluation Date**: `2026-09-21 08:08:34 UTC`
 - **Baseline Evolution**: RC1 Frozen Baseline → **RC2 Real-World & Adversarial Hardening**
 - **RC2 Gate Status**: **CERTIFIED APPROVED**
-- **Total Duration**: 62.86s
+- **Total Duration**: 88.62s
 
 ---
 
@@ -12,12 +12,12 @@
 
 | Step | Validation Domain & Harness | Status | Duration | Coverage Scope |
 | :---: | :--- | :---: | :---: | :--- |
-| **01** | Automated Regression Test Suite (227 tests) | `PASS` | 28.43s | Validated against repository ground truth |
-| **02** | Operational Release Gate (20 criteria) | `PASS` | 29.52s | Validated against repository ground truth |
-| **03** | Deep Adversarial Verifier Attacks (14 vectors) | `PASS` | 2.82s | Validated against repository ground truth |
-| **04** | Crash Recovery & State Invariant Suite (6 invariants) | `PASS` | 0.68s | Validated against repository ground truth |
-| **05** | NIST Device Capability & Sanitization Matrix (6 profiles) | `PASS` | 0.93s | Validated against repository ground truth |
-| **06** | Expanded Real-World File Corpus Evaluation (12 samples) | `PASS` | 0.47s | Validated against repository ground truth |
+| **01** | Automated Regression Test Suite (227 tests) | `PASS` | 43.44s | Validated against repository ground truth |
+| **02** | Operational Release Gate (20 criteria) | `PASS` | 40.56s | Validated against repository ground truth |
+| **03** | Deep Adversarial Verifier Attacks (14 vectors) | `PASS` | 2.9s | Validated against repository ground truth |
+| **04** | Crash Recovery & State Invariant Suite (6 invariants) | `PASS` | 0.71s | Validated against repository ground truth |
+| **05** | NIST Device Capability & Sanitization Matrix (6 profiles) | `PASS` | 0.64s | Validated against repository ground truth |
+| **06** | Expanded Real-World File Corpus Evaluation (12 samples) | `PASS` | 0.37s | Validated against repository ground truth |
 
 ---
 

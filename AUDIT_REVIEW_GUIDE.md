@@ -112,11 +112,16 @@ d:/SIH_FINAL_v5/
 
 ## Automated Verification & Test Results
 
-### 148 Automated Tests · 0 Failures
+### 279+ Automated Tests · 0 Failures · RC2 Certified
 
 ### SIH26149 (Forensic Assurance Platform)
-- **89 passed, 7 skipped, 0 failures** in `pytest tests/`
-- Command to run:
+- **220 passed, 7 skipped, 0 failures** in `pytest tests/`
+- **RC2 Single-Command Master Gate**:
+  ```powershell
+  cd sih26149
+  py scripts/bootstrap_and_verify.py
+  ```
+- Command to run standard tests:
   ```powershell
   cd sih26149
   py -m pytest tests/ -v
@@ -128,6 +133,8 @@ d:/SIH_FINAL_v5/
   - `test_decision_engine_mappings`: Verifies NIST SP 800-88 & IEEE 2883 guidance rules.
   - `test_carving_jpeg_and_png`: Verifies structural integrity of carved JPEG/PNG files from raw byte streams.
   - `test_audit_chain_and_tamper`: Validates SHA-256 hash chaining and proves tamper detection triggers immediately.
+  - `test_deep_verifier_attacks`: Validates defenses against 14 verifier attack vectors (manifest hash tampering, signature truncation, key substitution, DEF-005 unmanifested files).
+
 
 ### SIH26013 (Geospatial Harmonization Platform)
 - **59 passed, 1 skipped, 0 failures on Windows (60 passed on Linux)** in `pytest tests/`

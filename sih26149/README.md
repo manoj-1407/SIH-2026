@@ -46,16 +46,22 @@ docker-compose up --build -d
 # UI at http://localhost:8000
 ```
 
-### Run tests
+### Master Verification Gate (RC2 Single-Command Validation)
 ```bash
-python3 -m pytest tests/ -v
-# Expected: 89 passed, 7 skipped (0 failures)
+# Runs full 6-track validation suite (220 tests, gate checks, adversarial attacks, crash invariants, corpus)
+python scripts/bootstrap_and_verify.py
+```
+
+### Run tests directly
+```bash
+python -m pytest tests/ -v
+# Expected: 220 passed, 7 skipped (0 failures)
 ```
 
 ### Verify evidence from the CLI
 ```bash
 # Any signed evidence package can be independently verified — no case DB needed.
-python3 -m app.cli.verify path/to/evidence_package.json \
+python -m app.cli.verify path/to/evidence_package.json \
     --registry path/to/trust_registry.json
 ```
 
