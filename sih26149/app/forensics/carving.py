@@ -179,7 +179,15 @@ def _carve_jpeg(data: bytes, offset: int) -> Optional[CarvedFile]:
             scan_limit = min(pos + 50 * 1024 * 1024, length)
             found_eoi_pos = -1
             curr = pos
+            gap_detected = False
+            
             while curr < scan_limit - 1:
+                # If a large repeating gap (e.g. 512+ consecutive identical filler bytes) is encountered,
+                # the contiguous stream is broken -> switch to bounded gap reconstruction
+                if curr + 512 < scan_limit and data[curr:curr+512] == data[curr:curr+1] * 512:
+                    gap_detected = True
+                    break
+
                 if data[curr] == 0xFF:
                     next_b = data[curr + 1]
                     if next_b == 0xD9:
@@ -193,7 +201,7 @@ def _carve_jpeg(data: bytes, offset: int) -> Optional[CarvedFile]:
                         continue
                 curr += 1
             
-            if found_eoi_pos != -1:
+            if found_eoi_pos != -1 and not gap_detected:
                 factors.append("EOI marker found — intact stream")
                 end = found_eoi_pos + 2
                 raw = data[offset:end]
@@ -204,7 +212,8 @@ def _carve_jpeg(data: bytes, offset: int) -> Optional[CarvedFile]:
                     sha256=_sha256(raw), evidence_factors=factors
                 )
             else:
-                pos = scan_limit
+                pos = curr if gap_detected else scan_limit
+                last_valid_pos = curr
                 break
 
         pos += 2 + seg_len

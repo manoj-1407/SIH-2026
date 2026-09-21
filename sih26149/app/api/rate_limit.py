@@ -27,6 +27,11 @@ GENERAL_WINDOW_SECONDS = int(os.environ.get("SIH26149_RATE_WINDOW_GENERAL", "60"
 UPLOAD_LIMIT = int(os.environ.get("SIH26149_RATE_LIMIT_UPLOAD", "10"))
 UPLOAD_WINDOW_SECONDS = int(os.environ.get("SIH26149_RATE_WINDOW_UPLOAD", "60"))
 
+# Set SIH26149_DISABLE_RATE_LIMIT=1 in test environments to allow rapid-fire
+# test requests without hitting the sliding-window limit. Has NO effect in
+# production unless explicitly set.
+_RATE_LIMIT_DISABLED = os.environ.get("SIH26149_DISABLE_RATE_LIMIT", "").strip() == "1"
+
 # Paths that should never be rate limited, regardless of tier below —
 # Docker's healthcheck polls /health frequently and must never be throttled.
 EXEMPT_PREFIXES = ("/health",)
@@ -81,6 +86,8 @@ def _client_key(request) -> str:
 
 def check_rate_limit(request) -> tuple[bool, int]:
     """Returns (allowed, retry_after_seconds). Call from middleware."""
+    if _RATE_LIMIT_DISABLED:
+        return True, 0
     path = request.url.path
     if any(path.startswith(p) for p in EXEMPT_PREFIXES):
         return True, 0

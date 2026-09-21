@@ -33,17 +33,22 @@ async def upload_evidence_image(case_id: str, file: UploadFile = File(...)):
     except Exception:
         raise HTTPException(status_code=404, detail='Case not found')
 
-    if not file.filename:
+    if not file.filename or not file.filename.strip():
         raise HTTPException(status_code=400, detail='Filename is required')
 
-    # Security: Strip directory traversal characters
-    safe_filename = os.path.basename(file.filename)
-    if not safe_filename or safe_filename in ('.', '..') or '/' in file.filename or '\\' in file.filename:
-        # If traversal attempted, sanitize to safe basename or reject
-        safe_filename = re.sub(r'[^a-zA-Z0-9._\-]', '_', safe_filename)
-        if not safe_filename:
-            safe_filename = 'upload.img'
+    # Security: Strip directory traversal and OS-illegal characters
+    base = os.path.basename(file.filename.replace('\\', '/'))
+    # Clean filename of unsafe characters across platforms (Windows: * ? : < > " | etc)
+    clean_name = re.sub(r'[^a-zA-Z0-9._\-]', '_', base)
+    if not clean_name or clean_name.replace('_', '') == '':
+        clean_name = 'upload.img'
+    
+    # Cap length to prevent MAX_PATH / OS filesystem filename exhaustion
+    if len(clean_name) > 120:
+        root, ext = os.path.splitext(clean_name)
+        clean_name = root[:100] + ext[:20]
 
+    safe_filename = clean_name
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
     acq_id = f'ACQ-{uuid.uuid4().hex[:8].upper()}'
     # Immutable acquisition filename — never overwrite a prior upload of the same name

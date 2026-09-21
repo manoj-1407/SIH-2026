@@ -47,11 +47,6 @@ def get_case(case_id: str):
         raise HTTPException(status_code=404, detail=f'Case {case_id} not found')
 
 
-@router.get('/{case_id}/timeline')
-def get_timeline(case_id: str):
-    validate_case_id(case_id)
-    return audit_logger.get_timeline(case_id)
-
 
 @router.post('/seed-demo')
 def seed_demo_case():
