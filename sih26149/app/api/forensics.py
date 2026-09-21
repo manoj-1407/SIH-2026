@@ -177,6 +177,48 @@ def run_forensic_recovery(case_id: str, req: ForensicRecoveryRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Recovery error: {e}')
 
+    # ext4 forensic note: if icat returned empty (block pointers zeroed on delete),
+    # we record a FAILED evidence envelope and direct operator to raw carving.
+    from app.forensics.recovery import RecoveryLayerStatus
+    if rec.layer_status == RecoveryLayerStatus.FAILED_SK_LAYER:
+        key_id, priv_key = get_or_create_primary_key()
+        op_id = new_operation_id()
+        evid_id = new_evidence_id()
+        payload = build_evidence_payload(
+            case_id=case_id, operation_id=op_id, evidence_id=evid_id,
+            evidence_type='FORENSIC_RECOVERY',
+            input_meta={'sha256': case.input_sha256, 'filesystem': cap.filesystem},
+            operation_meta={'inode': req.inode, 'method': 'icat'},
+            result_meta={'classification': 'FAILED', 'layer_status': rec.layer_status.value,
+                         'forensic_note': rec.forensic_note},
+            scope='ext4 inode recovery attempt — see forensic_note for explanation.',
+            key_id=key_id,
+        )
+        signed_pkg = sign_evidence_envelope(payload, priv_key)
+        evidence_store.save(signed_pkg)
+        case_store.record_operation_and_evidence(
+            case_id=case_id, operation_id=op_id, evidence_id=evid_id,
+            operation_type='FORENSIC', result_data=signed_pkg,
+        )
+        audit_logger.log(case_id=case_id, event_type='RECOVERY_FAILED_SK_LAYER',
+                         actor='FORENSIC_ENGINE', operation_id=op_id, evidence_id=evid_id,
+                         details={'layer_status': rec.layer_status.value, 'inode': req.inode,
+                                  'forensic_note': rec.forensic_note})
+        return {
+            'operation_id': op_id, 'evidence_id': evid_id,
+            'classification': 'FAILED',
+            'layer_status': rec.layer_status.value,
+            'forensic_note': rec.forensic_note,
+            'inode': req.inode,
+            'size_bytes': 0,
+            'explanation': (
+                'ext4 zeroes inode block pointers on deletion — icat returns empty data. '
+                'This is expected filesystem behaviour. Use raw carving (/carve) to recover data.'
+            ),
+            'next_action': 'USE_RAW_CARVE',
+            'signed_evidence': signed_pkg,
+        }
+
     # Verify recovery against reference hash (or classify UNVERIFIED if none)
     classified = verify_recovery(rec.sha256, req.reference_sha256)
 

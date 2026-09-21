@@ -99,7 +99,7 @@ def test_m3_primary_gate_real_ext4_recovery_and_fresh_process(real_ext4_image, t
     assert fs_cap.detected is True
     assert fs_cap.filesystem == "ext4"
     assert fs_cap.recovery_supported is True
-    assert fs_cap.status_label == "EXT4_SUPPORTED"
+    assert fs_cap.status_label == "EXT4_FULL_RECOVERY"
 
     # Step 2: Discover deleted artifacts
     artifacts = discover_deleted_artifacts(img_path)

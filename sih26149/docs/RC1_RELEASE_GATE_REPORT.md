@@ -1,7 +1,7 @@
 # SIH26149 Release Candidate 1 (RC1) Verification Gate Report
 
 ## Execution Summary
-- **Evaluation Date**: `2026-09-21 08:08:30 UTC`
+- **Evaluation Date**: `2026-09-21 08:47:15 UTC`
 - **Total Gate Checks**: 20
 - **Passed**: **20**
 - **Failed**: **0**
@@ -33,7 +33,7 @@ C:\Users\vharr\AppData\Roaming\Python\Python313\site-packages\fastapi\testclient
 | **09** | Logical Overwrite & Read-Back Verification | `PASS` | Read-back OK: True |
 | **10** | RFC 8785 JSON Canonicalization (JCS) | `PASS` | Canonical string: {"a":"hello","m":[3,1,2],"z":1} |
 | **11** | RFC 8032 Ed25519 Asymmetric Signing | `PASS` | Signature length: 128 hex chars |
-| **12** | Evidence Envelope Generation | `PASS` | Evidence ID: EVID-09EE2C3056 |
+| **12** | Evidence Envelope Generation | `PASS` | Evidence ID: EVID-73CAC2CCF1 |
 | **13** | Offline Evidence Package Construction | `PASS` | Package: CASE-RC1-PKG_evidence_package |
 | **14** | Independent Offline Verification | `PASS` | Classification: VERIFIED |
 | **15** | Adversarial Tampering Detection | `PASS` | Outcome after tamper: INVALID |

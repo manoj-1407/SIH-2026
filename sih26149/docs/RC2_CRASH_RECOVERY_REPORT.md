@@ -15,7 +15,7 @@
 | **02** | Ingest Interruption Isolation | `PASS` | Unfinished upload never claimed as acquired source |
 | **03** | Carving Zero-Mutation Source Invariance | `PASS` | SHA-256 invariant: aa2ddfa989912dca... |
 | **04** | Interrupted Sanitization Fail-Closed State | `PASS` | Interrupted overwrite classified as readback failure, never false VERIFIED |
-| **05** | Server Restart Deterministic State Reload | `PASS` | Case restored: CASE-A142A96B, Audit chain valid: True |
+| **05** | Server Restart Deterministic State Reload | `PASS` | Case restored: CASE-640E7738, Audit chain valid: True |
 | **06** | Cross-Case Data & Audit Isolation | `PASS` | Case state completely partitioned across case IDs |
 
 ---
