@@ -20,6 +20,9 @@ from app.sanitization.device_detector import detect_media_type, DeviceCapability
 class SanitizationMethod(str, Enum):
     ZERO_FILL = 'ZERO_FILL'
     PSEUDO_RANDOM = 'PSEUDO_RANDOM'
+    CLEAR = 'CLEAR'
+    CLEAR_ZERO_FILL = 'CLEAR_ZERO_FILL'
+    NIST_CLEAR = 'NIST_CLEAR'
 
 
 @dataclass

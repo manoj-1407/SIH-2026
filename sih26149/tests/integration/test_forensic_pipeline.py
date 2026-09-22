@@ -37,8 +37,8 @@ def real_ext4_image(tmp_path_factory):
     and then deletes it using debugfs.
     """
     import shutil
-    if not shutil.which("mkfs.ext4") or not shutil.which("debugfs"):
-        pytest.skip("mkfs.ext4/debugfs required for ext4 forensic pipeline tests")
+    if not shutil.which("mkfs.ext4") or not shutil.which("debugfs") or not shutil.which("fls") or not shutil.which("icat"):
+        pytest.skip("mkfs.ext4/debugfs/fls/icat required for ext4 forensic pipeline tests")
 
     tmp_dir = tmp_path_factory.mktemp("forensics_gate")
     img_path = str(tmp_dir / "evidence_ext4.img")

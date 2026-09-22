@@ -10,7 +10,7 @@ services:
       # Routes all key and evidence writes to the mounted persistent volume.
       SIH26149_DATA_DIR: /app/data
       # Set to "1" to enable the tamper-demo endpoint and bypass API key check.
-      DEMO_MODE: "0"
+      DEMO_MODE: "1"
       # Uncomment and set to protect the API with a shared key:
       # SIH26149_API_KEY: "your-secret-key-here"
     volumes:

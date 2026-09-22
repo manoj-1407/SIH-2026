@@ -220,10 +220,15 @@ def run_file_eraser(case_id: str, req: FileEraseRequest):
         },
     )
 
+    res_dict = result.to_dict()
     return {
         'operation_id': op_id,
         'evidence_id': evid_id,
-        'result': result.to_dict(),
+        'status': res_dict.get('classification', 'VERIFIED'),
+        'classification': res_dict.get('classification', 'VERIFIED'),
+        'files_erased': result.total_files,
+        'bytes_erased': result.total_bytes,
+        'result': res_dict,
         'signed_evidence': signed_pkg,
     }
 

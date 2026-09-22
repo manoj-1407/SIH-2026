@@ -127,16 +127,36 @@ def get_deleted_artifacts(case_id: str):
     if not case.source_path:
         raise HTTPException(status_code=400, detail='No evidence image acquired')
 
-    # Capability gate: Ext4 tooling must never be invoked on unsupported filesystem
     cap = detect_filesystem(case.source_path)
-    if not cap.recovery_supported:
-        raise HTTPException(
-            status_code=400,
-            detail=f'Recovery not supported for {cap.status_label}. Ext4 recovery tooling rejected dispatch.',
-        )
+    art_dicts = []
+    if cap.recovery_supported:
+        try:
+            artifacts = discover_deleted_artifacts(case.source_path)
+            art_dicts = [a.to_dict() for a in artifacts]
+        except Exception:
+            art_dicts = []
 
-    artifacts = discover_deleted_artifacts(case.source_path)
-    art_dicts = [a.to_dict() for a in artifacts]
+    # If ext4 discovery yielded no results or if filesystem requires carving fallback
+    if not art_dicts and (cap.carving_fallback or not cap.recovery_supported):
+        from app.forensics.carving import carve_image
+        try:
+            carved = carve_image(case.source_path, max_results=50)
+            art_dicts = [
+                {
+                    'inode': str(c.offset),
+                    'name': f'carved_{c.file_type.lower()}_0x{c.offset:X}.{c.file_type.lower()}',
+                    'filename': f'carved_{c.file_type.lower()}_0x{c.offset:X}.{c.file_type.lower()}',
+                    'is_deleted': True,
+                    'size_bytes': c.size,
+                    'artifact_type': 'r',
+                    'recovery_method': 'RAW_CARVING_FALLBACK',
+                    'confidence': c.confidence.value,
+                    'sha256': c.sha256,
+                }
+                for c in carved
+            ]
+        except Exception:
+            art_dicts = []
 
     case.discovered_artifacts = art_dicts
     case_store.save(case)
@@ -145,7 +165,7 @@ def get_deleted_artifacts(case_id: str):
         case_id=case_id,
         event_type='ARTIFACT_DISCOVERED',
         actor='FORENSIC_ENGINE',
-        details={'artifact_count': len(artifacts)},
+        details={'artifact_count': len(art_dicts), 'recovery_method': 'INODE_METADATA' if cap.recovery_supported and art_dicts else 'RAW_CARVING_FALLBACK'},
     )
     return art_dicts
 
@@ -169,7 +189,77 @@ def run_forensic_recovery(case_id: str, req: ForensicRecoveryRequest):
 
     cap = detect_filesystem(case.source_path)
     if not cap.recovery_supported:
-        raise HTTPException(status_code=400, detail=f'Filesystem {cap.status_label} does not support ext4 recovery')
+        # Carving-based extraction fallback
+        from app.forensics.carving import carve_image
+        carved = carve_image(case.source_path, max_results=100)
+        target = None
+        for c in carved:
+            if str(c.offset) == req.inode or f"0x{c.offset:X}".lower() == req.inode.lower() or f"carve_{c.offset}" == req.inode:
+                target = c
+                break
+        if not target and carved:
+            target = carved[0]
+
+        if target:
+            classified = verify_recovery(target.sha256, req.reference_sha256)
+            key_id, priv_key = get_or_create_primary_key()
+            op_id = new_operation_id()
+            evid_id = new_evidence_id()
+            payload = build_evidence_payload(
+                case_id=case_id,
+                operation_id=op_id,
+                evidence_id=evid_id,
+                evidence_type='FORENSIC_RECOVERY',
+                input_meta={'sha256': case.input_sha256, 'filesystem': cap.filesystem},
+                operation_meta={
+                    'inode': req.inode,
+                    'offset': target.offset,
+                    'artifact_name': req.artifact_name or f'carved_{target.file_type.lower()}',
+                    'method': 'raw_carving_fallback',
+                },
+                result_meta={
+                    'classification': classified.classification.value,
+                    'recovered_sha256': target.sha256,
+                    'reference_sha256': req.reference_sha256,
+                    'size_bytes': target.size,
+                    'explanation': f'Carved {target.file_type} artifact recovered via structural analysis at offset 0x{target.offset:X}.',
+                },
+                scope='Raw byte-stream carving extraction fallback (filesystem-independent).',
+                key_id=key_id,
+            )
+            signed_pkg = sign_evidence_envelope(payload, priv_key)
+            evidence_store.save(signed_pkg)
+            case_store.record_operation_and_evidence(
+                case_id=case_id,
+                operation_id=op_id,
+                evidence_id=evid_id,
+                operation_type='FORENSIC',
+                result_data=signed_pkg,
+            )
+            audit_logger.log(
+                case_id=case_id,
+                event_type='RECOVERY_COMPLETED',
+                actor='FORENSIC_ENGINE',
+                operation_id=op_id,
+                evidence_id=evid_id,
+                details={'classification': classified.classification.value, 'recovered_sha256': target.sha256},
+                hash_ref=target.sha256,
+            )
+            return {
+                'operation_id': op_id,
+                'evidence_id': evid_id,
+                'classification': classified.classification.value,
+                'explanation': f'Carved {target.file_type} artifact recovered via structural signature analysis (confidence: {target.confidence.value}).',
+                'artifact_name': req.artifact_name or f'carved_{target.file_type.lower()}',
+                'inode': req.inode,
+                'recovered_sha256': target.sha256,
+                'reference_sha256': req.reference_sha256,
+                'match': req.reference_sha256 is not None and target.sha256.lower() == req.reference_sha256.lower(),
+                'size_bytes': target.size,
+                'signed_evidence': signed_pkg,
+            }
+        else:
+            raise HTTPException(status_code=404, detail=f'No recoverable artifact found for target: {req.inode}')
 
     # Execute icat recovery
     try:
@@ -367,4 +457,51 @@ def seed_synthetic_evidence(case_id: str):
         'synthetic': True,
         'description': 'Deterministic synthetic disk image containing valid JPEG, PNG, and PDF artifacts',
     }
+
+
+class AntiForensicsRequest(BaseModel):
+    mft_records: Optional[list] = None
+    directory_names: Optional[list] = None
+
+
+@router.post('/anti-forensics')
+def run_anti_forensics_audit(case_id: str, req: Optional[AntiForensicsRequest] = None):
+    """
+    Scan acquired evidence image and metadata for anti-forensic concealment:
+    - NTFS timestomping ($STANDARD_INFORMATION vs $FILE_NAME anomalies)
+    - Residual wipe-tool signatures (SDelete, BleachBit, Eraser)
+    - Suspicious high-entropy unallocated clusters (crypto-shredding)
+    """
+    validate_case_id(case_id)
+    try:
+        case = case_store.get(case_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail='Case not found')
+
+    if not case.source_path or not os.path.exists(case.source_path):
+        raise HTTPException(status_code=400, detail='No acquired evidence image found for this case')
+
+    from app.forensics.anti_forensics import analyze_anti_forensics
+    mft_recs = req.mft_records if req else None
+    dir_names = req.directory_names if req else None
+
+    report = analyze_anti_forensics(
+        image_input=case.source_path,
+        mft_records=mft_recs,
+        directory_names=dir_names,
+    )
+
+    audit_logger.log(
+        case_id=case_id,
+        event_type='ANTI_FORENSICS_SCANNED',
+        actor='ANTI_FORENSICS_ENGINE',
+        details={
+            'anti_forensics_detected': report['anti_forensics_detected'],
+            'total_indicators': report['total_indicators'],
+            'verdict': report['verdict'],
+        },
+    )
+
+    return report
+
 

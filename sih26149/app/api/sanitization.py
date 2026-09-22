@@ -59,16 +59,22 @@ def run_sanitization(case_id: str, req: SanitizationRequest):
         details=auth.to_dict(),
     )
 
-    # Step 2: Execute requested Clear-class method (ZERO_FILL or PSEUDO_RANDOM only)
-    try:
-        method = SanitizationMethod(req.method.upper())
-    except ValueError:
-        raise HTTPException(
-            status_code=400,
-            detail=f'Invalid method: {req.method}. Supported: ZERO_FILL, PSEUDO_RANDOM '
-                   f'(NIST Clear-class overwrite). PURGE/DESTROY require media-specific tooling '
-                   f'outside this workstation scope.',
-        )
+    # Step 2: Execute requested Clear-class method (CLEAR / ZERO_FILL or PSEUDO_RANDOM)
+    method_raw = (req.method or 'ZERO_FILL').upper().strip()
+    if method_raw in ['CLEAR', 'CLEAR_ZERO_FILL', 'NIST_CLEAR', 'ZERO_FILL', 'CLEAR (ZERO-FILL)']:
+        method = SanitizationMethod.ZERO_FILL
+    elif method_raw in ['PSEUDO_RANDOM', 'RANDOM', 'PSEUDORANDOM']:
+        method = SanitizationMethod.PSEUDO_RANDOM
+    else:
+        try:
+            method = SanitizationMethod(method_raw)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=f'Invalid method: {req.method}. Supported: CLEAR (ZERO_FILL), PSEUDO_RANDOM '
+                       f'(NIST Clear-class overwrite). PURGE/DESTROY require media-specific tooling '
+                       f'outside this workstation scope.',
+            )
 
     try:
         op_res = execute_sanitization(case.source_path, method=method)
@@ -230,4 +236,63 @@ def run_live_benchmark(runs: int = 3):
     from app.forensics.benchmark import run_live_forensic_benchmark
     num_runs = min(max(1, runs), 5)
     return run_live_forensic_benchmark(num_synthetic_runs=num_runs)
+
+
+class DestroyManifestRequest(BaseModel):
+    operator_id: str
+    operator_name: str
+    authorization_reason: str
+    serial_number: Optional[str] = None
+    make_model: Optional[str] = None
+    capacity: Optional[str] = None
+    classification_level: str = "CONFIDENTIAL"
+    witnesses: Optional[list] = None
+
+
+@router.post('/destroy-manifest')
+def generate_destroy_manifest_endpoint(case_id: str, req: DestroyManifestRequest):
+    """
+    Generate a NIST SP 800-88 Rev. 2 DESTROY-branch physical disposal manifest.
+
+    When Clear/Purge is insufficient (flash spare areas, damaged platters, etc.),
+    this generates a court-admissible document for physical destruction handoff.
+    """
+    validate_case_id(case_id)
+    try:
+        case = case_store.get(case_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail='Case not found')
+
+    target_path = case.source_path or f'case_{case_id}_media'
+
+    from app.sanitization.destroy_manifest import generate_disposal_manifest, generate_manifest_html
+
+    manifest = generate_disposal_manifest(
+        case_id=case_id,
+        target_path=target_path,
+        operator_id=req.operator_id,
+        operator_name=req.operator_name,
+        authorization_reason=req.authorization_reason,
+        serial_number=req.serial_number,
+        make_model=req.make_model,
+        capacity=req.capacity,
+        classification_level=req.classification_level,
+        witnesses=req.witnesses,
+    )
+
+    audit_logger.log(
+        case_id=case_id,
+        event_type='DESTROY_MANIFEST_GENERATED',
+        actor=f'{req.operator_name} ({req.operator_id})',
+        details={
+            'manifest_id': manifest.manifest_id,
+            'classification_level': manifest.classification_level,
+            'items_count': len(manifest.items),
+        },
+    )
+
+    return {
+        'manifest': manifest.to_dict(),
+        'manifest_html': generate_manifest_html(manifest),
+    }
 

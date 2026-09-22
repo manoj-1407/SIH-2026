@@ -1,7 +1,7 @@
 # SIH26149 Release Candidate 1 (RC1) Verification Gate Report
 
 ## Execution Summary
-- **Evaluation Date**: `2026-09-21 08:47:15 UTC`
+- **Evaluation Date**: `2026-09-22 15:41:47 UTC`
 - **Total Gate Checks**: 20
 - **Passed**: **20**
 - **Failed**: **0**
@@ -14,10 +14,10 @@
 | Check # | Requirement & Verification Scope | Status | Result / Telemetry |
 | :---: | :--- | :---: | :--- |
 | **01** | Python Runtime & Core Dependencies | `PASS` | Python 3.13.3 OK |
-| **02** | Automated Test Suite (Zero Failures) | `PASS` | ................................................................ss...... [ 31%]
-......................sss.s..............s.............................. [ 63%]
-........................................................................ [ 95%]
-...........                                                              [100%]
+| **02** | Automated Test Suite (Zero Failures) | `PASS` | ................................................................ss...... [ 25%]
+.......................sss.s..............s............................. [ 51%]
+........................................................................ [ 77%]
+..............................................................           [100%]
 ============================== warnings summary ===============================
 C:\Users\vharr\AppData\Roaming\Python\Python313\site-packages\fastapi\testclient.py:1
   C:\Users\vharr\AppData\Roaming\Python\Python313\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
@@ -33,7 +33,7 @@ C:\Users\vharr\AppData\Roaming\Python\Python313\site-packages\fastapi\testclient
 | **09** | Logical Overwrite & Read-Back Verification | `PASS` | Read-back OK: True |
 | **10** | RFC 8785 JSON Canonicalization (JCS) | `PASS` | Canonical string: {"a":"hello","m":[3,1,2],"z":1} |
 | **11** | RFC 8032 Ed25519 Asymmetric Signing | `PASS` | Signature length: 128 hex chars |
-| **12** | Evidence Envelope Generation | `PASS` | Evidence ID: EVID-73CAC2CCF1 |
+| **12** | Evidence Envelope Generation | `PASS` | Evidence ID: EVID-03FB100624 |
 | **13** | Offline Evidence Package Construction | `PASS` | Package: CASE-RC1-PKG_evidence_package |
 | **14** | Independent Offline Verification | `PASS` | Classification: VERIFIED |
 | **15** | Adversarial Tampering Detection | `PASS` | Outcome after tamper: INVALID |

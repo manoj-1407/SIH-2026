@@ -15,7 +15,12 @@ import hashlib
 from typing import Dict, Any, List
 from app.forensics.carving import carve_image_summary
 from app.core.evidence_envelope import build_evidence_payload, sign_evidence_envelope, new_operation_id, new_evidence_id
-from app.api.deps import get_or_create_primary_key
+from app.api.deps import (
+    get_or_create_primary_key,
+    evidence_store,
+    case_store,
+    audit_logger,
+)
 
 
 def execute_forensic_proof_loop(
@@ -174,10 +179,41 @@ def execute_forensic_proof_loop(
     )
     
     signed_pkg = sign_evidence_envelope(payload, priv_key)
+    evidence_store.save(signed_pkg)
+
+    try:
+        case_store.record_operation_and_evidence(
+            case_id=case_id,
+            operation_id=op_id,
+            evidence_id=ev_id,
+            operation_type='PROOF_LOOP',
+            result_data=signed_pkg,
+        )
+    except Exception:
+        pass
+
+    try:
+        audit_logger.log(
+            case_id=case_id,
+            event_type='PROOF_LOOP_COMPLETED',
+            actor='VALIDATION_PROBE_ENGINE',
+            operation_id=op_id,
+            evidence_id=ev_id,
+            details={
+                'validation_status': validation_status,
+                'erasure_percentage': round(erasure_rate * 100, 1),
+                'method_applied': method_applied,
+            },
+            hash_ref=signed_pkg.get('evidence_hash'),
+        )
+    except Exception:
+        pass
 
     return {
         "proof_result": proof_result,
         "signed_evidence": signed_pkg,
+        "evidence_id": ev_id,
+        "operation_id": op_id,
     }
 
 

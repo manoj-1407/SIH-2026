@@ -160,7 +160,8 @@ def test_erase_cross_case_forbidden(real_case_id):
     # Try to erase case_b's file using case_a's endpoint
     import os
     from pathlib import Path
-    data_dir = Path("data/uploads")
+    data_root = Path(os.environ.get("SIH26149_DATA_DIR", "data"))
+    data_dir = data_root / "uploads"
     # Find any file belonging to case_b
     case_b_files = list(data_dir.glob(f"{case_b_id}_*")) if data_dir.exists() else []
     if not case_b_files:

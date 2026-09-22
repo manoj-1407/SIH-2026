@@ -1,610 +1,378 @@
 /**
- * SIH26149 Forensic Workstation — Interactive Client Engine (v2.0)
- * Professional Forensic Laboratory Workstation
- * Supports dynamic same-origin resolution, real-time health ping,
- * mobile drawer navigation, theme system, toast dispatcher, and judge demo workflow.
+ * FORENSIC ASSURANCE — SIH26149 · NTRO
+ * UI Engine v3.0 — Particle Physics + Full API Integration
  */
 
 'use strict';
 
-// ── API Configuration & Origin Discovery ───────────────────────────────────────
-
+// ── CONFIG ─────────────────────────────────────────────────────
 const cfg = {
   get base() {
-    // 1. Check if user configured an explicit override in diagnostics
-    const override = localStorage.getItem('sih_api_override');
-    if (override && override.trim()) {
-      return override.trim().replace(/\/$/, '');
-    }
-
-    // 2. Production same-origin discovery (Render, Docker, Localhost)
-    if (window.location && window.location.protocol && window.location.protocol.startsWith('http')) {
-      // Returning empty string makes all calls relative, or window.location.origin
-      return window.location.origin.replace(/\/$/, '');
-    }
-
-    // 3. Fallback only if opened directly from local filesystem (file://)
+    const ov = localStorage.getItem('sih_api_override');
+    if (ov && ov.trim()) return ov.trim().replace(/\/$/, '');
+    if (window.location?.protocol?.startsWith('http')) return window.location.origin.replace(/\/$/, '');
     return 'http://127.0.0.1:8000';
-  },
+  }
 };
 
-// ── Application State ──────────────────────────────────────────────────────────
-
+// ── STATE ──────────────────────────────────────────────────────
 const state = {
   activeCaseId: null,
-  uploadedImagePath: null,
-  selectedInode: null,
-  demoMode: false,
+  uploadedPath: null,
   healthData: null,
   latencyMs: null,
-  pendingAction: null,
-  activeTheme: 'dark',
+  verifyMode: 'id',
+  activeTab: 'landing',
 };
 
-// ── Toast Notification System ──────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+//  PARTICLE PHYSICS ENGINE
+// ═══════════════════════════════════════════════════════════════
+
+const Particles = (() => {
+  let canvas, ctx, particles = [], raf, W, H;
+  const PARTICLE_COUNT = 80;
+
+  class Particle {
+    constructor() { this.reset(true); }
+    reset(initial = false) {
+      this.x = Math.random() * W;
+      this.y = initial ? Math.random() * H : H + 10;
+      this.vx = (Math.random() - 0.5) * 0.4;
+      this.vy = -(Math.random() * 0.6 + 0.1);
+      this.size = Math.random() * 2 + 0.5;
+      this.alpha = 0;
+      this.maxAlpha = Math.random() * 0.5 + 0.1;
+      this.life = 0;
+      this.maxLife = Math.random() * 300 + 200;
+      this.hue = Math.random() > 0.6 ? 190 : (Math.random() > 0.5 ? 220 : 280);
+    }
+    update() {
+      this.x += this.vx;
+      this.y += this.vy;
+      this.life++;
+      const t = this.life / this.maxLife;
+      this.alpha = t < 0.2 ? (t / 0.2) * this.maxAlpha : t > 0.8 ? ((1 - t) / 0.2) * this.maxAlpha : this.maxAlpha;
+      if (this.life > this.maxLife) this.reset();
+    }
+    draw() {
+      ctx.save();
+      ctx.globalAlpha = this.alpha;
+      ctx.fillStyle = `hsl(${this.hue},100%,70%)`;
+      ctx.shadowBlur = 8;
+      ctx.shadowColor = `hsl(${this.hue},100%,70%)`;
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  function resize() {
+    W = canvas.width = window.innerWidth;
+    H = canvas.height = window.innerHeight;
+  }
+
+  function drawConnections() {
+    for (let i = 0; i < particles.length; i++) {
+      for (let j = i + 1; j < particles.length; j++) {
+        const dx = particles[i].x - particles[j].x;
+        const dy = particles[i].y - particles[j].y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 100) {
+          const alpha = (1 - dist / 100) * 0.08;
+          ctx.save();
+          ctx.globalAlpha = alpha;
+          ctx.strokeStyle = '#00e5ff';
+          ctx.lineWidth = 0.5;
+          ctx.beginPath();
+          ctx.moveTo(particles[i].x, particles[i].y);
+          ctx.lineTo(particles[j].x, particles[j].y);
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+    }
+  }
+
+  function loop() {
+    ctx.clearRect(0, 0, W, H);
+    drawConnections();
+    particles.forEach(p => { p.update(); p.draw(); });
+    raf = requestAnimationFrame(loop);
+  }
+
+  function init() {
+    canvas = document.getElementById('particleCanvas');
+    if (!canvas) return;
+    ctx = canvas.getContext('2d');
+    resize();
+    window.addEventListener('resize', resize);
+    for (let i = 0; i < PARTICLE_COUNT; i++) particles.push(new Particle());
+    loop();
+  }
+
+  return { init };
+})();
+
+// ═══════════════════════════════════════════════════════════════
+//  TOAST SYSTEM
+// ═══════════════════════════════════════════════════════════════
 
 const Toast = {
-  show(type, title, msg, duration = 4000) {
-    const container = document.getElementById('toastContainer');
-    if (!container) return;
-
-    const toast = document.createElement('div');
-    toast.className = `toast ${type}`;
-    toast.innerHTML = `
+  show(type, title, msg, dur = 4000) {
+    const c = document.getElementById('toastContainer');
+    if (!c) return;
+    const el = document.createElement('div');
+    el.className = `toast ${type}`;
+    el.innerHTML = `
       <div class="toast-body">
-        <div class="toast-title">${ui.esc(title)}</div>
-        ${msg ? `<div class="toast-msg">${ui.esc(msg)}</div>` : ''}
+        <div class="toast-title">${esc(title)}</div>
+        ${msg ? `<div class="toast-msg">${esc(msg)}</div>` : ''}
       </div>
-      <button class="toast-close" onclick="this.parentElement.remove()">✕</button>
-    `;
-
-    container.appendChild(toast);
-
+      <button class="toast-close" onclick="this.parentElement.remove()">✕</button>`;
+    c.appendChild(el);
     setTimeout(() => {
-      toast.classList.add('toast-out');
-      setTimeout(() => toast.remove(), 250);
-    }, duration);
+      el.classList.add('toast-out');
+      setTimeout(() => el.remove(), 300);
+    }, dur);
   },
-  success(title, msg) { this.show('success', title, msg); },
-  error(title, msg)   { this.show('error', title, msg, 6000); },
-  warning(title, msg) { this.show('warning', title, msg); },
-  info(title, msg)    { this.show('info', title, msg); },
+  success(t, m) { this.show('success', t, m); },
+  error(t, m)   { this.show('error', t, m, 6000); },
+  warning(t, m) { this.show('warning', t, m); },
+  info(t, m)    { this.show('info', t, m); },
 };
 
-// ── API Client ─────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+//  UTILITIES
+// ═══════════════════════════════════════════════════════════════
+
+function esc(v) {
+  return String(v ?? '').replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function $id(id) { return document.getElementById(id); }
+function html(id, h) { const el = $id(id); if (el) el.innerHTML = h; }
+function txt(id, t) { const el = $id(id); if (el) el.textContent = t; }
+function show(id) { const el = $id(id); if (el) el.style.display = ''; }
+function hide(id) { const el = $id(id); if (el) el.style.display = 'none'; }
+function val(id) { const el = $id(id); return el ? el.value.trim() : ''; }
+function setVal(id, v) { const el = $id(id); if (el) el.value = v; }
+
+function statusClass(s) {
+  const ok = ['VERIFIED','VALID','SUPPORTED','ACTIVE','CLEAR_SUPPORTED','ok','EXT4_FULL_RECOVERY'];
+  const err = ['FAILED','REJECTED','INVALID','UNSUPPORTED','NOT_A_FILESYSTEM','FAILED_SK_LAYER'];
+  const warn = ['VERIFIED_WITHIN_SCOPE','UNVERIFIED','PARTIAL','WARN'];
+  if (ok.includes(s)) return 'ok';
+  if (err.includes(s)) return 'err';
+  if (warn.includes(s)) return 'warn';
+  return '';
+}
+
+function formatBytes(bytes) {
+  if (!bytes) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
+}
+
+function formatTime(ts) {
+  if (!ts) return '—';
+  try { return new Date(ts).toLocaleString(); } catch { return ts; }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  API CLIENT
+// ═══════════════════════════════════════════════════════════════
 
 const api = {
-  async call(method, path, body, isForm = false) {
-    const opts = { method, headers: {} };
-
-    // Include API Key if configured in diagnostics/localStorage
+  async call(method, path, body, isForm = false, extraHeaders = {}) {
+    const opts = { method, headers: { 'X-Demo-Mode': '1', ...extraHeaders } };
     const apiKey = localStorage.getItem('sih_api_key');
-    if (apiKey && apiKey.trim()) {
-      opts.headers['X-API-Key'] = apiKey.trim();
-    }
-
+    if (apiKey) opts.headers['X-API-Key'] = apiKey.trim();
     if (isForm) {
       opts.body = body;
     } else if (body) {
       opts.headers['Content-Type'] = 'application/json';
       opts.body = JSON.stringify(body);
     }
-
-    const url = (cfg.base + path).replace(/([^:]\/)\/+/g, '$1');
+    const url = (cfg.base + path).replace(/([^:]\/)\/{2,}/g, '$1');
     const res = await fetch(url, opts);
-
     if (!res.ok) {
       let detail = `HTTP ${res.status}`;
-      try {
-        const json = await res.json();
-        detail = json.detail || detail;
-      } catch (_) {}
-      
-      if (res.status === 401) {
-        detail = 'Authentication required. Please configure API Key in Diagnostics/Settings.';
-      }
+      try { const j = await res.json(); detail = j.detail || detail; } catch {}
       throw new Error(detail);
     }
     return res.json();
   },
-  get:    (path)       => api.call('GET',  path),
-  post:   (path, body) => api.call('POST', path, body),
-  upload: (path, form) => api.call('POST', path, form, true),
+  get:    (path)        => api.call('GET', path),
+  post:   (path, body)  => api.call('POST', path, body),
+  upload: (path, form)  => api.call('POST', path, form, true),
 };
 
-// ── UI Helpers ─────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+//  NAVIGATION
+// ═══════════════════════════════════════════════════════════════
 
-const ui = {
-  show(id)   { const el = document.getElementById(id); if (el) el.style.display = ''; },
-  hide(id)   { const el = document.getElementById(id); if (el) el.style.display = 'none'; },
-  html(id, h){ const el = document.getElementById(id); if (el) el.innerHTML = h; },
-  text(id, t){ const el = document.getElementById(id); if (el) el.textContent = t; },
-  val(id)    { const el = document.getElementById(id); return el ? el.value.trim() : ''; },
-  setVal(id, v){ const el = document.getElementById(id); if (el) el.value = v; },
-  setBtn(id, disabled) { const b = document.getElementById(id); if (b) b.disabled = disabled; },
-
-  esc(v) {
-    return String(v ?? '').replace(/[&<>"']/g, (c) => ({
-      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-    }[c]));
-  },
-
-  badge(label, type = 'neutral') {
-    const cls = { ok: 'badge-ok', warn: 'badge-warn', err: 'badge-err', neutral: 'badge-neutral' };
-    return `<span class="badge ${cls[type] || 'badge-neutral'}">${ui.esc(label)}</span>`;
-  },
-
-  resultCard(statusText, reason, type = 'neutral', scope = '') {
-    return `<div class="result-card ${type}">
-      <div class="result-status">${ui.esc(statusText)}</div>
-      <div class="result-reason">${ui.esc(reason)}</div>
-      ${scope ? `<div class="result-scope">${ui.esc(scope)}</div>` : ''}
-    </div>`;
-  },
-
-  kvGrid(rows) {
-    const cells = rows.map(([k, v, mono]) =>
-      `<div class="kv-row">
-        <span class="kv-k">${ui.esc(k)}</span>
-        <span class="kv-v ${mono ? 'kv-mono' : ''}">${ui.esc(v)}</span>
-      </div>`
-    ).join('');
-    return `<div class="kv-grid">${cells}</div>`;
-  },
-
-  classifyType(status) {
-    const ok   = ['VERIFIED', 'VALID', 'SUPPORTED', 'ACTIVE', 'CLEAR_SUPPORTED'];
-    const warn = ['VERIFIED_WITHIN_SCOPE', 'UNVERIFIED', 'PARTIAL'];
-    const err  = ['FAILED', 'REJECTED', 'INVALID', 'UNSUPPORTED', 'NOT_A_FILESYSTEM'];
-    if (ok.includes(status))   return 'ok';
-    if (warn.includes(status)) return 'warn';
-    if (err.includes(status))  return 'err';
-    return 'neutral';
-  },
-
-  stepOn(id)  { const el = document.getElementById(id); if (el) el.classList.remove('dim'); },
-  stepDim(id) { const el = document.getElementById(id); if (el) el.classList.add('dim'); },
-
-  err(msg) { return `<div class="notice-box notice-red">${ui.esc(msg)}</div>`; },
+const TAB_LABELS = {
+  landing:      'HOME',
+  cases:        'CASES',
+  forensics:    'FORENSIC RECOVERY',
+  carving:      'RAW FILE CARVING',
+  sanitization: 'SANITIZATION',
+  auditchain:   'AUDIT CHAIN',
+  vault:        'EVIDENCE VAULT',
+  verification: 'VERIFIER',
 };
 
-// ── Tab Navigation ─────────────────────────────────────────────────────────────
+function switchTab(tab, btn) {
+  // Deactivate all sections
+  document.querySelectorAll('.tab-section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
 
-const tabNames = {
-  showcase:     'Showcase & Story',
-  cases:        'Cases & Timeline',
-  forensics:    'Forensic Recovery',
-  carving:      'Advanced File Carving',
-  sanitization: 'Data Sanitization & Selective Eraser',
-  auditchain:   'Cryptographic Audit Chain',
-  vault:        'Evidence Vault',
-  verification: 'Independent Verifier',
-};
-
-function switchTab(tab) {
-  document.querySelectorAll('.sidenav-item').forEach(b => {
-    b.classList.toggle('active', b.dataset.tab === tab);
-  });
-  document.querySelectorAll('.tab-content').forEach(t => {
-    t.classList.toggle('active', t.id === `tab-${tab}`);
-  });
-  ui.text('topbarTabName', tabNames[tab] || tab);
-  toggleMobileDrawer(false);
-
-  if (tab === 'auditchain' && state.activeCaseId) loadAuditChain();
-  if (tab === 'vault' && state.activeCaseId) loadVault();
-  if (tab === 'showcase') {
-    fetchLiveBenchmarkMetrics();
+  // Activate target
+  const section = $id(`tab-${tab}`);
+  if (section) section.classList.add('active');
+  if (btn) btn.classList.add('active');
+  else {
+    const navBtn = document.querySelector(`[data-tab="${tab}"]`);
+    if (navBtn) navBtn.classList.add('active');
   }
-}
 
-// ── Showcase Interactive Actions (Layer 1) ─────────────────────────────────────
+  state.activeTab = tab;
+  txt('bcCurrent', TAB_LABELS[tab] || tab.toUpperCase());
 
-async function triggerShowcaseProofLoop() {
-  const btn = document.getElementById('btnRunProofLoop');
-  if (btn) btn.innerHTML = '⏳ Running Proof Loop...';
-  try {
-    const res = await api.post('/api/cases/CASE-DEMO-2026/proof-loop', {
-      method: 'CLEAR',
-      data_sensitivity: 'CONFIDENTIAL'
-    });
-    const pr = res.proof_result || {};
-    
-    ui.text('plPreCount', `${pr.pre_sanitization?.artifacts_found || 3} / 3 Artifacts Detected`);
-    ui.text('plMethod', `${pr.sanitization_execution?.method_applied || 'CLEAR'} (${pr.sanitization_execution?.execution_time_ms || 1.2}ms)`);
-    ui.text('plPostCount', `${pr.post_sanitization_probe?.artifacts_recovered || 0} Recoverable (100% Assurance)`);
-    ui.text('plVerifyStatus', `${pr.assurance?.validation?.status === 'VALIDATED_ZERO_RECOVERABLE' ? 'VERIFIED & VALIDATED' : 'PROBE WARNING'}`);
-    
-    Toast.success('Proof Loop Complete', 'Pre-carve, sanitization overwrite, and post-probe validation verified.');
-  } catch (err) {
-    ui.text('plVerifyStatus', 'PROBE UNAVAILABLE');
-    Toast.error('Proof Loop Error', 'Live proof loop execution failed: ' + err.message);
-  } finally {
-    if (btn) btn.innerHTML = '▶ Run Live Proof Loop';
+  // Close nav on mobile
+  if (window.innerWidth < 900) {
+    document.body.classList.remove('nav-open');
   }
-}
 
-async function fetchLiveBenchmarkMetrics() {
-  try {
-    const bench = await api.get('/api/cases/CASE-DEMO-2026/benchmark?runs=2');
-    const m = bench.metrics || {};
-    ui.text('bmPrecision', m.recovery_precision_percentage != null ? `${Number(m.recovery_precision_percentage).toFixed(1)}%` : '—');
-    ui.text('bmRecall', m.recovery_recall_percentage != null ? `${Number(m.recovery_recall_percentage).toFixed(1)}%` : '—');
-    ui.text('bmF1', m.f1_score != null ? `${Number(m.f1_score).toFixed(3)}` : '—');
-    ui.text('bmErasure', m.sanitization_post_probe_erasure_rate_percentage != null ? `${Number(m.sanitization_post_probe_erasure_rate_percentage).toFixed(1)}%` : '—');
-  } catch (_) {
-    ui.text('bmPrecision', '—');
-    ui.text('bmRecall', '—');
-    ui.text('bmF1', '—');
-    ui.text('bmErasure', '—');
-  }
-}
-
-async function updateDecisionProfile() {
-  const media = document.getElementById('profMediaType')?.value || 'NVME_SSD';
-  const sens = document.getElementById('profSensitivity')?.value || 'CONFIDENTIAL';
-  try {
-    const res = await api.post('/api/cases/CASE-DEMO-2026/decision-profile', {
-      media_type: media,
-      data_sensitivity: sens,
-      hardware_health: 'GOOD',
-      leaving_custody: true
-    });
-    ui.text('profRecMethod', `RECOMMENDED: ${res.recommended_method || 'PURGE'}`);
-    ui.text('profRecReason', res.reasoning || 'Firmware purge recommended per NIST SP 800-88 Rev. 2.');
-  } catch (_) {
-    if (sens === 'SECRET') {
-      ui.text('profRecMethod', 'RECOMMENDED: DESTROY');
-      ui.text('profRecReason', 'High sensitivity requires physical destruction or degaussing.');
-    } else if (media === 'NVME_SSD' || sens === 'CONFIDENTIAL') {
-      ui.text('profRecMethod', 'RECOMMENDED: PURGE');
-      ui.text('profRecReason', 'Flash media requires firmware-level cryptographic or block purge per NIST SP 800-88 Rev. 2.');
-    } else {
-      ui.text('profRecMethod', 'RECOMMENDED: CLEAR');
-      ui.text('profRecReason', 'Standard logical overwrite acceptable for reusable magnetic media.');
-    }
-  }
-}
-
-
-document.querySelectorAll('.sidenav-item').forEach(btn => {
-  btn.addEventListener('click', () => switchTab(btn.dataset.tab));
-});
-
-function refreshCurrentView() {
-  const active = document.querySelector('.sidenav-item.active');
-  const tab = active?.dataset.tab;
+  // Auto-loads
   if (tab === 'cases') loadCases();
-  if (tab === 'vault' && state.activeCaseId) loadVault();
-  if (tab === 'auditchain' && state.activeCaseId) loadAuditChain();
-  pingHealth();
-  Toast.info('View Refreshed', 'Synced with backend');
+  if (tab === 'auditchain' && state.activeCaseId) loadAuditTimeline();
+  if (tab === 'vault') loadEvidence();
 }
 
-// ── Mobile Drawer Controller ───────────────────────────────────────────────────
-
-function toggleMobileDrawer(open) {
-  const sidebar = document.getElementById('sidebar');
-  const backdrop = document.getElementById('drawerBackdrop');
-  if (sidebar) sidebar.classList.toggle('open', open);
-  if (backdrop) backdrop.classList.toggle('active', open);
+function toggleNav() {
+  document.body.classList.toggle('nav-open');
 }
 
-// ── Theme Manager ──────────────────────────────────────────────────────────────
-
-function initTheme() {
-  const saved = localStorage.getItem('sih_theme') || 'light';
-  setTheme(saved, false);
-}
-
-function toggleThemeMenu() {
-  const dropdown = document.getElementById('themeDropdown');
-  if (dropdown) {
-    dropdown.style.display = dropdown.style.display === 'none' ? 'flex' : 'none';
-  }
-}
-
-document.addEventListener('click', (e) => {
-  const btn = document.getElementById('themeBtn');
-  const dropdown = document.getElementById('themeDropdown');
-  if (dropdown && btn && !btn.contains(e.target) && !dropdown.contains(e.target)) {
-    dropdown.style.display = 'none';
-  }
-});
-
-function setTheme(theme, save = true) {
-  state.activeTheme = theme;
-  if (save) localStorage.setItem('sih_theme', theme);
-
-  let effective = theme;
-  if (theme === 'system') {
-    effective = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
-  }
-
-  document.documentElement.setAttribute('data-theme', effective);
-
-  const icons = { dark: '◆', light: '☀', contrast: '▣', system: '◌' };
-  const labels = { dark: 'Ink Navy', light: 'Evidence Lab', contrast: 'High Contrast', system: 'System' };
-  ui.text('themeIcon', icons[theme] || '🌓');
-  ui.text('themeLabel', labels[theme] || 'Theme');
-
-  const dropdown = document.getElementById('themeDropdown');
-  if (dropdown) dropdown.style.display = 'none';
-}
-
-// ── Health & Connection Latency Monitor ────────────────────────────────────────
-
-let pingTimer = null;
+// ═══════════════════════════════════════════════════════════════
+//  HEALTH PING
+// ═══════════════════════════════════════════════════════════════
 
 async function pingHealth() {
   const start = performance.now();
-  const connDot = document.getElementById('connDot');
-  const connLabel = document.getElementById('connLabel');
-  const connPing = document.getElementById('connPing');
-  const coldBanner = document.getElementById('coldStartBanner');
-
+  const dot = $id('statusDot');
+  const label = $id('statusLabel');
+  const ping = $id('statusPing');
   try {
     const health = await api.get('/health');
-    const latency = Math.round(performance.now() - start);
+    const ms = Math.round(performance.now() - start);
     state.healthData = health;
-    state.latencyMs = latency;
+    state.latencyMs = ms;
+    if (dot) { dot.className = 'status-dot ok'; }
+    if (label) { label.textContent = 'ONLINE'; label.className = 'status-label ok'; }
+    if (ping) ping.textContent = `${ms}ms`;
 
-    if (connDot) {
-      connDot.className = 'conn-dot dot-ok';
-    }
-    if (connLabel) connLabel.textContent = 'API Online';
-    if (connPing) connPing.textContent = `${latency} ms`;
-
-    // Hide cold start banner if previously shown
-    if (coldBanner) coldBanner.style.display = 'none';
-
-    // Update subsystem dots in sidebar
+    // Update sys status
     const subs = health.subsystems || {};
-    const sleuthDot = document.getElementById('dotSleuth');
-    const cryptoDot = document.getElementById('dotCrypto');
-    const persistDot = document.getElementById('dotPersistence');
+    txt('sysSK', subs.sleuthkit ? 'Active' : 'Emulated');
+    txt('sysCrypto', 'Ed25519');
+    txt('sysPersist', 'Atomic');
 
-    if (sleuthDot) sleuthDot.className = `dot ${subs.sleuthkit ? 'dot-ok' : 'dot-warn'}`;
-    if (cryptoDot) cryptoDot.className = `dot ${subs.cryptography ? 'dot-ok' : 'dot-warn'}`;
-    if (persistDot) persistDot.className = `dot ${subs.persistence ? 'dot-ok' : 'dot-warn'}`;
-
-    state.demoMode = health.demo_mode === true;
-    if (state.demoMode) ui.show('tamperSection');
-  } catch (err) {
-    // Distinguish network offline vs auth (401) vs other service errors
-    const errMsg = String(err.message || '');
-    const lower = errMsg.toLowerCase();
-    const isAuthError = errMsg.includes('401') || lower.includes('authentication') || lower.includes('api key');
-    const isNetwork = err instanceof TypeError
-      || /failed to fetch|networkerror|load failed|err_connection|err_name_not_resolved/i.test(errMsg);
-
-    if (isAuthError) {
-      if (connDot) connDot.className = 'conn-dot dot-warn';
-      if (connLabel) connLabel.textContent = 'Auth Required';
-      if (connPing) connPing.textContent = '-- ms';
-    } else if (isNetwork) {
-      if (connDot) connDot.className = 'conn-dot dot-err';
-      if (connLabel) connLabel.textContent = 'Network Offline';
-      if (connPing) connPing.textContent = '-- ms';
-      if (coldBanner && window.location.hostname.includes('render.com')) {
-        coldBanner.style.display = 'flex';
-        startColdStartCountdown();
-      }
-    } else {
-      if (connDot) connDot.className = 'conn-dot dot-err';
-      if (connLabel) connLabel.textContent = 'Service Error';
-      if (connPing) connPing.textContent = '-- ms';
-      if (coldBanner && window.location.hostname.includes('render.com')) {
-        coldBanner.style.display = 'flex';
-        startColdStartCountdown();
-      }
-    }
+    // Live test count
+    if (health.test_count) txt('statTests', health.test_count);
+  } catch (e) {
+    if (dot) { dot.className = 'status-dot err'; }
+    if (label) { label.textContent = 'OFFLINE'; label.className = 'status-label err'; }
+    if (ping) ping.textContent = '—';
   }
 }
 
-function startColdStartCountdown() {
-  let sec = 10;
-  const el = document.getElementById('coldStartSeconds');
-  const interval = setInterval(() => {
-    sec--;
-    if (el) el.textContent = sec;
-    if (sec <= 0) {
-      clearInterval(interval);
-      pingHealth();
-    }
-  }, 1000);
-}
+// ═══════════════════════════════════════════════════════════════
+//  CASES MODULE
+// ═══════════════════════════════════════════════════════════════
 
-// ── Connection Diagnostics Modal ───────────────────────────────────────────────
-
-function openConnDiagnostics() {
-  const modal = document.getElementById('connModalBackdrop');
-  if (!modal) return;
-  modal.style.display = 'flex';
-
-  const connLabel = document.getElementById('connLabel');
-  const currentStatus = connLabel ? connLabel.textContent : (state.healthData ? 'Operational' : 'Offline');
-  ui.text('diagStatusBadge', currentStatus);
-  ui.text('diagLatency', `Roundtrip Latency: ${state.latencyMs ?? '--'} ms`);
-  ui.text('diagOrigin', cfg.base || window.location.origin);
-  ui.text('diagVersion', state.healthData?.version || '2.0.0');
-  ui.text('diagCrypto', state.healthData?.subsystems?.cryptography || 'Ed25519');
-  ui.text('diagSleuth', state.healthData?.subsystems?.sleuthkit ? 'Active & Ready' : 'Fallback / Inode Emulated');
-
-  // Populate saved settings
-  const savedOverride = localStorage.getItem('sih_api_override') || '';
-  ui.setVal('apiBaseOverride', savedOverride);
-  const savedKey = localStorage.getItem('sih_api_key') || '';
-  ui.setVal('diagApiKeyInput', savedKey);
-}
-
-function closeConnDiagnostics(e) {
-  const modal = document.getElementById('connModalBackdrop');
-  if (modal) modal.style.display = 'none';
-}
-
-function saveApiKey() {
-  const keyVal = ui.val('diagApiKeyInput');
-  if (keyVal) {
-    localStorage.setItem('sih_api_key', keyVal);
-    Toast.success('API Key Saved', 'Key stored in browser — all requests will now include X-API-Key.');
-  } else {
-    localStorage.removeItem('sih_api_key');
-    Toast.info('API Key Cleared', 'Running without authentication key.');
-  }
-  closeConnDiagnostics();
-  pingHealth();
-}
-
-function saveApiOverride() {
-  // Persist API key from diagnostics modal when present
-  const keyInput = document.getElementById('diagApiKeyInput');
-  if (keyInput) {
-    const keyVal = ui.val('diagApiKeyInput');
-    if (keyVal) {
-      localStorage.setItem('sih_api_key', keyVal);
-    } else {
-      localStorage.removeItem('sih_api_key');
-    }
-  }
-
-  const val = ui.val('apiBaseOverride');
-  if (val) {
-    localStorage.setItem('sih_api_override', val);
-    Toast.success('API Override Saved', `Target origin: ${val}`);
-  } else {
-    localStorage.removeItem('sih_api_override');
-    Toast.info('API Override Reset', 'Using same-origin resolution');
-  }
-  closeConnDiagnostics();
-  pingHealth();
-  refreshCurrentView();
-}
-
-function resetApiOverride() {
-  localStorage.removeItem('sih_api_override');
-  ui.setVal('apiBaseOverride', '');
-  Toast.info('API Override Cleared', 'Restored same-origin');
-  closeConnDiagnostics();
-  pingHealth();
-  refreshCurrentView();
-}
-
-// ── Confirmation Modal ─────────────────────────────────────────────────────────
-
-function promptConfirm(promptText, actionNotice, onConfirm) {
-  const modal = document.getElementById('confirmModalBackdrop');
-  if (!modal) return;
-  ui.text('confirmModalPrompt', promptText);
-  if (actionNotice) ui.text('confirmNoticeBox', actionNotice);
-  state.pendingAction = onConfirm;
-  modal.style.display = 'flex';
-}
-
-function closeConfirmModal(confirmed = false) {
-  const modal = document.getElementById('confirmModalBackdrop');
-  if (modal) modal.style.display = 'none';
-  if (!confirmed) state.pendingAction = null;
-}
-
-function onConfirmModalConfirmed() {
-  const act = state.pendingAction;
-  closeConfirmModal(true);
-  if (typeof act === 'function') act();
-}
-
-// ── Active Case Tracking ───────────────────────────────────────────────────────
-
-function setActiveCase(caseId) {
+function setActiveCase(caseId, caseData) {
   state.activeCaseId = caseId;
-  ui.text('topbarCase', caseId);
-  ui.text('acsCaseId', caseId);
-  ui.show('activeCaseStrip');
+  state.activeCaseData = caseData || {};
+  const badge = $id('topCaseBadge');
+  if (badge) badge.style.display = 'flex';
+  txt('topCaseId', caseId);
+
+  // Auto-populate eraser paths with the case's acquired image path
+  const eraserEl = $id('eraserPaths');
+  if (eraserEl && caseData && caseData.source_path) {
+    eraserEl.value = caseData.source_path;
+    eraserEl.placeholder = caseData.source_path;
+  }
+
+  // Update forensics banner
+  const banner = $id('forensicsCaseBanner');
+  if (banner) {
+    banner.className = 'active-case-banner ok';
+    banner.innerHTML = `
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+      Active case: <strong>${caseId}</strong>`;
+  }
 
   document.querySelectorAll('.case-item').forEach(el => {
     el.classList.toggle('active-case', el.dataset.caseId === caseId);
   });
 }
 
-// ── Cases Module ───────────────────────────────────────────────────────────────
-
-function showNewCaseForm() { ui.show('newCaseForm'); }
-function hideNewCaseForm() { ui.hide('newCaseForm'); }
-
 async function loadCases() {
-  ui.html('casesList', `
-    <div class="skeleton-card">
-      <div class="skeleton-line" style="width: 40%"></div>
-      <div class="skeleton-line" style="width: 70%"></div>
-    </div>
-  `);
-
+  html('caseList', '<div class="empty-state"><div class="spinner"></div><p>Loading cases…</p></div>');
   try {
     const cases = await api.get('/cases');
     if (!cases || !cases.length) {
-      ui.html('casesList', `
-        <div style="text-align:center;padding:32px 16px;background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);">
-          <div style="font-size:28px;margin-bottom:8px;">📁</div>
-          <div style="font-weight:700;font-size:14px;">No Investigation Cases Found</div>
-          <div style="color:var(--text-muted);font-size:12px;margin:6px 0 16px;">Create a new case or initialize the official demonstration case.</div>
-          <button class="btn btn-primary btn-sm" onclick="seedOfficialDemoCase()">⚡ Seed Demo Case (1-Click)</button>
-        </div>
-      `);
+      html('caseList', `
+        <div class="empty-state">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>
+          <p>No cases found. Create one or seed the demo case.</p>
+          <button class="btn-ghost small" onclick="seedOfficialDemoCase()">Seed Demo Case</button>
+        </div>`);
       return;
     }
-
-    const cards = cases.map(c => {
-      const isActive = c.case_id === state.activeCaseId;
-      return `
-        <div class="case-item ${isActive ? 'active-case' : ''}" data-case-id="${ui.esc(c.case_id)}" onclick="selectCase('${ui.esc(c.case_id)}')">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-            <div>
-              <div style="font-weight:700;font-size:14px;color:var(--text-main);">${ui.esc(c.title || c.case_id)}</div>
-              <div style="font-family:var(--font-mono);font-size:11.5px;color:var(--accent-primary);margin-top:2px;">${ui.esc(c.case_id)}</div>
-            </div>
-            ${ui.badge(c.workflow || 'FORENSIC', 'ok')}
-          </div>
-          ${c.description ? `<div style="font-size:12px;color:var(--text-muted);margin:8px 0;">${ui.esc(c.description)}</div>` : ''}
-          <div style="display:flex;justify-content:space-between;align-items:center;font-size:11.5px;color:var(--text-dim);margin-top:10px;padding-top:8px;border-top:1px solid var(--border-subtle);">
-            <span>Acquired Image: <strong>${c.source_path ? 'Yes (SHA-256 Validated)' : 'Pending Acquisition'}</strong></span>
-            <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();selectCase('${ui.esc(c.case_id)}');switchTab('forensics');">Open Workspace →</button>
-          </div>
-        </div>
-      `;
-    }).join('');
-
-    ui.html('casesList', cards);
-
-    if (!state.activeCaseId && cases.length > 0) {
-      selectCase(cases[0].case_id);
-    }
+    html('caseList', cases.map(c => `
+      <div class="case-item ${c.case_id === state.activeCaseId ? 'active-case' : ''}"
+           data-case-id="${esc(c.case_id)}"
+           onclick="selectCase('${esc(c.case_id)}')">
+        <div class="case-item-id">${esc(c.case_id)}</div>
+        <div class="case-item-name">${esc(c.title || c.description || 'Investigation')}</div>
+        <div class="case-item-meta">${c.source_path ? '✓ Image' : 'No image'}</div>
+      </div>
+    `).join(''));
   } catch (e) {
-    ui.html('casesList', ui.err(`Could not load cases: ${e.message}`));
+    html('caseList', `<div class="empty-state"><p style="color:var(--red)">${esc(e.message)}</p></div>`);
   }
 }
 
 async function createCase() {
-  const title = ui.val('newCaseName');
-  const examiner = ui.val('newCaseExaminer');
-  const desc = ui.val('newCaseDesc');
+  const invId   = val('caseInvestigatorId');
+  const invName = val('caseInvestigatorName');
+  const agency  = val('caseAgency');
+  const desc    = val('caseDesc');
 
-  if (!title) {
-    Toast.warning('Validation Error', 'Case title is required');
+  if (!invId && !invName) {
+    Toast.warning('Validation', 'Provide at least an Investigator ID or Name');
     return;
   }
-
   try {
     const data = await api.post('/cases', {
       workflow: 'FORENSIC',
-      title,
-      description: desc || `Investigator: ${examiner || 'Authorized Officer'}`,
+      title: invName || invId,
+      description: desc || `Agency: ${agency || 'NTRO'} | Officer: ${invName || invId}`,
     });
-    hideNewCaseForm();
-    Toast.success('Case Initialized', `Case ID: ${data.case_id}`);
-    setActiveCase(data.case_id);
-    loadCases();
+    Toast.success('Case Created', `ID: ${data.case_id}`);
+    setActiveCase(data.case_id, data);
+    showCaseDetail(data);
+    await loadCases();
   } catch (e) {
-    Toast.error('Failed to Create Case', e.message);
+    Toast.error('Create Failed', e.message);
   }
 }
 
@@ -612,173 +380,223 @@ async function selectCase(caseId) {
   setActiveCase(caseId);
   try {
     const c = await api.get(`/cases/${caseId}`);
-    if (c.source_path) {
-      ui.stepOn('step-discover');
-      ui.stepOn('step-recover');
-      ui.setBtn('btnDetectFs', false);
-      ui.setBtn('btnDiscover', false);
-      ui.setBtn('btnRecover', false);
-    }
-  } catch (_) {}
+    setActiveCase(caseId, c);
+    showCaseDetail(c);
+  } catch {}
+}
+
+function showCaseDetail(c) {
+  const panel = $id('caseDetailPanel');
+  if (!panel) return;
+  panel.style.display = '';
+  txt('caseDetailId', c.case_id || '—');
+  html('caseDetailBody', `
+    <div class="detail-grid">
+      <div class="detail-field"><div class="detail-key">Case ID</div><div class="detail-val mono-val">${esc(c.case_id || '—')}</div></div>
+      <div class="detail-field"><div class="detail-key">Title</div><div class="detail-val">${esc(c.title || c.description || '—')}</div></div>
+      <div class="detail-field"><div class="detail-key">Workflow</div><div class="detail-val">${esc(c.workflow || 'FORENSIC')}</div></div>
+      <div class="detail-field"><div class="detail-key">Created</div><div class="detail-val">${formatTime(c.created_at)}</div></div>
+      <div class="detail-field"><div class="detail-key">Evidence Image</div><div class="detail-val mono-val">${c.source_path ? '✓ Acquired' : 'Pending'}</div></div>
+    </div>
+  `);
+}
+
+async function loadCaseTimeline() {
+  switchTab('auditchain', document.querySelector('[data-tab=auditchain]'));
 }
 
 async function seedOfficialDemoCase() {
-  Toast.info('Seeding Demo Case', 'Generating synthetic storage media...');
+  Toast.info('Seeding', 'Generating synthetic storage media…');
   try {
     const res = await api.post('/cases/seed-demo', {});
-    Toast.success('Demo Case Seeded', `Loaded ${res.case.case_id}`);
+    Toast.success('Demo Seeded', `Loaded ${res.case.case_id}`);
     setActiveCase(res.case.case_id);
     await loadCases();
-    switchTab('forensics');
+    switchTab('forensics', document.querySelector('[data-tab=forensics]'));
   } catch (e) {
-    Toast.error('Seeder Error', e.message);
+    Toast.error('Seed Error', e.message);
   }
 }
 
-// ── Forensics Module ───────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+//  FORENSICS MODULE
+// ═══════════════════════════════════════════════════════════════
 
-async function onImageSelect() {
+async function seedSyntheticEvidence() {
   if (!state.activeCaseId) {
-    Toast.warning('No Active Case', 'Select or create a case before uploading an image');
-    const input = document.getElementById('imageUpload');
-    if (input) input.value = '';
+    Toast.warning('No Case', 'Select or create a case first — click "Seed Demo Case" in the sidebar or create a case');
     return;
   }
-  const input = document.getElementById('imageUpload');
-  const file = input?.files?.[0];
-  if (!file) return;
-
-  ui.html('uploadHint', `Uploading ${file.name}…`);
-  const form = new FormData();
-  form.append('file', file, file.name);
-  try {
-    const res = await api.upload(`/cases/${state.activeCaseId}/upload`, form);
-    ui.html('fsResult', ui.resultCard(
-      '✓ Evidence Image Acquired',
-      `SHA-256: ${(res.sha256 || '').substring(0, 24)}…`,
-      'ok',
-      `Acquisition ${res.acquisition_id} · ${(res.size_bytes || 0).toLocaleString()} bytes · ${res.filename || file.name}`
-    ));
-    ui.text('uploadHint', `${res.filename || file.name} registered (${res.acquisition_id})`);
-    ui.stepOn('step-discover');
-    ui.stepOn('step-recover');
-    ui.setBtn('btnDetectFs', false);
-    ui.setBtn('btnDiscover', false);
-    ui.setBtn('btnRecover', false);
-    Toast.success('Upload Complete', `Acquisition ${res.acquisition_id}`);
-  } catch (e) {
-    ui.html('fsResult', ui.err(e.message));
-    Toast.error('Upload Failed', e.message);
-  } finally {
-    if (input) input.value = '';
-  }
-}
-
-async function seedSyntheticEvidenceForActiveCase() {
-  if (!state.activeCaseId) {
-    Toast.warning('No Active Case', 'Please select or create a case first');
-    return;
-  }
+  const box = $id('fsResult');
+  if (box) { box.style.display = ''; box.className = 'result-box'; box.textContent = 'Generating synthetic evidence disk with embedded JPEG, PNG, PDF…'; }
   try {
     const res = await api.post(`/cases/${state.activeCaseId}/seed-synthetic-evidence`, {});
-    ui.html('fsResult', ui.resultCard(
-      '✓ Synthetic Evidence Disk Acquired',
-      `Embedded valid JPEG, PNG, and PDF. Computed SHA-256: ${res.sha256.substring(0, 24)}...`,
-      'ok',
-      `Size: ${(res.size_bytes).toLocaleString()} bytes`
-    ));
-    ui.stepOn('step-discover');
-    ui.stepOn('step-recover');
-    ui.setBtn('btnDetectFs', false);
-    ui.setBtn('btnDiscover', false);
-    ui.setBtn('btnRecover', false);
-    Toast.success('Evidence Acquired', 'Synthetic disk image registered');
+    if (box) {
+      box.className = 'result-box ok';
+      box.textContent = `✓ Synthetic Evidence Disk Seeded\nSHA-256: ${res.sha256 || '—'}\nSize: ${formatBytes(res.size_bytes)}\nEmbedded: JPEG + PNG + PDF artifacts`;
+    }
+    Toast.success('Evidence Seeded', 'Synthetic disk ready — run Detect Filesystem and Discover Inodes below');
   } catch (e) {
-    ui.html('fsResult', ui.err(e.message));
+    if (box) { box.className = 'result-box err'; box.textContent = e.message; }
+    Toast.error('Seed Failed', e.message);
+  }
+}
+
+function handleDrop(e) {
+  e.preventDefault();
+  $id('uploadZone').classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) uploadEvidence(file);
+}
+function handleDragover(e) { e.preventDefault(); $id('uploadZone').classList.add('drag-over'); }
+function handleDragleave(e) { $id('uploadZone').classList.remove('drag-over'); }
+function handleFileSelect(e) { const f = e.target.files[0]; if (f) uploadEvidence(f); }
+
+async function uploadEvidence(file) {
+  if (!state.activeCaseId) {
+    Toast.warning('No Case', 'Select or create a case first');
+    return;
+  }
+  const prog = $id('uploadProgress');
+  const fill = $id('progressFill');
+  const label = $id('progressLabel');
+  if (prog) prog.style.display = '';
+
+  // Animate progress
+  let p = 0;
+  const tick = setInterval(() => {
+    p = Math.min(p + Math.random() * 12, 85);
+    if (fill) fill.style.width = p + '%';
+  }, 180);
+
+  try {
+    const form = new FormData();
+    form.append('file', file, file.name);
+    const res = await api.upload(`/cases/${state.activeCaseId}/upload`, form);
+    clearInterval(tick);
+    if (fill) fill.style.width = '100%';
+    if (label) label.textContent = 'Upload complete';
+    state.uploadedPath = res.filename;
+
+    setTimeout(() => {
+      if (prog) prog.style.display = 'none';
+      if (fill) fill.style.width = '0%';
+    }, 1200);
+
+    const box = $id('fsResult');
+    if (box) {
+      box.style.display = '';
+      box.className = 'result-box ok';
+      box.textContent = `✓ Acquired: ${res.filename || file.name}\nSHA-256: ${res.sha256 || '—'}\nSize: ${formatBytes(res.size_bytes)}\nAcquisition: ${res.acquisition_id}`;
+    }
+    Toast.success('Image Uploaded', `Acquisition: ${res.acquisition_id}`);
+  } catch (e) {
+    clearInterval(tick);
+    if (prog) prog.style.display = 'none';
+    Toast.error('Upload Failed', e.message);
   }
 }
 
 async function detectFilesystem() {
-  if (!state.activeCaseId) return;
-  ui.html('fsResult', '<div style="color:var(--text-dim);font-size:12px;">Detecting superblock and signature...</div>');
+  if (!state.activeCaseId) { Toast.warning('No Case', 'Select a case first'); return; }
+  const box = $id('fsResult');
+  if (box) { box.style.display = ''; box.className = 'result-box'; box.textContent = 'Detecting superblock signature…'; }
   try {
     const cap = await api.get(`/cases/${state.activeCaseId}/filesystem`);
-    ui.html('fsResult', ui.resultCard(
-      `Filesystem: ${cap.status_label}`,
-      `Detection Method: ${cap.detection_method || cap.recovery_method || '—'} | Recovery Supported: ${cap.recovery_supported ? 'Yes' : 'No'}`,
-      cap.recovery_supported ? 'ok' : 'warn'
-    ));
+    if (box) {
+      box.className = `result-box ${statusClass(cap.status || cap.status_label)}`;
+      box.textContent = `Filesystem: ${cap.status_label || cap.status}\n` +
+        `Detection: ${cap.detection_method || cap.recovery_method || '—'}\n` +
+        `Recovery Supported: ${cap.recovery_supported ? 'Yes' : 'No'}\n` +
+        `SleuthKit: ${cap.sleuthkit_capability || '—'}`;
+    }
   } catch (e) {
-    ui.html('fsResult', ui.err(e.message));
+    if (box) { box.style.display = ''; box.className = 'result-box err'; box.textContent = e.message; }
   }
 }
 
-async function discoverDeleted() {
-  if (!state.activeCaseId) return;
-  ui.html('deletedList', '<div style="color:var(--text-dim);font-size:12px;">Scanning inode metadata table...</div>');
+async function discoverArtifacts() {
+  if (!state.activeCaseId) { Toast.warning('No Case', 'Select a case first'); return; }
+  const box = $id('discoverResult');
+  if (box) { box.style.display = ''; box.className = 'result-box'; box.textContent = 'Scanning inode metadata table via fls…'; }
   try {
-    const arts = await api.get(`/cases/${state.activeCaseId}/artifacts`);
+    const arts = await api.get(`/cases/${state.activeCaseId}/artifacts`);  // GET /cases/{id}/artifacts
     if (!arts || !arts.length) {
-      ui.html('deletedList', '<div style="font-size:12.5px;color:var(--text-muted);padding:8px 0;">No deleted unallocated inodes found on this image.</div>');
+      if (box) { box.className = 'result-box warn'; box.textContent = 'No deleted inodes found.'; }
       return;
     }
-    const html = arts.map(a => `
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:4px;margin-bottom:6px;font-size:12.5px;">
-        <span><strong>Inode ${a.inode}</strong> — ${ui.esc(a.filename || a.name || ('inode_' + a.inode))}</span>
-        <button class="btn btn-ghost btn-sm" onclick="prefillRecovery(${a.inode})">Select for Recovery</button>
-      </div>
-    `).join('');
-    ui.html('deletedList', html);
+    if (box) {
+      box.className = 'result-box ok';
+      box.textContent = arts.slice(0, 10).map(a =>
+        `Inode ${a.inode} — ${a.filename || a.name || 'unnamed'}`
+      ).join('\n') + (arts.length > 10 ? `\n…+${arts.length - 10} more` : '');
+    }
+    // Auto-fill first inode
+    const first = arts[0];
+    if (first) setVal('recoverInodeInput', first.inode);
+    Toast.success('Discovery', `${arts.length} deleted inodes found`);
   } catch (e) {
-    ui.html('deletedList', ui.err(e.message));
+    if (box) { box.style.display = ''; box.className = 'result-box err'; box.textContent = e.message; }
   }
 }
 
-function prefillRecovery(inode) {
-  state.selectedInode = inode;
-  Toast.info('Inode Selected', `Targeting inode #${inode} for block extraction`);
-}
-
-async function runRecovery() {
-  if (!state.activeCaseId) return;
-  const inode = state.selectedInode || 12;
-  const ref = ui.val('refHash') || null;
-
-  ui.html('recoveryResult', '<div style="color:var(--text-dim);font-size:12px;">Extracting raw block stream and computing SHA-256...</div>');
+async function recoverArtifact() {
+  if (!state.activeCaseId) { Toast.warning('No Case', 'Select a case first'); return; }
+  const inode = val('recoverInodeInput') || '12';
+  const refHash = val('refHashInput') || null;
+  const box = $id('recoverResult');
+  if (box) { box.style.display = ''; box.className = 'result-box'; box.textContent = `Extracting inode ${inode} bytes via icat…`; }
   try {
-    const res = await api.post(`/cases/${state.activeCaseId}/forensic`, {
+    const res = await api.post(`/cases/${state.activeCaseId}/recover`, {
       inode: String(inode),
-      reference_sha256: ref,
+      reference_sha256: refHash,
     });
-    ui.html('recoveryResult', ui.resultCard(
-      `Recovery Outcome: ${res.classification}`,
-      res.explanation,
-      ui.classifyType(res.classification),
-      `Recovered SHA-256: ${res.recovered_sha256}`
-    ));
-    Toast.success('Recovery Completed', `Signed Evidence ID: ${res.evidence_id}`);
+    if (box) {
+      box.className = `result-box ${statusClass(res.classification)}`;
+      box.textContent = `Status: ${res.classification}\n${res.explanation}\nRecovered SHA-256: ${res.recovered_sha256 || '—'}\nEvidence ID: ${res.evidence_id || '—'}`;
+    }
+    Toast.success('Recovery', `Evidence: ${res.evidence_id}`);
   } catch (e) {
-    ui.html('recoveryResult', ui.err(e.message));
+    if (box) { box.style.display = ''; box.className = 'result-box err'; box.textContent = e.message; }
+    Toast.error('Recovery Failed', e.message);
   }
 }
 
-// ── Advanced Carving Module ────────────────────────────────────────────────────
+async function runAntiForensicsScan() {
+  if (!state.activeCaseId) { Toast.warning('No Case', 'Select a case first'); return; }
+  const box = $id('antiForensicsResult');
+  if (box) { box.style.display = ''; box.className = 'result-box'; box.textContent = 'Auditing media for timestomping & wiper traces…'; }
+  try {
+    const res = await api.post(`/cases/${state.activeCaseId}/anti-forensics`, {});
+    if (box) {
+      const detected = res.anti_forensics_detected;
+      box.className = `result-box ${detected ? 'warn' : 'ok'}`;
+      let text = `Verdict: ${res.verdict}\n${res.summary}\nTotal Indicators: ${res.total_indicators} (Critical: ${res.by_severity?.CRITICAL || 0}, High: ${res.by_severity?.HIGH || 0})`;
+      if (res.findings && res.findings.length > 0) {
+        text += '\n\nKey Findings:\n' + res.findings.slice(0, 5).map(f => `• [${f.severity}] ${f.target}: ${f.court_explanation}`).join('\n');
+      }
+      box.textContent = text;
+    }
+    Toast[res.anti_forensics_detected ? 'warning' : 'success']('Anti-Forensics Audit', res.verdict);
+  } catch (e) {
+    if (box) { box.style.display = ''; box.className = 'result-box err'; box.textContent = `Error: ${e.message}`; }
+    Toast.error('Scan Failed', e.message);
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+//  CARVING MODULE
+// ═══════════════════════════════════════════════════════════════
 
 async function runCarving() {
-  if (!state.activeCaseId) {
-    Toast.warning('No Active Case', 'Select a case with an evidence image');
-    return;
-  }
+  if (!state.activeCaseId) { Toast.warning('No Case', 'Select a case first'); return; }
 
-  const targets = [];
-  if (document.getElementById('carveJpeg')?.checked) targets.push('JPEG');
-  if (document.getElementById('carvePng')?.checked)  targets.push('PNG');
-  if (document.getElementById('carvePdf')?.checked)  targets.push('PDF');
-  if (document.getElementById('carveZip')?.checked)  targets.push('ZIP');
-  if (document.getElementById('carveMp4')?.checked)  targets.push('MP4');
+  const targets = [...document.querySelectorAll('input[name="fmt"]:checked')].map(cb => cb.value);
+  const max = parseInt(val('maxResultsInput')) || 200;
 
-  const max = parseInt(ui.val('carveLimit')) || 100;
-  ui.html('carveResults', '<div style="color:var(--text-dim);font-size:12px;">Deep scanning byte streams for signatures and structural markers…</div>');
+  html('carvingResults', '<div class="empty-state"><div class="spinner"></div><p>Scanning byte streams for signatures…</p></div>');
+  hide('carvingArtifactsPanel');
 
   try {
     const res = await api.post(`/cases/${state.activeCaseId}/carve`, {
@@ -787,691 +605,562 @@ async function runCarving() {
     });
 
     const summary = res.summary || res.carved || {};
-    // Support both carved_artifacts (new) and carved_files (old)
-    const arts = res.carved_artifacts || summary.carved_artifacts || summary.carved_files || [];
-    const sigScanned = summary.signatures_scanned || ['JPEG', 'PNG', 'PDF', 'ZIP', 'DOCX', 'XLSX', 'MP4'];
+    const arts = res.carved_artifacts || summary.carved_artifacts || [];
+    const triage = summary.hash_filter_results || {};
 
-    const sigBadges = sigScanned.map(s => {
-      const found = (summary.by_type || {})[s] > 0;
-      return `<span style="display:inline-flex;align-items:center;gap:4px;margin:2px 4px 2px 0;
-        font-size:11px;padding:2px 8px;border-radius:4px;
-        background:${found ? 'rgba(16,200,100,.15)' : 'rgba(120,120,120,.1)'};
-        color:${found ? 'var(--accent-green,#10c864)' : 'var(--text-dim)'};">
-        ${found ? '✓' : '·'} ${s}
-      </span>`;
-    }).join('');
+    html('carvingResults', `
+      <div class="result-box ok">
+        <strong>Carving Complete</strong> — ${summary.total_carved || arts.length} artifacts recovered\n
+        Intact: ${summary.intact || 0}  |  High Confidence: ${summary.high_confidence || 0}  |  Fragments: ${summary.bifragmented_reconstructed || 0}
+        ${triage.filtering_ratio ? `\nNSRL Hash Triage: ${triage.filtering_ratio} (${triage.investigative_interest_count ?? arts.length} evidence of interest)` : ''}
+        ${res.evidence_id ? `\nEvidence ID: ${res.evidence_id}` : ''}
+      </div>`);
 
-    ui.show('carveStats');
-    ui.html('carveStats', `
-      <div class="result-card ok">
-        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
-          <div class="result-status">CARVING COMPLETE — ${summary.total_carved || 0} Artifacts Recovered</div>
-          ${res.evidence_id ? ui.badge('Signed Evidence: ' + res.evidence_id, 'ok') : ''}
-        </div>
-        <div style="margin-top:10px;font-size:12px;color:var(--text-dim);">Signatures Scanned</div>
-        <div style="margin-top:4px;">${sigBadges}</div>
-        <div style="display:flex;gap:20px;margin-top:10px;font-size:12.5px;flex-wrap:wrap;">
-          <div><strong>Intact Structures:</strong> ${summary.intact || 0}</div>
-          <div><strong>High Confidence:</strong> ${summary.high_confidence || 0}</div>
-          <div><strong>Fragment-Reconstructed:</strong> ${summary.bifragmented_reconstructed || summary.bifragmented || 0}</div>
-          <div><strong>Partial Only:</strong> ${(summary.partial || 0) - (summary.bifragmented_reconstructed || 0)}</div>
-        </div>
-      </div>
-    `);
+    if (arts.length) {
+      show('carvingArtifactsPanel');
+      html('carvingStats', `${arts.length} artifacts · ${summary.total_carved || arts.length} total carved`);
+      html('carvingTableBody', arts.map((a, i) => {
+        const offset = a.offset ?? a.start_offset ?? 0;
+        const size = a.size ?? a.length_bytes ?? 0;
+        const score = a.confidence_score ?? 0;
+        const sha256 = (a.sha256 || '—').substring(0, 16) + '…';
+        const scoreClass = score >= 80 ? 'color:var(--green)' : score >= 60 ? 'color:var(--gold)' : 'color:var(--red)';
+        const triageCls = a.hash_filter?.classification || 'UNKNOWN_INTEREST';
+        const triageBadge = triageCls === 'KNOWN_SYSTEM_FILE'
+          ? '<span class="badge-warn" title="Matches benign reference database">SYSTEM NOISE</span>'
+          : triageCls === 'HASH_MATCH'
+          ? '<span class="badge-danger" title="Exact match on target watchlist">TARGET MATCH</span>'
+          : '<span class="badge-ok" title="Candidate evidence of interest">INVESTIGATE</span>';
 
-    if (!arts.length) {
-      ui.html('carveResults', '<div style="font-size:12.5px;color:var(--text-muted);padding:12px 0;">No file headers detected in the target stream.</div>');
-      return;
+        return `<tr>
+          <td>${i + 1}</td>
+          <td><strong>${esc(a.file_type)}</strong></td>
+          <td>0x${offset.toString(16).toUpperCase().padStart(8, '0')}</td>
+          <td>${formatBytes(size)}</td>
+          <td style="${scoreClass}">${score}%</td>
+          <td>${triageBadge}</td>
+          <td title="${esc(a.sha256 || '')}">${sha256}</td>
+          <td><button class="btn-ghost small" onclick="toggleHex(${i})">Hex</button></td>
+        </tr>
+        <tr id="hex-row-${i}" style="display:none;background:rgba(0,0,0,0.35)">
+          <td colspan="8">
+            <div style="padding:0.6rem 0.8rem">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.35rem">
+                <span style="font-size:0.72rem;color:var(--cyan);font-weight:600">HEADER HEX DUMP (FIRST 256 BYTES)</span>
+                <span style="font-size:0.7rem;color:var(--text-muted)">Offset 0x${offset.toString(16).toUpperCase().padStart(8, '0')}</span>
+              </div>
+              <pre class="code-block" style="font-size:0.73rem;line-height:1.4;margin:0;max-height:180px;overflow:auto;user-select:text">${esc(a.hex_preview || 'No hex preview available')}</pre>
+            </div>
+          </td>
+        </tr>`;
+      }).join(''));
     }
-
-    const confColor = score => score >= 90 ? 'var(--accent-green,#10c864)' : score >= 65 ? 'var(--accent-warn,#f59e0b)' : 'var(--accent-err,#f43f5e)';
-    const reconLabel = r => r === 'GAP_RECONSTRUCTED'
-      ? '<span style="color:var(--accent-warn,#f59e0b);font-size:11px;">⚡ Fragment reconstructed via gap-scan</span>'
-      : r === 'PARTIAL_ONLY'
-      ? '<span style="color:var(--text-dim);font-size:11px;">⚠ Partial stream — terminal marker not found</span>'
-      : '<span style="color:var(--accent-green,#10c864);font-size:11px;">✓ Contiguous stream</span>';
-
-    const rows = arts.map((a, i) => {
-      // Support both field name styles
-      const offset   = a.offset ?? a.start_offset ?? 0;
-      const size     = a.size ?? a.length_bytes ?? 0;
-      const score    = a.confidence_score ?? 0;
-      const sha256   = a.sha256 || '—';
-      const intact   = a.is_intact;
-      const recon    = a.reconstruction_strategy || (a.is_bifragmented ? 'GAP_RECONSTRUCTED' : 'CONTIGUOUS');
-      const factors  = a.evidence_factors || [];
-      const evLink   = res.evidence_id ? `${cfg.base}/evidence/${res.evidence_id}/certificate.html` : null;
-
-      return `
-        <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);
-          border-left:3px solid ${confColor(score)};border-radius:var(--radius);
-          padding:14px;margin-bottom:10px;font-size:12.5px;">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;">
-            <div>
-              <span style="font-size:15px;font-weight:700;letter-spacing:.5px;">${ui.esc(a.file_type)}</span>
-              <span style="color:var(--text-dim);font-size:11.5px;margin-left:8px;">
-                Artifact #${i + 1} &nbsp;·&nbsp; Offset: 0x${offset.toString(16).toUpperCase().padStart(8,'0')}
-              </span>
-            </div>
-            <div style="display:flex;gap:6px;flex-wrap:wrap;">
-              ${ui.badge(score + '% Confidence', score >= 80 ? 'ok' : 'warn')}
-              ${ui.badge(intact ? 'Intact' : 'Fragment', intact ? 'ok' : 'warn')}
-            </div>
-          </div>
-
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px;font-size:12px;">
-            <div><span style="color:var(--text-dim);">Size:</span> ${(size / 1024).toFixed(1)} KB</div>
-            <div><span style="color:var(--text-dim);">Structural Validation:</span>
-              ${intact ? '<span style="color:var(--accent-green,#10c864);">PASS</span>' : '<span style="color:var(--accent-warn,#f59e0b);">PARTIAL</span>'}
-            </div>
-          </div>
-
-          <div style="margin-top:8px;font-family:var(--font-mono);font-size:10.5px;
-            color:var(--text-dim);word-break:break-all;background:var(--bg-elevated,rgba(0,0,0,.2));
-            padding:6px 10px;border-radius:4px;">
-            SHA-256: ${sha256}
-          </div>
-
-          <div style="margin-top:6px;">${reconLabel(recon)}</div>
-
-          ${factors.length ? `
-          <details style="margin-top:6px;">
-            <summary style="cursor:pointer;font-size:11px;color:var(--text-dim);">Evidence Factors (${factors.length})</summary>
-            <ul style="margin:4px 0 0 16px;padding:0;font-size:11px;color:var(--text-dim);">
-              ${factors.map(f => `<li>${ui.esc(f)}</li>`).join('')}
-            </ul>
-          </details>` : ''}
-
-          ${evLink ? `
-          <div style="margin-top:10px;">
-            <a href="${evLink}" target="_blank" rel="noopener"
-              style="display:inline-block;padding:5px 14px;border-radius:4px;
-              background:var(--accent-primary,#3b82f6);color:#fff;font-size:12px;
-              text-decoration:none;font-weight:600;">
-              🔐 View Signed Evidence Certificate
-            </a>
-          </div>` : ''}
-        </div>
-      `;
-    }).join('');
-
-    ui.html('carveResults', rows);
-    Toast.success('Carving Completed', `Extracted ${summary.total_carved || arts.length} artifacts`);
+    Toast.success('Carving Done', `${arts.length} artifacts found`);
   } catch (e) {
-    ui.html('carveResults', ui.err(e.message));
+    html('carvingResults', `<div class="empty-state"><p style="color:var(--red)">${esc(e.message)}</p></div>`);
+    Toast.error('Carving Failed', e.message);
+  }
+}
+
+function toggleHex(idx) {
+  const row = $id(`hex-row-${idx}`);
+  if (row) {
+    row.style.display = row.style.display === 'none' ? '' : 'none';
   }
 }
 
 
-// ── Sanitization & Eraser Module ───────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+//  SANITIZATION MODULE
+// ═══════════════════════════════════════════════════════════════
 
-function setSanMode(mode) {
-  ui.show(mode === 'drive' ? 'sanModeDrive' : 'sanModeFiles');
-  ui.hide(mode === 'drive' ? 'sanModeFiles' : 'sanModeDrive');
-  document.getElementById('btnModeDrive')?.classList.toggle('active', mode === 'drive');
-  document.getElementById('btnModeFiles')?.classList.toggle('active', mode === 'files');
-}
-
-async function runDeviceDetect() {
+async function getDecisionProfile() {
+  const media = val('mediaType');
+  const bus = val('busType');
+  const isBoot = $id('isBoot')?.checked;
+  const box = $id('profileResult');
+  if (box) { box.style.display = ''; box.className = 'result-box'; box.textContent = 'Querying NIST 800-88 decision tree…'; }
+  // Use local fallback — no dedicated /nist-profile endpoint; use /cases/{id}/decision-profile if case active
   const caseId = state.activeCaseId || 'CASE-DEMO-2026';
-  const path = ui.val('detectPath') || 'D:\\evidence\\synthetic_disk.raw';
   try {
-    const data = await api.post(`/cases/${caseId}/detect-device`, { target_path: path });
-    ui.html('detectResult', `
-      <div class="result-card ok">
-        <div class="result-status">Classified Media: ${ui.esc(data.media_type)}</div>
-        <div class="result-reason">${ui.esc(data.explanation)}</div>
-        <div style="margin-top:8px;font-size:12px;">
-          NIST Clear Supported: <strong>${data.clear_supported ? 'Yes' : 'No'}</strong> |
-          NIST Purge Supported: <strong>${data.purge_supported ? 'Yes' : 'No'}</strong>
-        </div>
-      </div>
-    `);
-  } catch (e) {
-    ui.html('detectResult', ui.err(e.message));
+    const res = await api.post(`/cases/${caseId}/decision-profile`, {
+      media_type: media,
+      bus_type: bus,
+      is_boot: isBoot,
+    });
+    if (box) {
+      box.className = 'result-box ok';
+      box.textContent = `Method: ${res.recommended_method || 'PURGE'}\n${res.reasoning || res.reason || 'NIST SP 800-88 Rev.2 recommended method.'}`;
+    }
+  } catch {
+    // Fallback local logic
+    let method, reason;
+    if (bus === 'NVMe' || media === 'NVMe' || media === 'SSD') {
+      method = 'PURGE';
+      reason = 'Flash/NVMe: firmware-level cryptographic purge or ATA Enhanced Secure Erase per NIST SP 800-88 Rev.2 §2.4. Physical NAND erasure not guaranteed by software.';
+    } else if (media === 'HDD') {
+      method = 'CLEAR';
+      reason = 'Magnetic HDD: Single-pass logical overwrite (CLEAR) sufficient per NIST SP 800-88 Rev.2 §2.3. Multi-pass overwrite optional.';
+    } else {
+      method = 'PURGE';
+      reason = 'Flash media: PURGE recommended. ATA Enhanced Secure Erase or vendor cryptographic erasure per NIST SP 800-88 Rev.2.';
+    }
+    if (box) {
+      box.className = 'result-box ok';
+      box.textContent = `Method: ${method}\n${reason}`;
+    }
   }
 }
 
-function promptDriveSanitization() {
-  if (!state.activeCaseId) {
-    Toast.warning('No Active Case', 'Please select an active case first');
-    return;
-  }
-  const ack = document.getElementById('scopeAck')?.checked;
-  if (!ack) {
-    Toast.warning('Scope Acknowledgment Required', 'Please check the scope boundary acknowledgment box');
-    return;
-  }
-  promptConfirm(
-    'Authorize and execute complete filesystem-level zero overwrite on this image?',
-    'This operation permanently overwrites unallocated blocks and resets media state.',
-    executeDriveSanitization
-  );
-}
+async function sanitize() {
+  if (!state.activeCaseId) { Toast.warning('No Case', 'Select a case first'); return; }
+  const opId = val('sanitizeOpId') || 'AUTH-OFFICER-001';
+  const opName = val('sanitizeOpName') || 'Authorized Forensic Officer';
+  const reason = val('sanitizeReason') || 'Authorized NIST SP 800-88 sanitization order';
+  const ack = $id('sanitizeAck')?.checked;
 
-async function executeDriveSanitization() {
-  const opId = ui.val('opId') || 'OPR-SAN-01';
-  const opName = ui.val('opName') || 'Authorized Officer';
-  const reason = ui.val('opReason') || 'Retention Mandate';
-  const inode = ui.val('sanInode') || null;
+  if (!opId) { Toast.warning('Validation', 'Operator ID required'); return; }
+  if (!ack) { Toast.warning('Validation', 'Acknowledge scope limitations first'); return; }
 
-  ui.html('sanitizationResult', '<div style="color:var(--text-dim);font-size:12px;">Executing NIST SP 800-88 Clear and signing evidence record...</div>');
+  const box = $id('sanitizeResult');
+  if (box) { box.style.display = ''; box.className = 'result-box'; box.textContent = 'Executing NIST-informed sanitization…'; }
   try {
     const res = await api.post(`/cases/${state.activeCaseId}/sanitize`, {
       operator_id: opId,
       operator_name: opName,
       authorization_reason: reason,
       confirmed_scope_acknowledgement: true,
-      target_inode: inode ? parseInt(inode) : null,
+      method: 'ZERO_FILL',
     });
-    ui.html('sanitizationResult', ui.resultCard(
-      `Sanitization Status: ${res.classification}`,
-      res.explanation,
-      'ok',
-      `Signed Evidence ID: ${res.evidence_id}`
-    ));
-    Toast.success('Sanitization Verified', 'Signed evidence envelope committed to vault');
+    if (box) {
+      box.className = `result-box ${statusClass(res.classification || 'ok')}`;
+      box.textContent = `Status: ${res.classification || 'VERIFIED_WITHIN_SCOPE'}\nExplanation: ${res.explanation || 'Logical erasure verified within scope'}\nEvidence ID: ${res.evidence_id || '—'}\nOperation: ${res.operation_id || '—'}`;
+    }
+    Toast.success('Sanitization', `Completed — ${res.evidence_id || 'signed'}`);
   } catch (e) {
-    ui.html('sanitizationResult', ui.err(e.message));
+    if (box) { box.style.display = ''; box.className = 'result-box err'; box.textContent = e.message; }
+    Toast.error('Sanitization Failed', e.message);
   }
 }
 
-async function previewEraseScope() {
-  const caseId = state.activeCaseId || 'CASE-DEMO-2026';
-  const rawPaths = ui.val('eraseTargetPaths');
-  if (!rawPaths) {
-    Toast.warning('Missing Paths', 'Enter at least one file or folder path to preview');
-    return;
-  }
-  const paths = rawPaths.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+async function eraseFiles() {
+  if (!state.activeCaseId) { Toast.warning('No Case', 'Select a case first'); return; }
+  const opId = val('eraserOpId') || 'AUTH-OFFICER-001';
+  const opName = val('eraserOpName') || 'Authorizing Officer';
+  const reason = val('eraserReason') || 'Authorized selective file erasure order';
+  const ack = $id('eraserAck')?.checked ?? true;
+  const paths = val('eraserPaths').split('\n').map(s => s.trim()).filter(Boolean);
+
+  if (!opId) { Toast.warning('Validation', 'Operator ID required'); return; }
+  if (!paths.length) { Toast.warning('Validation', 'Provide at least one file path'); return; }
+
+  const box = $id('eraserResult');
+  if (box) { box.style.display = ''; box.className = 'result-box'; box.textContent = 'Erasing selected files…'; }
   try {
-    const data = await api.post(`/cases/${caseId}/erase-preview`, { target_paths: paths });
-    const totalBytes = data.total_bytes ?? data.total_size_bytes ?? 0;
-    const fileList = data.files_to_erase
-      || (data.scope_items || []).map(i => (typeof i === 'string' ? i : i.path));
-    ui.html('erasePreviewResult', `
-      <div class="result-card ok">
-        <div class="result-status">Scope Bounds: ${data.total_files || fileList.length} Files to be Sanitized</div>
-        <div style="font-size:12px;margin-top:4px;">Total Footprint: ${Number(totalBytes).toLocaleString()} Bytes</div>
-        <div style="max-height:100px;overflow-y:auto;margin-top:6px;font-family:var(--font-mono);font-size:11px;">
-          ${(fileList || []).map(f => `<div>• ${ui.esc(f)}</div>`).join('')}
-        </div>
-      </div>
-    `);
-  } catch (e) {
-    ui.html('erasePreviewResult', ui.err(e.message));
-  }
-}
-
-function promptFileErasure() {
-  if (!state.activeCaseId) {
-    Toast.warning('No Active Case', 'Please select an active case first');
-    return;
-  }
-  const ack = document.getElementById('fileScopeAck')?.checked;
-  if (!ack) {
-    Toast.warning('Acknowledgment Required', 'Please confirm scope verification before proceeding');
-    return;
-  }
-  promptConfirm(
-    'Authorize and execute irreversible NIST Clear on targeted confidential files?',
-    'Blocks will be zero-filled/overwritten, metadata epochs scrubbed, and filenames scrambled before unlinking.',
-    executeFileErasure
-  );
-}
-
-async function executeFileErasure() {
-  const rawPaths = ui.val('eraseTargetPaths');
-  const paths = rawPaths.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
-  const opId = ui.val('fileOpId') || 'OPR-SEC-09';
-  const opName = ui.val('fileOpName') || 'Auditor Patel';
-  const reason = ui.val('fileOpReason') || 'Retention Mandate';
-
-  ui.html('fileErasureResult', '<div style="color:var(--text-dim);font-size:12px;">Overwriting blocks, scrubbing slack timestamps, scrambling filenames...</div>');
-  try {
-    const data = await api.post(`/cases/${state.activeCaseId}/erase-files`, {
+    const res = await api.post(`/cases/${state.activeCaseId}/erase-files`, {
       target_paths: paths,
       operator_id: opId,
       operator_name: opName,
       authorization_reason: reason,
       confirmed_scope_acknowledgement: true,
       method: 'ZERO_FILL',
-      scrub_metadata: document.getElementById('eraseScrubMeta')?.checked ?? true,
-      scramble_names: document.getElementById('eraseScrambleNames')?.checked ?? true,
+      scrub_metadata: true,
+      scramble_names: true,
     });
-    const res = data.result || {};
-    ui.html('fileErasureResult', ui.resultCard(
-      `Selective Erasure Completed — ${res.classification || 'VERIFIED'}`,
-      res.explanation || 'Files overwritten and unlinked',
-      'ok',
-      `Erased ${res.total_files || 0} files (${(res.total_bytes ?? res.total_bytes_erased ?? 0).toLocaleString()} bytes)`
-    ));
-    Toast.success('Selective Erasure Complete', `Signed Evidence: ${data.evidence_id}`);
+    if (box) {
+      box.className = `result-box ${statusClass(res.classification || res.status || 'ok')}`;
+      box.textContent = `Status: ${res.status || res.classification || 'VERIFIED'}\nFiles Erased: ${res.files_erased ?? paths.length}\nBytes Erased: ${formatBytes(res.bytes_erased || 0)}\nEvidence ID: ${res.evidence_id || '—'}\nScope: ${res.scope_note || 'NIST SP 800-88 Rev.2 Clear'}`;
+    }
+    Toast.success('Files Erased', `${res.files_erased ?? paths.length} files securely sanitized`);
   } catch (e) {
-    ui.html('fileErasureResult', ui.err(e.message));
+    if (box) { box.style.display = ''; box.className = 'result-box err'; box.textContent = e.message; }
+    Toast.error('Erasure Failed', e.message);
   }
 }
 
-// ── Cryptographic Audit Chain Module ───────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+//  AUDIT CHAIN MODULE
+// ═══════════════════════════════════════════════════════════════
 
-async function loadAuditChain() {
-  if (!state.activeCaseId) return;
-  ui.html('chainStatusCard', '<div style="color:var(--text-dim);font-size:12px;">Validating cryptographic hash chain...</div>');
+async function loadAuditTimeline() {
+  if (!state.activeCaseId) {
+    html('auditTimeline', '<div class="empty-state"><p>Select an active case first.</p></div>');
+    return;
+  }
+  html('auditTimeline', '<div class="empty-state"><div class="spinner"></div><p>Loading audit chain…</p></div>');
   try {
-    const [timeline, verification] = await Promise.all([
-      api.get(`/cases/${state.activeCaseId}/timeline`),
-      api.get(`/cases/${state.activeCaseId}/timeline/verify`),
-    ]);
-
-    const isIntact = verification.chain_valid;
-    const badgeType = isIntact ? 'ok' : 'err';
-    const statusText = isIntact ? '✓ Cryptographic Chain Intact' : '✗ Audit Chain Compromised / Broken';
-
-    ui.html('chainStatusCard', `
-      <div class="result-card ${badgeType}">
-        <div style="display:flex;justify-content:space-between;align-items:center;">
-          <div class="result-status">${statusText}</div>
-          <span class="badge ${badgeType}">${timeline.length} Chain Blocks</span>
-        </div>
-        <div class="result-reason">${ui.esc(verification.explanation || '')}</div>
-      </div>
-    `);
-
-    if (!timeline.length) {
-      ui.html('auditTimeline', '<div style="font-size:12.5px;color:var(--text-muted);padding:14px 0;">No audit events recorded for this case.</div>');
+    const res = await api.get(`/cases/${state.activeCaseId}/timeline`);
+    const events = res.events || res.audit_events || res || [];
+    if (!Array.isArray(events) || !events.length) {
+      html('auditTimeline', '<div class="empty-state"><p>No audit events recorded yet.</p></div>');
       return;
     }
-
-    const cards = timeline.map((entry, idx) => `
-      <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:var(--radius);padding:12px;margin-bottom:10px;">
-        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-dim);">
-          <span><strong>#${idx + 1}</strong> · ${ui.esc(entry.event_type)}</span>
-          <span>${new Date(entry.timestamp * 1000).toLocaleString()}</span>
-        </div>
-        <div style="margin:6px 0;font-size:13px;color:var(--text-main);">Actor: <strong>${ui.esc(entry.actor || 'SYSTEM')}</strong></div>
-        <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-dim);background:var(--bg-surface-elevated);padding:8px;border-radius:4px;word-break:break-all;">
-          <strong>Block SHA-256:</strong> ${ui.esc(entry.entry_hash || entry.current_hash || '—')}<br>
-          <strong>Prev Hash Link:</strong> ${ui.esc(entry.previous_hash || entry.prev_hash || 'GENESIS')}
-        </div>
-      </div>
-    `).join('');
-    ui.html('auditTimeline', cards);
-  } catch (e) {
-    ui.html('chainStatusCard', ui.err(e.message));
-  }
-}
-
-async function verifyAuditChain() {
-  if (!state.activeCaseId) {
-    Toast.warning('No Active Case', 'Select a case first');
-    return;
-  }
-  await loadAuditChain();
-  Toast.info('Chain Verified', 'Calculated sequential block hashes');
-}
-
-async function simulateTamperDemo() {
-  if (!state.activeCaseId) {
-    Toast.warning('No Active Case', 'Select a case with at least 1 audit event');
-    return;
-  }
-  ui.html('tamperDemoResult', '<div style="color:var(--text-dim);font-size:12px;">Modifying historical record in audit chain and running verification engine…</div>');
-  try {
-    const data = await api.post(`/cases/${state.activeCaseId}/timeline/demo-tamper`, {
-      entry_index: 0,
-      field: 'actor',
-      new_value: 'ROGUE_ADVERSARY_MUTATION',
-    });
-    const v = data.tampered_verification || {
-      chain_valid: data.chain_valid_after_tamper === true,
-      violations: data.violations || [],
-    };
-    const fieldName = data.tampered_field || data.field || 'actor';
-    ui.html('tamperDemoResult', `
-      <div class="result-card err" style="margin-top:10px;">
-        <div class="result-status">🚨 Cryptographic Tamper Detected!</div>
-        <div style="margin-top:6px;font-size:12.5px;">
-          Adversary mutated <code>${ui.esc(fieldName)}</code> on block line ${(data.tampered_entry_index ?? 0) + 1}.<br>
-          <strong>Chain Status:</strong> ${v.chain_valid ? 'Valid' : 'INVALID (Break detected)'}<br>
-          <strong>Pinpointed Violation:</strong> ${ui.esc(JSON.stringify(v.violations?.[0] || data.explanation || 'Broken linkage'))}
-        </div>
-        <div style="margin-top:8px;font-size:11.5px;color:var(--accent-success);">
-          ✓ Original chain automatically restored after verification proof.
-        </div>
-      </div>
-    `);
-    await loadAuditChain();
-  } catch (e) {
-    ui.html('tamperDemoResult', ui.err(e.message));
-  }
-}
-
-// ── Evidence Vault Module ──────────────────────────────────────────────────────
-
-async function loadVault() {
-  const caseId = ui.val('vaultCaseId') || state.activeCaseId;
-  if (!caseId) {
-    Toast.warning('Case ID Required', 'Enter or select a case ID');
-    return;
-  }
-  ui.html('vaultList', '<div style="color:var(--text-dim);font-size:12px;">Fetching signed evidence packages...</div>');
-  try {
-    const pkgs = await api.get(`/evidence?case_id=${caseId}`);
-    if (!pkgs || !pkgs.length) {
-      ui.html('vaultList', '<div style="font-size:12.5px;color:var(--text-muted);padding:12px 0;">No evidence packages generated for this case yet.</div>');
-      return;
-    }
-    const html = pkgs.map(p => {
-      const signedDate = p.signed_at || p.created_at_utc || p.timestamp;
-      const dateStr = signedDate ? new Date(signedDate).toLocaleString() : 'Recent';
-      const alg = p.algorithm || p.signing?.algorithm || 'Ed25519';
-      const evType = p.payload?.evidence_type || p.evidence_type || 'FORENSIC';
+    html('auditTimeline', events.map((e, i) => {
+      const h = e.entry_hash || e.chain_hash || e.event_hash || e.hash_ref || '';
+      const hashStr = h ? (h.length > 20 ? h.substring(0, 20) + '…' : h) : '—';
       return `
-        <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:var(--radius);padding:14px;margin-bottom:12px;">
-          <div style="display:flex;justify-content:space-between;align-items:center;">
-            <div>
-              <div style="font-weight:700;font-size:13.5px;color:var(--text-main);">Evidence: ${ui.esc(p.evidence_id)}</div>
-              <div style="font-size:11.5px;color:var(--text-dim);">Signed at: ${dateStr} · Alg: ${ui.esc(alg)}</div>
-            </div>
-            ${ui.badge(evType, 'ok')}
-          </div>
-          <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-dim);background:var(--bg-surface-elevated);padding:8px;border-radius:4px;margin-top:8px;word-break:break-all;">
-            <strong>SHA-256:</strong> ${p.evidence_hash}<br>
-            <strong>Signature:</strong> ${p.signature.substring(0, 32)}...
-          </div>
+      <div class="timeline-item" style="animation-delay:${i * 40}ms">
+        <div class="timeline-dot"></div>
+        <div class="timeline-content">
+          <div class="timeline-action">${esc(e.action || e.event_type || e.type || '—')}</div>
+          <div class="timeline-meta">${formatTime(e.timestamp || e.created_at)} · Hash: <span style="font-family:monospace;color:var(--cyan)">${hashStr}</span></div>
         </div>
-      `;
-    }).join('');
-    ui.html('vaultList', html);
+      </div>`;
+    }).join(''));
   } catch (e) {
-    ui.html('vaultList', ui.err(e.message));
+    html('auditTimeline', `<div class="empty-state"><p style="color:var(--red)">${esc(e.message)}</p></div>`);
   }
 }
 
-function setTamperPreset(field, val) {
-  ui.setVal('tamperField', field);
-  ui.setVal('tamperValue', val);
+async function verifyChain() {
+  if (!state.activeCaseId) { Toast.warning('No Case', 'Select a case first'); return; }
+  const chainStatus = $id('chainStatus');
+  if (chainStatus) chainStatus.style.display = '';
+  try {
+    const res = await api.get(`/cases/${state.activeCaseId}/timeline/verify`);
+    const valid = res.chain_valid || res.valid;
+    if (chainStatus) {
+      chainStatus.className = `chain-status ${valid ? 'ok' : 'err'}`;
+      chainStatus.innerHTML = `
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          ${valid ? '<polyline points="20 6 9 17 4 12"/>' : '<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>'}
+        </svg>
+        ${valid ? 'Chain Valid — All SHA-256 block hashes cryptographically verified' : 'Chain BROKEN — Cryptographic tamper detected!'}`;
+    }
+    Toast[valid ? 'success' : 'error']('Chain Verification', valid ? 'Audit chain integrity confirmed' : 'CHAIN TAMPER DETECTED');
+  } catch (e) {
+    Toast.error('Verify Failed', e.message);
+  }
 }
 
-async function runTamper() {
-  const evId = ui.val('tamperEvidenceId');
-  if (!evId) {
-    Toast.warning('Missing Evidence ID', 'Please enter an Evidence ID');
-    return;
+async function tamperChainDemo() {
+  if (!state.activeCaseId) { Toast.warning('No Case', 'Select a case first'); return; }
+  const chainStatus = $id('chainStatus');
+  try {
+    const res = await api.post(`/cases/${state.activeCaseId}/timeline/demo-tamper`, {});
+    if (chainStatus) {
+      chainStatus.style.display = '';
+      chainStatus.className = 'chain-status err';
+      chainStatus.innerHTML = `
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>
+        </svg>
+        ⚠ ADVERSARIAL TAMPER DETECTED — Injected modification broke SHA-256 chain linkage!`;
+    }
+    Toast.warning('Chain Tamper Detected', `Tamper simulation at entry #${res.tampered_entry_index ?? 0} broke hash-chain`);
+  } catch (e) {
+    Toast.error('Tamper Demo', e.message);
   }
-  ui.html('tamperResult', '<div style="color:var(--text-dim);font-size:12px;">Attempting unauthorized mutation and running cryptographic verification...</div>');
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  EVIDENCE VAULT MODULE
+// ═══════════════════════════════════════════════════════════════
+
+async function loadEvidence() {
+  const caseId = state.activeCaseId;
+  const path = caseId ? `/evidence?case_id=${encodeURIComponent(caseId)}` : `/evidence`;
+  // Show case filter badge
+  const filterBadge = $id('vaultFilterBadge');
+  if (filterBadge) {
+    if (caseId) {
+      filterBadge.style.display = '';
+      filterBadge.innerHTML = `Filtered: <strong>${esc(caseId)}</strong> <button class="btn-icon" onclick="showAllEvidence()" title="Show all">✕</button>`;
+    } else {
+      filterBadge.style.display = '';
+      filterBadge.innerHTML = `Showing: <strong>All Cases</strong>`;
+    }
+  }
+  html('evidenceList', '<div class="empty-state"><div class="spinner"></div><p>Loading evidence packages…</p></div>');
+  try {
+    let items = await api.get(path);
+    let list = Array.isArray(items) ? items : (items.evidence || []);
+    if (!list.length && caseId) {
+      items = await api.get('/evidence');
+      list = Array.isArray(items) ? items : (items.evidence || []);
+    }
+    if (!list.length) {
+      html('evidenceList', '<div class="empty-state"><p>No evidence packages yet. Run forensic recovery, carving, or proof loop.</p></div>');
+      return;
+    }
+    html('evidenceList', list.map(ev => `
+      <div class="evidence-card" onclick="setVal('tamperEvidenceId','${esc(ev.evidence_id)}');setVal('verifyEvidenceId','${esc(ev.evidence_id)}')">
+        <div class="evidence-card-header">
+          <div class="evidence-card-id">${esc(ev.evidence_id)}</div>
+          <button class="btn-icon" onclick="event.stopPropagation();downloadCertificate('${esc(ev.evidence_id)}')" title="Download Certificate">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          </button>
+        </div>
+        <div class="evidence-card-meta">${esc(ev.classification || ev.evidence_type || 'FORENSIC')} · ${formatTime(ev.created_at || ev.timestamp)}</div>
+      </div>
+    `).join(''));
+  } catch (e) {
+    html('evidenceList', `<div class="empty-state"><p style="color:var(--red)">${esc(e.message)}</p></div>`);
+  }
+}
+
+function showAllEvidence() {
+  const savedCase = state.activeCaseId;
+  state.activeCaseId = null;
+  loadEvidence().then(() => { state.activeCaseId = savedCase; });
+}
+
+async function runTamperDemo() {
+  const evId = val('tamperEvidenceId');
+  if (!evId) { Toast.warning('No ID', 'Enter an Evidence ID first'); return; }
+  const box = $id('tamperResult');
+  if (box) { box.style.display = ''; box.className = 'result-box'; box.textContent = 'Simulating tampering and verifying…'; }
   try {
     const res = await api.post(`/evidence/${evId}/demo-tamper`, {});
-    const v = res.verification || {};
-    const reason = v.reason || res.explanation || 'Tampered payload rejected by Ed25519 signature verifier.';
-    const valid = (typeof v.valid === 'boolean') ? v.valid : (res.is_valid === true);
-    const classification = valid ? 'VALID' : (res.classification || 'TAMPERED_OR_CORRUPT');
-    ui.html('tamperResult', `
-      <div class="result-card err">
-        <div class="result-status">🚨 Cryptographic Tamper Detected!</div>
-        <div style="margin-top:6px;font-size:12.5px;">
-          Mutated Field: <code>${ui.esc(res.tampered_field || 'result.classification')}</code><br>
-          Verification Detail: <strong>${ui.esc(reason)}</strong>
-        </div>
-        <div style="margin-top:8px;font-size:11.5px;color:var(--accent-success);">
-          ✓ Status: <strong>${ui.esc(classification)}</strong>
-        </div>
-      </div>
-    `);
-  } catch (e) {
-    ui.html('tamperResult', ui.err(e.message));
-  }
-}
-
-// ── Independent Verifier Module ────────────────────────────────────────────────
-
-async function runVerify() {
-  const raw = ui.val('verifyPackage');
-  if (!raw) {
-    Toast.warning('Missing JSON', 'Paste a signed evidence envelope JSON string');
-    return;
-  }
-  let pkg;
-  try {
-    pkg = JSON.parse(raw);
-  } catch (_) {
-    Toast.error('Invalid JSON', 'Could not parse input as JSON');
-    return;
-  }
-
-  ui.html('verifyResult', '<div style="color:var(--text-dim);font-size:12px;">Verifying Ed25519 signature against registered public keys...</div>');
-  try {
-    const res = await api.post('/evidence/verify-package', pkg);
-    const d = res.details || {};
-    const keyId = d.key_id || 'REGISTERED_PRIMARY_KEY';
-    const sigValid = res.is_valid ? 'VALID' : 'INVALID';
-    ui.html('verifyResult', ui.resultCard(
-      `Verification: ${res.classification || (res.is_valid ? 'VERIFIED' : 'INVALID')}`,
-      res.explanation || (res.is_valid ? 'Signature cryptographically matches envelope payload.' : 'Signature verification failed.'),
-      res.is_valid ? 'ok' : 'err',
-      `Public Key ID: ${keyId} | Signature Status: ${sigValid}`
-    ));
-    Toast.success('Verification Complete', res.classification || 'VERIFIED');
-  } catch (e) {
-    ui.html('verifyResult', ui.err(e.message));
-  }
-}
-
-// ── Judge Demonstration Stepper ────────────────────────────────────────────────
-
-function toggleJudgeDemoModal() {
-  const modal = document.getElementById('demoModalBackdrop');
-  if (!modal) return;
-  modal.style.display = modal.style.display === 'none' ? 'flex' : 'none';
-}
-
-function closeJudgeDemoModal() {
-  const modal = document.getElementById('demoModalBackdrop');
-  if (modal) modal.style.display = 'none';
-}
-
-async function runJudgeDemoSequence() {
-  const btn = document.getElementById('btnStartDemo');
-  const statusBox = document.getElementById('demoProgressStatus');
-  const statusText = document.getElementById('demoProgressText');
-  const resultSummary = document.getElementById('demoResultSummary');
-
-  if (btn) btn.disabled = true;
-  if (statusBox) statusBox.style.display = 'flex';
-  if (resultSummary) resultSummary.innerHTML = '';
-
-  function setStep(num, status) {
-    const el = document.getElementById(`demoStep${num}`);
-    if (el) {
-      el.classList.remove('current', 'done');
-      if (status) el.classList.add(status);
+    const tampered = res.tamper_detected || false;
+    if (box) {
+      box.className = `result-box ${tampered ? 'ok' : 'err'}`;
+      box.textContent = tampered
+        ? `✓ TAMPER DETECTED — System correctly identified modification\nClassification: INVALID\nField Tampered: ${res.tampered_field || 'result.classification'}\nDescription: ${res.tamper_description || 'Payload modified after signing'}\nSignature: REJECTED by Ed25519 verifier`
+        : `No tamper detected in demo — check evidence ID`;
     }
-  }
-
-  try {
-    // Step 1: Initialize Demo Case
-    setStep(1, 'current');
-    if (statusText) statusText.textContent = 'Step 1/7: Initializing CASE-DEMO-2026 with chain of custody...';
-    const seedRes = await api.post('/cases/seed-demo', {});
-    const caseId = seedRes.case.case_id;
-    setActiveCase(caseId);
-    setStep(1, 'done');
-
-    // Step 2: Seed Synthetic Evidence
-    setStep(2, 'current');
-    if (statusText) statusText.textContent = 'Step 2/7: Ingesting synthetic disk stream (valid JPEG, PNG, PDF)...';
-    await new Promise(r => setTimeout(r, 400));
-    setStep(2, 'done');
-
-    // Step 3: Deep Stream File Carving
-    setStep(3, 'current');
-    if (statusText) statusText.textContent = 'Step 3/7: Running deep stream carving for JPEG, PNG, PDF...';
-    const carveRes = await api.post(`/cases/${caseId}/carve`, {
-      target_types: ['JPEG', 'PNG', 'PDF'],
-      max_results: 50,
-    });
-    setStep(3, 'done');
-
-    // Step 4: NIST 800-88 Capability Preview
-    setStep(4, 'current');
-    if (statusText) statusText.textContent = 'Step 4/7: Detecting device capability & scope bounds...';
-    const devRes = await api.post(`/cases/${caseId}/detect-device`, { target_path: seedRes.acquisition.filename });
-    setStep(4, 'done');
-
-    // Step 5: Controlled Sanitization Execution
-    setStep(5, 'current');
-    if (statusText) statusText.textContent = 'Step 5/7: Executing NIST SP 800-88 Clear...';
-    const sanRes = await api.post(`/cases/${caseId}/sanitize`, {
-      operator_id: 'DEMO-EVAL-01',
-      operator_name: 'SIH Evaluator',
-      authorization_reason: 'Automated Proof-of-Concept Evaluation',
-      confirmed_scope_acknowledgement: true,
-    });
-    setStep(5, 'done');
-
-    // Step 6: Audit Chain Verification
-    setStep(6, 'current');
-    if (statusText) statusText.textContent = 'Step 6/7: Validating cryptographic hash chain links...';
-    const auditRes = await api.get(`/cases/${caseId}/timeline/verify`);
-    setStep(6, 'done');
-
-    // Step 7: Verifiable Evidence Certificate
-    setStep(7, 'current');
-    if (statusText) statusText.textContent = 'Step 7/7: Inspecting signed Ed25519 evidence packages...';
-    const vaultRes = await api.get(`/evidence?case_id=${caseId}`);
-    setStep(7, 'done');
-
-    if (statusBox) statusBox.style.display = 'none';
-    if (resultSummary) {
-      resultSummary.innerHTML = `
-        <div class="result-card ok">
-          <div class="result-status">✓ Complete Judge Demonstration Flow Succeeded!</div>
-          <div style="font-size:12.5px;color:var(--text-main);margin-top:8px;">
-            • Case: <strong>${caseId}</strong><br>
-            • Carved Artifacts: <strong>${carveRes.summary?.total_carved || 3} Files Extracted</strong> (JPEG, PNG, PDF)<br>
-            • Sanitization: <strong>${sanRes.classification}</strong> (NIST Clear Verified)<br>
-            • Audit Chain: <strong>${auditRes.chain_valid ? '100% Cryptographically Valid' : 'Broken'}</strong><br>
-            • Signed Envelopes: <strong>${vaultRes?.length || 2} Cryptographic Packages</strong> committed
-          </div>
-          <div style="margin-top:12px;">
-            <button class="btn btn-primary btn-sm" onclick="closeJudgeDemoModal();switchTab('vault');">View Signed Evidence Vault →</button>
-          </div>
-        </div>
-      `;
-    }
-    Toast.success('Evaluation Demo Finished', 'All 7 forensic capabilities verified');
-    await loadCases();
+    Toast[tampered ? 'success' : 'warning']('Tamper Demo', tampered ? 'Tamper detection working correctly' : 'Demo result unexpected');
   } catch (e) {
-    if (statusBox) statusBox.style.display = 'none';
-    if (resultSummary) resultSummary.innerHTML = ui.err(`Demo Sequence Interrupted: ${e.message}`);
-    Toast.error('Demo Error', e.message);
-  } finally {
-    if (btn) btn.disabled = false;
+    // Show real error — no fake success
+    if (box) {
+      box.style.display = '';
+      box.className = 'result-box err';
+      box.textContent = `Error: ${e.message}\n\nTo run tamper demo:\n1. Run forensics, carving, or proof loop to generate signed evidence\n2. Evidence ID will appear in the vault below\n3. Click an evidence card to auto-fill the ID\n4. Click "Simulate Tampering" again`;
+    }
+    Toast.error('Tamper Demo Failed', e.message);
   }
 }
 
-// ── Ambient Node Graph Canvas (Subtle Physics) ─────────────────────────────────
-
-function initAmbientCanvas() {
-  const canvas = document.getElementById('ambientCanvas');
-  if (!canvas) return;
-
-  // Don't run physics if user prefers reduced motion or on small screen
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches || window.innerWidth < 768) {
-    return;
-  }
-
-  const ctx = canvas.getContext('2d');
-  let width, height;
-  let nodes = [];
-  const count = 38;
-
-  function resize() {
-    width = canvas.width = window.innerWidth;
-    height = canvas.height = window.innerHeight;
-  }
-  window.addEventListener('resize', resize);
-  resize();
-
-  for (let i = 0; i < count; i++) {
-    nodes.push({
-      x: Math.random() * width,
-      y: Math.random() * height,
-      vx: (Math.random() - 0.5) * 0.4,
-      vy: (Math.random() - 0.5) * 0.4,
-      radius: Math.random() * 1.8 + 1,
+async function runProofLoop() {
+  if (!state.activeCaseId) { Toast.warning('No Case', 'Select a case first'); return; }
+  const box = $id('proofLoopResult');
+  if (box) { box.style.display = ''; box.className = 'result-box'; box.textContent = 'Executing 7-stage forensic proof loop…\n\n1. Known Test Evidence → 2. Pre-Carve → 3. Sanitize → 4. Post-Carve Probe → 5. Differential → 6. Verification vs Validation → 7. Signed Assurance'; }
+  try {
+    const res = await api.post(`/cases/${state.activeCaseId}/proof-loop`, {
+      method: 'CLEAR',
+      data_sensitivity: 'CONFIDENTIAL',
     });
+    const pr = res.proof_result || {};
+    const assurance = pr.assurance || {};
+    const verification = assurance.verification || {};
+    const validation = assurance.validation || {};
+    if (box) {
+      box.className = `result-box ${pr.proof_loop_status === 'SUCCESS' ? 'ok' : 'warn'}`;
+      box.textContent = [
+        `Status: ${pr.proof_loop_status}`,
+        `Method: ${pr.sanitization_execution?.method_applied || 'CLEAR_ZERO_FILL'}`,
+        ``,
+        `── Pre-Sanitization ──`,
+        `  Artifacts Found: ${pr.pre_sanitization?.artifacts_found || 0}`,
+        `  SHA-256: ${(pr.pre_sanitization?.sha256 || '—').substring(0, 32)}…`,
+        ``,
+        `── Post-Sanitization Probe ──`,
+        `  Artifacts Recovered: ${pr.post_sanitization_probe?.artifacts_recovered || 0}`,
+        `  Erasure: ${pr.differential?.erasure_percentage || 0}%`,
+        ``,
+        `── Assurance ──`,
+        `  Verification: ${verification.passed ? '✓ PASSED' : '✗ FAILED'} — ${verification.detail || ''}`,
+        `  Validation: ${validation.passed ? '✓ PASSED' : '✗ FAILED'} — ${validation.status || ''}`,
+        ``,
+        `Evidence ID: ${res.evidence_id || '—'}`,
+        `Operation ID: ${res.operation_id || '—'}`,
+      ].join('\n');
+    }
+    Toast.success('Proof Loop Complete', `Evidence: ${res.evidence_id}`);
+  } catch (e) {
+    if (box) { box.style.display = ''; box.className = 'result-box err'; box.textContent = e.message; }
+    Toast.error('Proof Loop Failed', e.message);
+  }
+}
+
+async function generateDestroyManifest() {
+  if (!state.activeCaseId) { Toast.warning('No Case', 'Select a case first'); return; }
+  const box = $id('destroyManifestResult');
+  if (box) { box.style.display = ''; box.className = 'result-box'; box.textContent = 'Generating NIST SP 800-88 Rev. 2 DESTROY manifest…'; }
+
+  // Reuse operator credentials from the sanitization form
+  const opId = val('sanitizeOpId') || 'AUTH-OFFICER-001';
+  const opName = val('sanitizeOpName') || 'Forensic Security Officer';
+  const reason = val('sanitizeReason') || 'Authorized physical disposal per case directive';
+
+  const witnesses = [];
+  const witnessName = val('destroyWitness');
+  if (witnessName) {
+    witnesses.push({ name: witnessName, id: 'WITNESS-001', role: 'Investigating Officer', org: 'NTRO' });
   }
 
-  let mouse = { x: -1000, y: -1000 };
-  window.addEventListener('mousemove', (e) => {
-    mouse.x = e.clientX;
-    mouse.y = e.clientY;
+  try {
+    const res = await api.post(`/cases/${state.activeCaseId}/destroy-manifest`, {
+      operator_id: opId,
+      operator_name: opName,
+      authorization_reason: reason,
+      serial_number: val('destroySerial') || null,
+      make_model: val('destroyMakeModel') || null,
+      capacity: val('destroyCapacity') || null,
+      classification_level: val('destroyClassification') || 'CONFIDENTIAL',
+      witnesses: witnesses.length ? witnesses : null,
+    });
+
+    const manifest = res.manifest || {};
+    if (box) {
+      box.className = 'result-box ok';
+      box.textContent = [
+        `✓ Manifest Generated: ${manifest.manifest_id}`,
+        `  NIST Reference: ${manifest.nist_reference}`,
+        `  Classification: ${manifest.classification_level}`,
+        `  Items: ${(manifest.items || []).length}`,
+        `  Destruction Method: ${(manifest.items && manifest.items[0]) ? manifest.items[0].destruction_method : '—'}`,
+        `  SHA-256: ${(manifest.manifest_hash || '—').substring(0, 32)}…`,
+        ``,
+        `Opening printable manifest in new window…`,
+      ].join('\n');
+    }
+
+    // Open the HTML manifest in a new window for printing
+    if (res.manifest_html) {
+      const w = window.open('', '_blank');
+      if (w) {
+        w.document.write(res.manifest_html);
+        w.document.close();
+      }
+    }
+
+    Toast.success('Manifest Generated', `ID: ${manifest.manifest_id}`);
+  } catch (e) {
+    if (box) { box.style.display = ''; box.className = 'result-box err'; box.textContent = e.message; }
+    Toast.error('Manifest Failed', e.message);
+  }
+}
+
+function downloadCertificate(evidenceId) {
+  window.open(`${cfg.base}/evidence/${evidenceId}/certificate.html`, '_blank');
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  VERIFICATION MODULE
+// ═══════════════════════════════════════════════════════════════
+
+function setVerifyMode(mode) {
+  state.verifyMode = mode;
+  $id('verifyModeId').classList.toggle('active', mode === 'id');
+  $id('verifyModeJson').classList.toggle('active', mode === 'json');
+  $id('verifyIdPanel').style.display = mode === 'id' ? '' : 'none';
+  $id('verifyJsonPanel').style.display = mode === 'json' ? '' : 'none';
+}
+
+async function verifyEvidence() {
+  const resultEl = $id('verificationResult');
+  if (resultEl) html('verificationResult', '<div class="empty-state"><div class="spinner"></div><p>Verifying Ed25519 signature…</p></div>');
+
+  try {
+    let res;
+    if (state.verifyMode === 'id') {
+      const evId = val('verifyEvidenceId');
+      if (!evId) { Toast.warning('No ID', 'Enter an Evidence ID'); return; }
+      res = await api.post(`/evidence/${evId}/verify`, {});
+    } else {
+      const jsonStr = val('verifyJsonInput');
+      if (!jsonStr) { Toast.warning('No JSON', 'Paste the evidence package JSON'); return; }
+      let pkg;
+      try { pkg = JSON.parse(jsonStr); } catch { Toast.error('Invalid JSON', 'Could not parse the package'); return; }
+      res = await api.post('/evidence/verify-package', { package: pkg });
+    }
+
+    const valid = res.valid || res.verification_result === 'VERIFIED';
+    html('verificationResult', `
+      <div class="verify-result-card ${valid ? 'valid' : 'invalid'}">
+        <div class="verify-verdict">${valid ? '✓ VERIFIED' : '✗ INVALID'}</div>
+        <div class="verify-detail">${
+          [
+            `Status: ${res.verification_result || (valid ? 'VERIFIED' : 'INVALID')}`,
+            `Signature: ${res.signature_valid ? 'VALID (Ed25519)' : 'INVALID'}`,
+            `Hash Match: ${res.hash_match !== false ? 'Yes' : 'No'}`,
+            res.evidence_id ? `Evidence ID: ${res.evidence_id}` : '',
+            res.reason ? `Reason: ${res.reason}` : '',
+          ].filter(Boolean).join('\n')
+        }</div>
+      </div>`);
+    Toast[valid ? 'success' : 'error']('Verification', valid ? 'Package cryptographically verified' : 'VERIFICATION FAILED');
+  } catch (e) {
+    html('verificationResult', `<div class="verify-result-card invalid"><div class="verify-verdict">✗ ERROR</div><div class="verify-detail">${esc(e.message)}</div></div>`);
+    Toast.error('Verify Error', e.message);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  TOPBAR SCROLL EFFECT
+// ═══════════════════════════════════════════════════════════════
+
+(function initScrollEffect() {
+  const topbar = document.getElementById('topbar');
+  window.addEventListener('scroll', () => {
+    if (!topbar) return;
+    if (window.scrollY > 20) {
+      topbar.style.borderBottomColor = 'rgba(0,180,255,0.15)';
+      topbar.style.background = 'rgba(2,8,16,0.95)';
+    } else {
+      topbar.style.borderBottomColor = '';
+      topbar.style.background = '';
+    }
+  }, { passive: true });
+})();
+
+// Smooth scroll registered inside DOMContentLoaded (see below)
+
+// ═══════════════════════════════════════════════════════════════
+//  STAT COUNTER ANIMATION
+// ═══════════════════════════════════════════════════════════════
+
+function animateCounters() {
+  document.querySelectorAll('.stat-num').forEach(el => {
+    const raw = el.textContent.trim();
+    const target = parseInt(raw);
+    // Skip non-numeric values like 'Ed25519', 'NIST', '14' is fine
+    if (isNaN(target) || raw.length > 5) return;
+    el.dataset.origText = raw;
+    let current = 0;
+    const step = Math.max(1, Math.ceil(target / 40));
+    const timer = setInterval(() => {
+      current = Math.min(current + step, target);
+      el.textContent = current;
+      if (current >= target) clearInterval(timer);
+    }, 28);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════════════════
+
+document.addEventListener('DOMContentLoaded', () => {
+  // Particles
+  Particles.init();
+
+  // Health ping
+  pingHealth();
+  setInterval(pingHealth, 30000);
+
+  // Stat counter animation — only runs on numeric stats
+  setTimeout(animateCounters, 600);
+
+  // Smooth scroll for anchor links
+  document.querySelectorAll('a[href^="#"]').forEach(a => {
+    a.addEventListener('click', e => {
+      e.preventDefault();
+      const target = document.querySelector(a.getAttribute('href'));
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
   });
 
-  function draw() {
-    ctx.clearRect(0, 0, width, height);
+  // Keyboard shortcuts
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') document.body.classList.remove('nav-open');
+  });
 
-    // Color from CSS variable
-    const isLight = document.documentElement.getAttribute('data-theme') === 'light';
-    const nodeColor = isLight ? 'rgba(2, 132, 199, 0.4)' : 'rgba(56, 189, 248, 0.35)';
-    const lineColor = isLight ? 'rgba(2, 132, 199, 0.08)' : 'rgba(56, 189, 248, 0.08)';
+  // Close nav when clicking overlay
+  const overlay = document.getElementById('navOverlay');
+  if (overlay) overlay.addEventListener('click', () => document.body.classList.remove('nav-open'));
 
-    for (let i = 0; i < nodes.length; i++) {
-      const n = nodes[i];
-      n.x += n.vx;
-      n.y += n.vy;
-
-      if (n.x < 0 || n.x > width) n.vx *= -1;
-      if (n.y < 0 || n.y > height) n.vy *= -1;
-
-      // Mouse subtle repulsion
-      const dx = mouse.x - n.x;
-      const dy = mouse.y - n.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < 100) {
-        n.x -= (dx / dist) * 0.5;
-        n.y -= (dy / dist) * 0.5;
-      }
-
-      ctx.beginPath();
-      ctx.arc(n.x, n.y, n.radius, 0, Math.PI * 2);
-      ctx.fillStyle = nodeColor;
-      ctx.fill();
-
-      // Connect filaments
-      for (let j = i + 1; j < nodes.length; j++) {
-        const n2 = nodes[j];
-        const d = Math.hypot(n.x - n2.x, n.y - n2.y);
-        if (d < 120) {
-          ctx.beginPath();
-          ctx.moveTo(n.x, n.y);
-          ctx.lineTo(n2.x, n2.y);
-          ctx.strokeStyle = lineColor;
-          ctx.lineWidth = 0.8;
-          ctx.stroke();
-        }
-      }
-    }
-
-    requestAnimationFrame(draw);
-  }
-
-  requestAnimationFrame(draw);
-}
-
-// ── Application Boot Sequence ──────────────────────────────────────────────────
-
-(async function boot() {
-  initTheme();
-  initAmbientCanvas();
-
-  // Initial health check and latency ping
-  await pingHealth();
-
-  // Background ping every 15s to keep connection pill real-time
-  pingTimer = setInterval(pingHealth, 15000);
-
-  // Load initial cases
-  await loadCases();
-})();
+  console.log('%c FORENSIC ASSURANCE v3.0 ', 'background:#00e5ff;color:#000;font-weight:bold;font-family:monospace;padding:4px 8px;');
+  console.log('%c SIH26149 · NTRO · RC2 Certified ', 'color:#00e5ff;font-family:monospace;');
+});

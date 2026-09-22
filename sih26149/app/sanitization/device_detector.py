@@ -57,6 +57,8 @@ class DeviceCapability:
     scope_statement: str
     classification_basis: list             # Evidence for the media type determination
     warnings: list = field(default_factory=list)
+    hpa_dco_warning: str = ""              # Host Protected Area / Device Config Overlay advisory
+    write_protection_note: str = ""        # Write-blocker / read-only enforcement status
 
     @property
     def recommended_level(self) -> SanitizationLevel:
@@ -78,6 +80,8 @@ class DeviceCapability:
             "scope_statement": self.scope_statement,
             "classification_basis": self.classification_basis,
             "warnings": self.warnings,
+            "hpa_dco_warning": self.hpa_dco_warning,
+            "write_protection_note": self.write_protection_note,
         }
 
 
@@ -137,6 +141,11 @@ def detect_media_type(target_path: str) -> DeviceCapability:
                 "This workstation operates on forensic image files. To sanitize the physical "
                 "source drive, use a dedicated hardware sanitization tool or eraser appliance."
             ],
+            hpa_dco_warning="N/A — disk image file does not have HPA/DCO regions.",
+            write_protection_note=(
+                "Recovery mode operates read-only on source evidence. Carving engine reads "
+                "bytes from the image without writing. Source image integrity is preserved."
+            ),
         )
 
     # 2. Path-based heuristics (matches USB, SD, NVMe, SSD, HDD markers regardless of OS)
@@ -237,6 +246,16 @@ def _hdd_capability(basis: list, warnings: list) -> DeviceCapability:
             "PURGE via ATA Secure Erase requires hdparm — not performed by this workstation tool."
         ),
         classification_basis=basis, warnings=warnings,
+        hpa_dco_warning=(
+            "⚠ HPA/DCO CHECK REQUIRED: ATA HDDs may have a Host Protected Area (HPA) or "
+            "Device Configuration Overlay (DCO) hiding sectors from the OS. Use `hdparm -N` "
+            "to detect HPA and `hdparm --dco-identify` for DCO. Sectors hidden by HPA/DCO "
+            "are NOT overwritten by logical CLEAR and may retain residual data."
+        ),
+        write_protection_note=(
+            "Recovery mode: source media should be accessed through a hardware write-blocker "
+            "or mounted read-only (mount -o ro) to prevent accidental modification of evidence."
+        ),
     )
 
 
@@ -258,6 +277,16 @@ def _ssd_capability(basis: list, warnings: list) -> DeviceCapability:
             "NOT performed by this image-level tool. Report as VERIFIED_WITHIN_SCOPE."
         ),
         classification_basis=basis, warnings=warnings,
+        hpa_dco_warning=(
+            "⚠ SSD over-provisioning: SATA SSDs reserve 7-28% of NAND capacity for wear-leveling "
+            "and bad-block management. These over-provisioned blocks are NOT addressable via "
+            "logical I/O and may retain data after CLEAR. ATA Secure Erase Enhanced or "
+            "vendor crypto-erase is required to reach these blocks."
+        ),
+        write_protection_note=(
+            "Recovery mode: source media should be accessed through a hardware write-blocker. "
+            "SSD TRIM commands can destroy evidence if write access is allowed."
+        ),
     )
 
 
@@ -279,6 +308,16 @@ def _nvme_capability(basis: list, warnings: list) -> DeviceCapability:
             "NOT performed by this tool. Report as VERIFIED_WITHIN_SCOPE."
         ),
         classification_basis=basis, warnings=warnings,
+        hpa_dco_warning=(
+            "⚠ NVMe namespaces: NVMe drives may have multiple namespaces or hidden controller "
+            "regions. Use `nvme id-ctrl` and `nvme list-ns` to enumerate all namespaces. "
+            "Logical CLEAR only reaches the active namespace visible to the OS."
+        ),
+        write_protection_note=(
+            "Recovery mode: NVMe evidence should be accessed through a forensic NVMe bridge "
+            "with write-blocking capability (e.g., Tableau T356789). Direct NVMe attachment "
+            "may trigger controller-initiated garbage collection or TRIM."
+        ),
     )
 
 

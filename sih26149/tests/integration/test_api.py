@@ -21,8 +21,8 @@ client = TestClient(app)
 @pytest.fixture(scope="module")
 def sample_ext4_image(tmp_path_factory):
     import shutil
-    if not shutil.which("mkfs.ext4") or not shutil.which("debugfs"):
-        pytest.skip("mkfs.ext4/debugfs required for ext4 integration test")
+    if not shutil.which("mkfs.ext4") or not shutil.which("debugfs") or not shutil.which("fls") or not shutil.which("icat"):
+        pytest.skip("mkfs.ext4/debugfs/fls/icat required for ext4 integration test")
 
     tmp_dir = tmp_path_factory.mktemp("api_forensic")
     img_path = str(tmp_dir / "api_ext4.img")
@@ -191,3 +191,39 @@ def test_api_sanitization_lifecycle(sample_ext4_image):
     res_ver = client.post(f"/evidence/{ev_id}/verify")
     assert res_ver.status_code == 200
     assert res_ver.json()["is_valid"] is True
+
+
+def test_api_anti_forensics_audit():
+    """Verify the /cases/{case_id}/anti-forensics endpoint detects deliberate timestomps/wipers."""
+    # 1. Create a case
+    case_res = client.post("/cases", json={
+        "title": "Anti-Forensic Probe Case",
+        "examiner": "Forensic Analyst"
+    })
+    assert case_res.status_code == 200
+    case_id = case_res.json()["case_id"]
+
+    # 2. Seed synthetic evidence
+    seed_res = client.post(f"/cases/{case_id}/seed-synthetic-evidence")
+    assert seed_res.status_code == 200
+
+    # 3. Query anti-forensics with timestomp metadata
+    af_res = client.post(f"/cases/{case_id}/anti-forensics", json={
+        "mft_records": [
+            {
+                "name": "covert_payload.exe",
+                "si": {"created": 1600000000.0, "modified": 1600000000.0},
+                "fn": {"created": 1700000000.0, "modified": 1700000000.0},
+            }
+        ],
+        "directory_names": ["clean.txt", "AAAAAA.AAA", "BBBBBB.BBB"]
+    })
+    assert af_res.status_code == 200
+    data = af_res.json()
+    assert data["anti_forensics_detected"] is True
+    assert data["verdict"] == "DELIBERATE_CONCEALMENT_DETECTED"
+    assert data["total_indicators"] >= 2
+    assert any(f["indicator"] == "TIMESTOMP_SI_FN_ANOMALY" for f in data["findings"])
+    assert any(f["indicator"] == "WIPE_TOOL_SDELETE_ARTIFACT" for f in data["findings"])
+
+

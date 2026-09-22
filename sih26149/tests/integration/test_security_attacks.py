@@ -270,8 +270,8 @@ def test_multiple_operations_on_single_case_no_collision(tmp_path):
     """
     import shutil
     import subprocess
-    if not shutil.which("mkfs.ext4") or not shutil.which("debugfs"):
-        pytest.skip("mkfs.ext4/debugfs required for ext4 collision test")
+    if not shutil.which("mkfs.ext4") or not shutil.which("debugfs") or not shutil.which("fls"):
+        pytest.skip("mkfs.ext4/debugfs/fls required for ext4 collision test")
     img_path = str(tmp_path / "multi_op.img")
     with open(img_path, "wb") as f:
         f.truncate(20 * 1024 * 1024)

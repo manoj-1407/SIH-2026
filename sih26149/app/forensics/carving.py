@@ -54,6 +54,7 @@ class CarvedFile:
     is_bifragmented: bool = False
     fragment_gap_bytes: Optional[int] = None
     reconstruction_strategy: str = "CONTIGUOUS"  # CONTIGUOUS | GAP_RECONSTRUCTED | PARTIAL_ONLY
+    hex_preview: Optional[str] = None
 
     @property
     def is_intact(self) -> bool:
@@ -77,12 +78,29 @@ class CarvedFile:
             "fragment_gap_bytes": self.fragment_gap_bytes,
             "reconstruction_strategy": self.reconstruction_strategy,
             "is_intact": self.is_intact,
+            "hex_preview": self.hex_preview or "",
         }
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 MAX_SCAN_SIZE = 500 * 1024 * 1024  # 500 MB scan limit for safety
+
+
+def format_hex_dump(data: bytes, max_bytes: int = 256) -> str:
+    """Format bytes as canonical xxd-style hex dump (offset, hex bytes, ascii)."""
+    chunk = data[:max_bytes]
+    lines = []
+    for i in range(0, len(chunk), 16):
+        sub = chunk[i:i + 16]
+        hex_parts = [f"{b:02x}" for b in sub]
+        left = " ".join(hex_parts[:8])
+        right = " ".join(hex_parts[8:])
+        hex_str = f"{left:<23}  {right:<23}".rstrip()
+        ascii_str = "".join(chr(b) if 32 <= b <= 126 else "." for b in sub)
+        lines.append(f"{i:04x}  {hex_str:<48}  |{ascii_str}|")
+    return "\n".join(lines)
+
 
 
 def _sha256(data: bytes) -> str:
@@ -607,6 +625,10 @@ def carve_bytes(
         if len(results) >= max_results:
             break
 
+    for r in results:
+        if not r.hex_preview:
+            r.hex_preview = format_hex_dump(data[r.offset : r.offset + min(r.size, 256)])
+
     results.sort(key=lambda x: x.confidence_score, reverse=True)
     return results
 
@@ -644,6 +666,10 @@ def carve_image_summary(image_input, **kwargs) -> dict:
     # Signatures always scanned (for UI display)
     signatures_scanned = ["JPEG", "PNG", "PDF", "ZIP", "DOCX", "XLSX", "MP4"]
 
+    carved_dicts = [c.to_dict() for c in carved]
+    from app.forensics.known_hashes import filter_carved_artifacts
+    hash_triage = filter_carved_artifacts(carved_dicts)
+
     return {
         "total_carved": len(carved),
         "intact": len(intact),
@@ -654,6 +680,8 @@ def carve_image_summary(image_input, **kwargs) -> dict:
         "by_type": by_type,
         "signatures_scanned": signatures_scanned,
         # Both keys for backward compat
-        "carved_files": [c.to_dict() for c in carved],
-        "carved_artifacts": [c.to_dict() for c in carved],
+        "carved_files": carved_dicts,
+        "carved_artifacts": carved_dicts,
+        "hash_filter_results": hash_triage,
     }
+

@@ -55,6 +55,9 @@ def verify_stored_evidence(evidence_id: str):
     return {
         'evidence_id': evidence_id,
         'is_valid': is_valid,
+        'valid': is_valid,
+        'signature_valid': is_valid,
+        'verification_result': 'VERIFIED' if is_valid else 'INVALID',
         'classification': cl_result.classification.value,
         'explanation': cl_result.explanation,
         'details': cl_result.details,
@@ -64,10 +67,16 @@ def verify_stored_evidence(evidence_id: str):
 @router.post('/verify-package')
 def verify_external_package(package: Dict[str, Any]):
     """Independent verification for exported evidence JSON packages."""
+    # Unwrap {package: <envelope>} sent by app.js verifyEvidence()
+    if 'package' in package and isinstance(package.get('package'), dict):
+        package = package['package']
     try:
         is_valid, cl_result = verify_evidence_package(package, key_registry=trust_registry)
         return {
             'is_valid': is_valid,
+            'valid': is_valid,
+            'signature_valid': is_valid,
+            'verification_result': 'VERIFIED' if is_valid else 'INVALID',
             'classification': cl_result.classification.value,
             'explanation': cl_result.explanation,
             'details': cl_result.details,
@@ -75,6 +84,9 @@ def verify_external_package(package: Dict[str, Any]):
     except Exception as e:
         return {
             'is_valid': False,
+            'valid': False,
+            'signature_valid': False,
+            'verification_result': 'INVALID',
             'classification': EvidenceClassification.INVALID.value,
             'explanation': f'Malformed evidence package: {e}',
             'details': {'error': str(e)},

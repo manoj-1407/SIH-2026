@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SIH26149 — Zero-Install Offline Evidence Verifier</title>
+  <style>
+    :root {
+      --bg: #090d16;
+      --panel: #111827;
+      --border: #1f293d;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --cyan: #00e5ff;
+      --green: #00e676;
+      --red: #ff1744;
+      --gold: #ffc400;
+      --font-mono: 'JetBrains Mono', 'SFMono-Regular', Consolas, Menlo, monospace;
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      line-height: 1.5;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem 1rem;
+    }
+    .container {
+      width: 100%;
+      max-width: 860px;
+    }
+    header {
+      margin-bottom: 2rem;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 1.5rem;
+    }
+    .badge {
+      display: inline-block;
+      background: rgba(0, 229, 255, 0.1);
+      color: var(--cyan);
+      border: 1px solid rgba(0, 229, 255, 0.3);
+      padding: 0.2rem 0.6rem;
+      font-size: 0.72rem;
+      font-weight: 600;
+      border-radius: 4px;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.5rem;
+      font-family: var(--font-mono);
+    }
+    h1 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+    p.sub {
+      color: var(--muted);
+      font-size: 0.9rem;
+      margin-top: 0.3rem;
+    }
+    .dropzone {
+      border: 2px dashed var(--border);
+      background: rgba(17, 24, 39, 0.6);
+      border-radius: 12px;
+      padding: 2.5rem 1.5rem;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      margin-bottom: 1.5rem;
+    }
+    .dropzone:hover, .dropzone.dragover {
+      border-color: var(--cyan);
+      background: rgba(0, 229, 255, 0.04);
+    }
+    .dropzone svg {
+      width: 44px;
+      height: 44px;
+      stroke: var(--cyan);
+      margin-bottom: 0.75rem;
+      opacity: 0.85;
+    }
+    .dropzone h3 {
+      font-size: 1.1rem;
+      margin-bottom: 0.25rem;
+      color: #fff;
+    }
+    .dropzone p {
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+    .manual-input-toggle {
+      text-align: right;
+      margin-bottom: 1.5rem;
+    }
+    .link-btn {
+      background: none;
+      border: none;
+      color: var(--cyan);
+      font-size: 0.82rem;
+      cursor: pointer;
+      text-decoration: underline;
+    }
+    #manualInputArea {
+      display: none;
+      margin-bottom: 1.5rem;
+    }
+    textarea {
+      width: 100%;
+      height: 140px;
+      background: #0d1320;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      padding: 0.75rem;
+      resize: vertical;
+      margin-bottom: 0.5rem;
+    }
+    .btn {
+      background: var(--cyan);
+      color: #000;
+      font-weight: 600;
+      padding: 0.5rem 1.2rem;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.85rem;
+    }
+    .btn:hover {
+      opacity: 0.9;
+    }
+    .key-source-panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.9rem 1rem;
+      margin-bottom: 1.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.85rem;
+    }
+    .key-source-info {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .key-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+    }
+    .result-card {
+      display: none;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: var(--panel);
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      animation: fadeIn 0.3s ease;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .result-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 1.25rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    .status-badge {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      font-weight: 700;
+      padding: 0.3rem 0.8rem;
+      border-radius: 6px;
+      letter-spacing: 0.05em;
+    }
+    .status-badge.ok {
+      background: rgba(0, 230, 118, 0.15);
+      color: var(--green);
+      border: 1px solid rgba(0, 230, 118, 0.4);
+    }
+    .status-badge.fail {
+      background: rgba(255, 23, 68, 0.15);
+      color: var(--red);
+      border: 1px solid rgba(255, 23, 68, 0.4);
+    }
+    .status-badge.warn {
+      background: rgba(255, 196, 0, 0.15);
+      color: var(--gold);
+      border: 1px solid rgba(255, 196, 0, 0.4);
+    }
+    .result-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #fff;
+    }
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 0.75rem 1.25rem;
+      margin-bottom: 1.25rem;
+    }
+    .meta-item {
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+    }
+    .meta-label {
+      font-size: 0.72rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .meta-val {
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      color: #fff;
+      word-break: break-all;
+    }
+    .hash-box {
+      background: #080c14;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.9rem;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      line-height: 1.5;
+      margin-bottom: 1rem;
+    }
+    .hash-line {
+      display: flex;
+      gap: 0.5rem;
+      align-items: baseline;
+      margin-bottom: 0.35rem;
+    }
+    .hash-tag {
+      font-size: 0.68rem;
+      font-weight: 600;
+      padding: 0.1rem 0.35rem;
+      border-radius: 3px;
+      min-width: 70px;
+    }
+    .hash-tag.stored { background: rgba(0,229,255,0.15); color: var(--cyan); }
+    .hash-tag.computed { background: rgba(0,230,118,0.15); color: var(--green); }
+    .hash-tag.sig { background: rgba(255,196,0,0.15); color: var(--gold); }
+    .hash-text { word-break: break-all; color: #cbd5e1; }
+    .footer-note {
+      font-size: 0.75rem;
+      color: var(--muted);
+      text-align: center;
+      margin-top: 2rem;
+      line-height: 1.6;
+    }
+    .compat-warning {
+      display: none;
+      background: rgba(255, 196, 0, 0.1);
+      border: 1px solid rgba(255, 196, 0, 0.3);
+      color: var(--gold);
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      margin-bottom: 1.5rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <span class="badge">AIR-GAPPED ZERO-INSTALL VERIFIER</span>
+      <h1>
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        Independent Court Evidence Verifier
+      </h1>
+      <p class="sub">
+        Cryptographically validates Ed25519 signatures and RFC 8785 canonical hashes entirely client-side using browser native Web Crypto API. Zero server dependency, zero installation, operates 100% offline.
+      </p>
+    </header>
+
+    <div class="compat-warning" id="compatWarning">
+      ⚠️ <strong>Browser Compatibility Notice:</strong> Native Ed25519 in Web Crypto API requires Chrome 137+, Firefox 129+, or Safari 17.0+. If Ed25519 verification fails, ensure you are running an updated browser.
+    </div>
+
+    <!-- Active Key Resolver Info -->
+    <div class="key-source-panel">
+      <div class="key-source-info">
+        <div class="key-dot"></div>
+        <span>Default Trust Anchor: <strong>KEY-EXAMINER-NTRO-PRIMARY</strong> (Preloaded FSL Public Key)</span>
+      </div>
+      <button class="link-btn" onclick="document.getElementById('customKeyInput').click()">Load Custom Key</button>
+      <input type="file" id="customKeyInput" accept=".pem,.json" style="display:none" onchange="loadCustomKey(event)">
+    </div>
+
+    <!-- Drag and drop zone -->
+    <div class="dropzone" id="dropzone" onclick="document.getElementById('fileInput').click()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+        <polyline points="17 8 12 3 7 8"/>
+        <line x1="12" y1="3" x2="12" y2="15"/>
+      </svg>
+      <h3>Drag &amp; Drop Evidence JSON Package</h3>
+      <p>Or click to browse from local drive / air-gapped media (e.g. EVID-*.json)</p>
+      <input type="file" id="fileInput" accept=".json" style="display:none" onchange="handleFileSelect(event)">
+    </div>
+
+    <div class="manual-input-toggle">
+      <button class="link-btn" onclick="toggleManualInput()">Or paste JSON payload manually</button>
+    </div>
+
+    <div id="manualInputArea">
+      <textarea id="jsonInput" placeholder='Paste complete {"evidence_id": "...", "signature": "...", ...} JSON here'></textarea>
+      <button class="btn" onclick="verifyPastedJson()">Verify Pasted JSON</button>
+    </div>
+
+    <!-- Verification Result Display -->
+    <div class="result-card" id="resultCard">
+      <div class="result-header">
+        <div class="status-badge" id="statusBadge">VERIFIED</div>
+        <div class="result-title" id="resultTitle">Evidence Package Integrity Confirmed</div>
+      </div>
+
+      <div class="meta-grid">
+        <div class="meta-item">
+          <span class="meta-label">Evidence Identifier</span>
+          <span class="meta-val" id="resEvidenceId">—</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Case Number</span>
+          <span class="meta-val" id="resCaseId">—</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Evidence Classification</span>
+          <span class="meta-val" id="resType">—</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Signing Key ID</span>
+          <span class="meta-val" id="resKeyId">—</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Timestamp (UTC)</span>
+          <span class="meta-val" id="resTimestamp">—</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">Digital Signature Algorithm</span>
+          <span class="meta-val" id="resAlgo">Ed25519 (RFC 8032)</span>
+        </div>
+      </div>
+
+      <div class="hash-box">
+        <div class="hash-line">
+          <span class="hash-tag stored">STORED</span>
+          <span class="hash-text" id="resStoredHash">—</span>
+        </div>
+        <div class="hash-line">
+          <span class="hash-tag computed">COMPUTED</span>
+          <span class="hash-text" id="resComputedHash">—</span>
+        </div>
+        <div class="hash-line">
+          <span class="hash-tag sig">SIGNATURE</span>
+          <span class="hash-text" id="resSignature">—</span>
+        </div>
+      </div>
+
+      <div id="resultDetails" style="font-size: 0.85rem; color: var(--muted); line-height: 1.5;"></div>
+    </div>
+
+    <div class="footer-note">
+      Independent Cryptographic Verification Engine · Implements RFC 8785 Canonical JSON &amp; FIPS 180-4 SHA-256.<br>
+      Admissible under Bharatiya Sakshya Adhiniyam 2023 §63(4) and Information Technology Act 2000 §65B.
+    </div>
+  </div>
+
+  <script>
+    // Built-in primary trust registry for offline verification
+    let activeTrustRegistry = {
+      "KEY-EXAMINER-NTRO-PRIMARY": "4b65d40d58a1bf56f1982427a55c2f7d3faecb4312204d442b470da4a6c73a64"
+    };
+
+    // Feature detect SubtleCrypto Ed25519 support
+    async function checkEd25519Support() {
+      try {
+        if (!window.crypto?.subtle?.importKey) return false;
+        // Test dummy import to see if Ed25519 algorithm is supported
+        const dummyKey = new Uint8Array(32);
+        await window.crypto.subtle.importKey(
+          "raw",
+          dummyKey,
+          { name: "Ed25519" },
+          false,
+          ["verify"]
+        );
+        return true;
+      } catch (e) {
+        // Algorithm not supported
+        return false;
+      }
+    }
+
+    checkEd25519Support().then(supported => {
+      if (!supported) {
+        const warn = document.getElementById('compatWarning');
+        if (warn) warn.style.display = 'block';
+      }
+    });
+
+    // Drag and drop handlers
+    const dropzone = document.getElementById('dropzone');
+    dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('dragover');
+      if (e.dataTransfer.files.length) {
+        processFile(e.dataTransfer.files[0]);
+      }
+    });
+
+    function handleFileSelect(e) {
+      if (e.target.files.length) {
+        processFile(e.target.files[0]);
+      }
+    }
+
+    function toggleManualInput() {
+      const area = document.getElementById('manualInputArea');
+      area.style.display = area.style.display === 'none' ? 'block' : 'none';
+    }
+
+    function processFile(file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const json = JSON.parse(e.target.result);
+          verifyPackage(json);
+        } catch (err) {
+          showError("Invalid JSON File", `Failed to parse file as JSON: ${err.message}`);
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    function verifyPastedJson() {
+      const text = document.getElementById('jsonInput').value.trim();
+      if (!text) return;
+      try {
+        const json = JSON.parse(text);
+        verifyPackage(json);
+      } catch (err) {
+        showError("Invalid JSON Syntax", err.message);
+      }
+    }
+
+    function loadCustomKey(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        const content = evt.target.result;
+        try {
+          // If JSON trust registry
+          const data = JSON.parse(content);
+          for (const k in data) {
+            if (data[k]?.public_key_hex) {
+              activeTrustRegistry[k] = data[k].public_key_hex;
+            }
+          }
+          alert(`Loaded ${Object.keys(data).length} key(s) from trust registry.`);
+        } catch {
+          // If raw hex or PEM
+          const cleanHex = content.replace(/[^0-9a-fA-F]/g, '');
+          if (cleanHex.length === 64) {
+            activeTrustRegistry["CUSTOM-KEY"] = cleanHex;
+            alert("Loaded 32-byte custom Ed25519 public key.");
+          } else {
+            alert("Could not parse key file. Expected trust_registry.json or 32-byte hex public key.");
+          }
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    /**
+     * RFC 8785 Canonical JSON Serialization (Pure Client-Side)
+     * Sorts keys lexicographically at all nested levels, removes insignificant whitespace.
+     */
+    function canonicalJson(obj) {
+      if (obj === null || obj === undefined) return 'null';
+      if (typeof obj === 'boolean') return obj ? 'true' : 'false';
+      if (typeof obj === 'number') return JSON.stringify(obj);
+      if (typeof obj === 'string') return JSON.stringify(obj);
+      if (Array.isArray(obj)) {
+        return '[' + obj.map(canonicalJson).join(',') + ']';
+      }
+      if (typeof obj === 'object') {
+        const keys = Object.keys(obj).sort();
+        const parts = [];
+        for (const k of keys) {
+          parts.push(JSON.stringify(k) + ':' + canonicalJson(obj[k]));
+        }
+        return '{' + parts.join(',') + '}';
+      }
+      return JSON.stringify(obj);
+    }
+
+    function hexToBytes(hex) {
+      const bytes = new Uint8Array(hex.length / 2);
+      for (let i = 0; i < bytes.length; i++) {
+        bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+      }
+      return bytes;
+    }
+
+    function bytesToHex(bytes) {
+      return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    async function sha256(str) {
+      const encoder = new TextEncoder();
+      const data = encoder.encode(str);
+      const hashBuffer = await window.crypto.subtle.digest('SHA-256', data);
+      return bytesToHex(new Uint8Array(hashBuffer));
+    }
+
+    async function verifyPackage(pkg) {
+      // Handle outer wrapper envelope if present
+      if (pkg.package) pkg = pkg.package;
+
+      const evidenceId = pkg.evidence_id || 'UNKNOWN';
+      const caseId = pkg.case_id || 'UNKNOWN';
+      const evType = pkg.evidence_type || 'FORENSIC';
+      const keyId = pkg.signing?.key_id || 'UNKNOWN';
+      const timestamp = pkg.created_at_utc || pkg.timestamp || '—';
+      const storedHash = pkg.evidence_hash || '';
+      const signatureHex = pkg.signature || '';
+
+      document.getElementById('resEvidenceId').textContent = evidenceId;
+      document.getElementById('resCaseId').textContent = caseId;
+      document.getElementById('resType').textContent = evType;
+      document.getElementById('resKeyId').textContent = keyId;
+      document.getElementById('resTimestamp').textContent = timestamp;
+      document.getElementById('resStoredHash').textContent = storedHash || 'NOT PRESENT';
+      document.getElementById('resSignature').textContent = signatureHex || 'NOT PRESENT';
+
+      // 1. Reconstruct canonical payload for hashing
+      // Standard envelope payload fields
+      const payload = {
+        evidence_id: pkg.evidence_id,
+        case_id: pkg.case_id,
+        evidence_type: pkg.evidence_type,
+        created_at_utc: pkg.created_at_utc,
+        input: pkg.input,
+        operation: pkg.operation,
+        result: pkg.result,
+        scope: pkg.scope,
+        signing: pkg.signing,
+      };
+
+      const canonicalStr = canonicalJson(payload);
+      const computedHash = await sha256(canonicalStr);
+      document.getElementById('resComputedHash').textContent = computedHash;
+
+      // Hash Check
+      const hashMatches = storedHash && (storedHash.toLowerCase() === computedHash.toLowerCase());
+
+      // 2. Ed25519 Signature Verification
+      let sigValid = false;
+      let sigError = null;
+
+      const pubKeyHex = activeTrustRegistry[keyId] || activeTrustRegistry["CUSTOM-KEY"];
+      if (pubKeyHex && signatureHex) {
+        try {
+          const rawPubBytes = hexToBytes(pubKeyHex);
+          const sigBytes = hexToBytes(signatureHex);
+          const payloadBytes = new TextEncoder().encode(canonicalStr);
+
+          const cryptoKey = await window.crypto.subtle.importKey(
+            "raw",
+            rawPubBytes,
+            { name: "Ed25519" },
+            false,
+            ["verify"]
+          );
+
+          sigValid = await window.crypto.subtle.verify(
+            "Ed25519",
+            cryptoKey,
+            sigBytes,
+            payloadBytes
+          );
+        } catch (e) {
+          sigError = e.message;
+        }
+      }
+
+      // Display Verdict
+      const card = document.getElementById('resultCard');
+      const badge = document.getElementById('statusBadge');
+      const title = document.getElementById('resultTitle');
+      const details = document.getElementById('resultDetails');
+      card.style.display = 'block';
+
+      if (hashMatches && sigValid) {
+        badge.className = 'status-badge ok';
+        badge.textContent = 'VERIFIED';
+        title.textContent = 'Cryptographic Evidence Integrity Confirmed';
+        details.innerHTML = `
+          <p style="color:var(--green);font-weight:600;margin-bottom:0.25rem">✓ Dual Verification Succeeded:</p>
+          <ul style="padding-left:1.2rem;line-height:1.6">
+            <li>RFC 8785 canonical JSON SHA-256 hash matches stored digest exactly.</li>
+            <li>Ed25519 digital signature verified against public key <code>${keyId}</code>.</li>
+            <li>Zero bit tampering detected across input metadata, operation parameters, and forensic results.</li>
+          </ul>
+        `;
+      } else if (!hashMatches) {
+        badge.className = 'status-badge fail';
+        badge.textContent = 'TAMPER DETECTED';
+        title.textContent = 'Evidence Package Has Been Modified / Compromised';
+        details.innerHTML = `
+          <p style="color:var(--red);font-weight:600;margin-bottom:0.25rem">✗ Cryptographic Hash Mismatch:</p>
+          <p>The recomputed SHA-256 digest does not match the signed manifest. One or more fields (e.g. results, classification, timestamps, or scopes) were modified after signature generation.</p>
+        `;
+      } else if (!sigValid) {
+        badge.className = 'status-badge fail';
+        badge.textContent = 'INVALID SIGNATURE';
+        title.textContent = 'Digital Signature Rejected';
+        details.innerHTML = `
+          <p style="color:var(--red);font-weight:600;margin-bottom:0.25rem">✗ Signature Verification Failed:</p>
+          <p>The hash matches, but the Ed25519 digital signature is invalid for key <code>${keyId}</code>. ${sigError ? `Detail: ${sigError}` : 'The private key that signed this envelope was revoked or unauthorized.'}</p>
+        `;
+      }
+    }
+
+    function showError(heading, msg) {
+      const card = document.getElementById('resultCard');
+      const badge = document.getElementById('statusBadge');
+      const title = document.getElementById('resultTitle');
+      const details = document.getElementById('resultDetails');
+      card.style.display = 'block';
+      badge.className = 'status-badge fail';
+      badge.textContent = 'ERROR';
+      title.textContent = heading;
+      details.textContent = msg;
+    }
+  </script>
+</body>
+</html>
