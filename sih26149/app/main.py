@@ -18,6 +18,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 
@@ -55,13 +56,37 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
+default_allowed_hosts = "localhost,127.0.0.1,[::1],testserver"
+allowed_hosts = os.environ.get("SIH26149_ALLOWED_HOSTS", default_allowed_hosts).split(",")
+app.add_middleware(
+    TrustedHostMiddleware,
+    allowed_hosts=[host.strip() for host in allowed_hosts if host.strip()],
+)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.environ.get("SIH26149_CORS_ORIGINS", "*").split(","),
+    allow_origins=[origin.strip() for origin in os.environ.get("SIH26149_CORS_ORIGINS", "*").split(",") if origin.strip()],
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*", "X-API-Key"],
 )
+
+
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    """Add baseline security headers to all responses."""
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+        "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
+        "connect-src 'self' http: https:; object-src 'none'; base-uri 'self'; frame-ancestors 'none';",
+    )
+    return response
 
 
 @app.middleware("http")
