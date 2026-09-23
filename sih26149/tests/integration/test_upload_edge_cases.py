@@ -15,7 +15,7 @@ from app.main import app
 
 client = TestClient(app, raise_server_exceptions=False)
 
-MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # must match forensics.py
+MAX_UPLOAD_SIZE = 10 * 1024 * 1024 * 1024  # practical forensic ceiling for direct web uploads
 
 
 @pytest.fixture(scope="module")
@@ -42,12 +42,14 @@ def test_upload_zero_byte_file(demo_case_id):
     assert len(data["sha256"]) == 64  # valid sha256 of empty file
 
 
-# ── B1.2: File exceeds 50 MB limit ─────────────────────────────────────────────
+# ── B1.2: File exceeds practical upload limit ───────────────────────────────────
 
-def test_upload_oversized_file(demo_case_id):
-    """File exceeding MAX_UPLOAD_SIZE must return 413 with byte count and clean up."""
-    # Stream 51 MB of zeros
-    oversized = io.BytesIO(b"\x00" * (MAX_UPLOAD_SIZE + 1024))
+def test_upload_oversized_file(demo_case_id, monkeypatch):
+    """A file above the practical forensic upload ceiling must return 413 cleanly."""
+    import app.api.forensics as forensics_api
+
+    monkeypatch.setattr(forensics_api, 'MAX_UPLOAD_SIZE', 64 * 1024)
+    oversized = io.BytesIO(b"\x00" * (64 * 1024 + 1024))
     resp = client.post(
         f"/cases/{demo_case_id}/upload",
         files={"file": ("big.img", oversized, "application/octet-stream")},
@@ -55,6 +57,95 @@ def test_upload_oversized_file(demo_case_id):
     assert resp.status_code == 413
     detail = resp.json()["detail"]
     assert "exceeds" in detail.lower() or "maximum" in detail.lower()
+
+
+def test_chunked_upload_session_for_large_image(demo_case_id):
+    """Large forensic images should be accepted via chunked acquisition rather than a single large multipart body."""
+    total_size = 2 * 1024 * 1024 + 17
+    create_resp = client.post(
+        f"/cases/{demo_case_id}/upload-session",
+        json={"filename": "chunked-large.img", "total_size": total_size},
+    )
+    assert create_resp.status_code == 200, create_resp.text
+    session = create_resp.json()
+    session_id = session["session_id"]
+
+    chunk_a = b"A" * (1024 * 1024)
+    chunk_b = b"B" * (1024 * 1024 + 17)
+
+    first = client.post(
+        f"/cases/{demo_case_id}/upload-session/{session_id}/chunk",
+        content=chunk_a,
+        headers={
+            "Content-Type": "application/octet-stream",
+            "X-Chunk-Index": "0",
+            "X-Chunk-Size": str(len(chunk_a)),
+            "X-Total-Size": str(total_size),
+        },
+    )
+    second = client.post(
+        f"/cases/{demo_case_id}/upload-session/{session_id}/chunk",
+        content=chunk_b,
+        headers={
+            "Content-Type": "application/octet-stream",
+            "X-Chunk-Index": "1",
+            "X-Chunk-Size": str(len(chunk_b)),
+            "X-Total-Size": str(total_size),
+        },
+    )
+
+    assert first.status_code == 200, first.text
+    assert second.status_code == 200, second.text
+
+    finalize = client.post(f"/cases/{demo_case_id}/upload-session/{session_id}/finalize")
+    assert finalize.status_code == 200, finalize.text
+    payload = finalize.json()
+    assert payload["size_bytes"] == total_size
+    assert len(payload["sha256"]) == 64
+
+
+def test_chunked_upload_resume_and_incomplete_finalization(demo_case_id):
+    """Chunked acquisition must support resume semantics and reject finalize when required chunk data is missing."""
+    total_size = 3 * 1024 * 1024
+    create = client.post(
+        f"/cases/{demo_case_id}/upload-session",
+        json={"filename": "resume.img", "total_size": total_size},
+    )
+    assert create.status_code == 200, create.text
+    session_id = create.json()["session_id"]
+
+    first = client.post(
+        f"/cases/{demo_case_id}/upload-session/{session_id}/chunk",
+        content=b"A" * (1024 * 1024),
+        headers={
+            "Content-Type": "application/octet-stream",
+            "X-Chunk-Index": "0",
+            "X-Chunk-Size": "1048576",
+            "X-Total-Size": str(total_size),
+        },
+    )
+    assert first.status_code == 200, first.text
+
+    incomplete = client.post(f"/cases/{demo_case_id}/upload-session/{session_id}/finalize")
+    assert incomplete.status_code == 400, incomplete.text
+
+    second = client.post(
+        f"/cases/{demo_case_id}/upload-session/{session_id}/chunk",
+        content=b"B" * (2 * 1024 * 1024),
+        headers={
+            "Content-Type": "application/octet-stream",
+            "X-Chunk-Index": "1",
+            "X-Chunk-Size": str(2 * 1024 * 1024),
+            "X-Total-Size": str(total_size),
+        },
+    )
+    assert second.status_code == 200, second.text
+
+    finalize = client.post(f"/cases/{demo_case_id}/upload-session/{session_id}/finalize")
+    assert finalize.status_code == 200, finalize.text
+    payload = finalize.json()
+    assert payload["size_bytes"] == total_size
+    assert len(payload["sha256"]) == 64
 
 
 # ── B1.3: No filename provided ──────────────────────────────────────────────────

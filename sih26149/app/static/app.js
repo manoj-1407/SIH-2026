@@ -491,21 +491,56 @@ async function uploadEvidence(file) {
   const label = $id('progressLabel');
   if (prog) prog.style.display = '';
 
-  // Animate progress
-  let p = 0;
-  const tick = setInterval(() => {
-    p = Math.min(p + Math.random() * 12, 85);
-    if (fill) fill.style.width = p + '%';
-  }, 180);
-
   try {
-    const form = new FormData();
-    form.append('file', file, file.name);
-    const res = await api.upload(`/cases/${state.activeCaseId}/upload`, form);
-    clearInterval(tick);
+    const createResp = await api.post(`/cases/${state.activeCaseId}/upload-session`, {
+      filename: file.name,
+      total_size: file.size,
+    });
+
+    const sessionId = createResp.session_id;
+    const chunkSize = 8 * 1024 * 1024;
+    let uploadedBytes = 0;
+
+    for (let i = 0; i < file.size; i += chunkSize) {
+      const chunk = file.slice(i, Math.min(i + chunkSize, file.size));
+      const chunkBytes = await chunk.arrayBuffer();
+      const raw = new Uint8Array(chunkBytes);
+
+      const res = await fetch(`${cfg.base}/cases/${state.activeCaseId}/upload-session/${sessionId}/chunk`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'X-Chunk-Index': String(i / chunkSize),
+          'X-Chunk-Size': String(raw.length),
+          'X-Total-Size': String(file.size),
+          'X-Demo-Mode': '1',
+        },
+        body: raw,
+      });
+
+      if (!res.ok) {
+        let detail = `HTTP ${res.status}`;
+        try {
+          const j = await res.json();
+          detail = j.detail || detail;
+        } catch {}
+        throw new Error(detail);
+      }
+
+      uploadedBytes += raw.length;
+      const pct = Math.min((uploadedBytes / file.size) * 100, 100);
+      if (fill) fill.style.width = `${pct}%`;
+      if (label) {
+        const current = formatBytes(uploadedBytes);
+        const total = formatBytes(file.size);
+        label.textContent = `${current} / ${total}`;
+      }
+    }
+
+    const finalize = await api.post(`/cases/${state.activeCaseId}/upload-session/${sessionId}/finalize`, {});
     if (fill) fill.style.width = '100%';
     if (label) label.textContent = 'Upload complete';
-    state.uploadedPath = res.filename;
+    state.uploadedPath = finalize.filename;
 
     setTimeout(() => {
       if (prog) prog.style.display = 'none';
@@ -516,12 +551,13 @@ async function uploadEvidence(file) {
     if (box) {
       box.style.display = '';
       box.className = 'result-box ok';
-      box.textContent = `✓ Acquired: ${res.filename || file.name}\nSHA-256: ${res.sha256 || '—'}\nSize: ${formatBytes(res.size_bytes)}\nAcquisition: ${res.acquisition_id}`;
+      box.textContent = `✓ Acquired: ${finalize.filename || file.name}\nSHA-256: ${finalize.sha256 || '—'}\nSize: ${formatBytes(finalize.size_bytes)}\nAcquisition: ${finalize.acquisition_id}`;
     }
-    Toast.success('Image Uploaded', `Acquisition: ${res.acquisition_id}`);
+    Toast.success('Image Uploaded', `Acquisition: ${finalize.acquisition_id}`);
   } catch (e) {
-    clearInterval(tick);
     if (prog) prog.style.display = 'none';
+    if (fill) fill.style.width = '0%';
+    if (label) label.textContent = 'Upload failed';
     Toast.error('Upload Failed', e.message);
   }
 }

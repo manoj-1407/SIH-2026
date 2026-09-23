@@ -2,9 +2,10 @@
 import os
 import re
 import shutil
+import threading
 import uuid
 from pathlib import Path
-from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi import APIRouter, HTTPException, Request, UploadFile, File
 from pydantic import BaseModel
 from typing import Optional
 
@@ -22,7 +23,49 @@ from app.forensics.verification import verify_recovery
 
 router = APIRouter(prefix='/cases/{case_id}', tags=['Forensics'])
 
-MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50 MB limit
+MAX_UPLOAD_SIZE = 10 * 1024 * 1024 * 1024  # 10 GB practical ceiling for evidence images
+_UPLOAD_SESSION_LOCK = threading.Lock()
+_UPLOAD_SESSIONS: dict[tuple[str, str], dict] = {}
+
+
+def _sanitize_upload_filename(filename: str) -> str:
+    if not filename or not filename.strip():
+        return 'upload.img'
+    base = os.path.basename(filename.replace('\\', '/'))
+    clean_name = re.sub(r'[^a-zA-Z0-9._\-]', '_', base)
+    if not clean_name or clean_name.replace('_', '') == '':
+        clean_name = 'upload.img'
+    if len(clean_name) > 120:
+        root, ext = os.path.splitext(clean_name)
+        clean_name = root[:100] + ext[:20]
+    return clean_name
+
+
+async def _finalize_acquisition(case_id: str, acquisition_id: str, file_path: Path, filename: str) -> dict:
+    """Persist a complete acquisition and return the normalized metadata payload."""
+    hash_res = hash_file(str(file_path))
+    case_store.update_acquisition(
+        case_id=case_id,
+        acquisition_id=acquisition_id,
+        source_path=str(file_path),
+        sha256=hash_res.hex_digest,
+        size_bytes=hash_res.size_bytes,
+    )
+
+    audit_logger.log(
+        case_id=case_id,
+        event_type='EVIDENCE_ACQUIRED',
+        actor='INVESTIGATOR',
+        details={'filename': filename, 'size_bytes': hash_res.size_bytes},
+        hash_ref=hash_res.hex_digest,
+    )
+
+    return {
+        'acquisition_id': acquisition_id,
+        'filename': filename,
+        'sha256': hash_res.hex_digest,
+        'size_bytes': hash_res.size_bytes,
+    }
 
 
 @router.post('/upload')
@@ -33,28 +76,11 @@ async def upload_evidence_image(case_id: str, file: UploadFile = File(...)):
     except Exception:
         raise HTTPException(status_code=404, detail='Case not found')
 
-    if not file.filename or not file.filename.strip():
-        raise HTTPException(status_code=400, detail='Filename is required')
-
-    # Security: Strip directory traversal and OS-illegal characters
-    base = os.path.basename(file.filename.replace('\\', '/'))
-    # Clean filename of unsafe characters across platforms (Windows: * ? : < > " | etc)
-    clean_name = re.sub(r'[^a-zA-Z0-9._\-]', '_', base)
-    if not clean_name or clean_name.replace('_', '') == '':
-        clean_name = 'upload.img'
-    
-    # Cap length to prevent MAX_PATH / OS filesystem filename exhaustion
-    if len(clean_name) > 120:
-        root, ext = os.path.splitext(clean_name)
-        clean_name = root[:100] + ext[:20]
-
-    safe_filename = clean_name
+    safe_filename = _sanitize_upload_filename(file.filename)
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
     acq_id = f'ACQ-{uuid.uuid4().hex[:8].upper()}'
-    # Immutable acquisition filename — never overwrite a prior upload of the same name
     file_path = UPLOADS_DIR / f'{case_id}_{acq_id}_{safe_filename}'
 
-    # Write uploaded file with size bound check
     total_written = 0
     with open(file_path, 'wb') as buffer:
         while True:
@@ -69,30 +95,149 @@ async def upload_evidence_image(case_id: str, file: UploadFile = File(...)):
                 raise HTTPException(status_code=413, detail=f'File exceeds maximum allowed size of {MAX_UPLOAD_SIZE} bytes')
             buffer.write(chunk)
 
-    hash_res = hash_file(str(file_path))
+    return await _finalize_acquisition(case_id, acq_id, file_path, safe_filename)
 
-    case_store.update_acquisition(
-        case_id=case_id,
-        acquisition_id=acq_id,
-        source_path=str(file_path),
-        sha256=hash_res.hex_digest,
-        size_bytes=hash_res.size_bytes,
-    )
 
-    audit_logger.log(
-        case_id=case_id,
-        event_type='EVIDENCE_ACQUIRED',
-        actor='INVESTIGATOR',
-        details={'filename': safe_filename, 'size_bytes': hash_res.size_bytes},
-        hash_ref=hash_res.hex_digest,
-    )
+@router.post('/upload-session')
+async def create_upload_session(case_id: str, payload: dict):
+    validate_case_id(case_id)
+    try:
+        case_store.get(case_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail='Case not found')
+
+    filename = payload.get('filename') if isinstance(payload, dict) else None
+    if not filename or not str(filename).strip():
+        raise HTTPException(status_code=400, detail='Filename is required')
+
+    total_size = int(payload.get('total_size', 0)) if isinstance(payload, dict) else 0
+    if total_size <= 0:
+        raise HTTPException(status_code=400, detail='total_size must be a positive integer')
+    if total_size > MAX_UPLOAD_SIZE:
+        raise HTTPException(status_code=413, detail=f'File exceeds maximum allowed size of {MAX_UPLOAD_SIZE} bytes')
+
+    safe_filename = _sanitize_upload_filename(str(filename))
+    UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+    session_id = f'CHUNK-{uuid.uuid4().hex[:12].upper()}'
+    temp_path = UPLOADS_DIR / f'{case_id}_{session_id}_{safe_filename}.part'
+    temp_path.touch(exist_ok=False)
+
+    with _UPLOAD_SESSION_LOCK:
+        _UPLOAD_SESSIONS[(case_id, session_id)] = {
+            'filename': safe_filename,
+            'total_size': total_size,
+            'received_bytes': 0,
+            'temp_path': str(temp_path),
+            'chunk_count': 0,
+            'last_chunk_index': -1,
+        }
 
     return {
-        'acquisition_id': acq_id,
+        'session_id': session_id,
         'filename': safe_filename,
-        'sha256': hash_res.hex_digest,
-        'size_bytes': hash_res.size_bytes,
+        'total_size': total_size,
+        'status': 'active',
     }
+
+
+@router.get('/upload-session/{session_id}')
+async def get_upload_session(case_id: str, session_id: str):
+    validate_case_id(case_id)
+    with _UPLOAD_SESSION_LOCK:
+        session = _UPLOAD_SESSIONS.get((case_id, session_id))
+    if session is None:
+        raise HTTPException(status_code=404, detail='Upload session not found')
+    return {
+        'session_id': session_id,
+        'filename': session['filename'],
+        'total_size': session['total_size'],
+        'received_bytes': session['received_bytes'],
+        'status': 'complete' if session['received_bytes'] >= session['total_size'] else 'active',
+    }
+
+
+@router.post('/upload-session/{session_id}/chunk')
+async def upload_session_chunk(case_id: str, session_id: str, request: Request):
+    validate_case_id(case_id)
+    with _UPLOAD_SESSION_LOCK:
+        session = _UPLOAD_SESSIONS.get((case_id, session_id))
+    if session is None:
+        raise HTTPException(status_code=404, detail='Upload session not found')
+
+    chunk_index_raw = request.headers.get('X-Chunk-Index')
+    if chunk_index_raw is None:
+        raise HTTPException(status_code=400, detail='X-Chunk-Index header is required')
+    try:
+        chunk_index = int(chunk_index_raw)
+    except ValueError:
+        raise HTTPException(status_code=400, detail='X-Chunk-Index must be an integer')
+
+    total_size_hdr = request.headers.get('X-Total-Size')
+    if total_size_hdr is not None:
+        try:
+            total_size_hdr_int = int(total_size_hdr)
+        except ValueError:
+            raise HTTPException(status_code=400, detail='X-Total-Size must be an integer')
+        if total_size_hdr_int != session['total_size']:
+            raise HTTPException(status_code=400, detail='Chunk total size does not match the session total_size')
+
+    chunk = await request.body()
+    if not chunk:
+        raise HTTPException(status_code=400, detail='Chunk body is empty')
+
+    temp_path = Path(session['temp_path'])
+    with open(temp_path, 'ab') as buffer:
+        buffer.write(chunk)
+
+    with _UPLOAD_SESSION_LOCK:
+        session = _UPLOAD_SESSIONS[(case_id, session_id)]
+        new_received = session['received_bytes'] + len(chunk)
+        if new_received > session['total_size']:
+            raise HTTPException(status_code=413, detail='Received bytes exceed the declared total_size for this upload session')
+        session['received_bytes'] = new_received
+        session['chunk_count'] += 1
+        session['last_chunk_index'] = max(session['last_chunk_index'], chunk_index)
+
+    return {
+        'session_id': session_id,
+        'received_bytes': new_received,
+        'total_size': session['total_size'],
+        'status': 'active',
+    }
+
+
+@router.post('/upload-session/{session_id}/finalize')
+async def finalize_upload_session(case_id: str, session_id: str):
+    validate_case_id(case_id)
+    try:
+        case_store.get(case_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail='Case not found')
+
+    with _UPLOAD_SESSION_LOCK:
+        session = _UPLOAD_SESSIONS.get((case_id, session_id))
+    if session is None:
+        raise HTTPException(status_code=404, detail='Upload session not found')
+
+    temp_path = Path(session['temp_path'])
+    if not temp_path.exists():
+        raise HTTPException(status_code=400, detail='Upload session file does not exist')
+    if session['received_bytes'] != session['total_size']:
+        raise HTTPException(status_code=400, detail='Upload session is incomplete; all chunks have not been received yet')
+
+    UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+    acq_id = f'ACQ-{uuid.uuid4().hex[:8].upper()}'
+    final_path = UPLOADS_DIR / f'{case_id}_{acq_id}_{session["filename"]}'
+    if final_path.exists():
+        final_path = UPLOADS_DIR / f'{case_id}_{acq_id}_{session["filename"]}.final'
+    temp_path.replace(final_path)
+
+    payload = await _finalize_acquisition(case_id, acq_id, final_path, session['filename'])
+
+    with _UPLOAD_SESSION_LOCK:
+        _UPLOAD_SESSIONS.pop((case_id, session_id), None)
+
+    return payload
 
 
 @router.get('/filesystem')
