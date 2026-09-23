@@ -227,3 +227,36 @@ def test_api_anti_forensics_audit():
     assert any(f["indicator"] == "WIPE_TOOL_SDELETE_ARTIFACT" for f in data["findings"])
 
 
+def test_reliability_statement_route_is_reachable():
+    res = client.get("/evidence/reliability-statement")
+    assert res.status_code == 200
+    data = res.json()
+    assert "affidavit_id" in data
+    assert "empirical_reliability_metrics" in data
+
+
+def test_entropy_heatmap_uses_case_source_path(tmp_path):
+    case_res = client.post("/cases", json={
+        "workflow": "FORENSIC",
+        "title": "Entropy path regression",
+        "description": "Ensure entropy reads the active case source_path"
+    })
+    assert case_res.status_code == 200
+    case_id = case_res.json()["case_id"]
+
+    from app.api.deps import case_store
+
+    sample = tmp_path / "entropy.bin"
+    sample.write_bytes(b"\x00" * 4096)
+
+    case = case_store.get(case_id)
+    case.source_path = str(sample)
+    case_store.save(case)
+
+    res = client.post(f"/cases/{case_id}/entropy")
+    assert res.status_code == 200
+    data = res.json()
+    assert "sectors" in data
+    assert len(data["sectors"]) > 0
+
+

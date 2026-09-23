@@ -87,13 +87,16 @@ app.include_router(health_router)
 app.include_router(cases_router, dependencies=_auth)
 app.include_router(forensics_router, dependencies=_auth)
 app.include_router(sanitization_router, dependencies=_auth)
+
+# Mount the literal certificate routes before the catch-all evidence route so
+# /evidence/reliability-statement is not swallowed by /evidence/{evidence_id}.
+app.include_router(cert_router, dependencies=_auth)
 app.include_router(evidence_router, dependencies=_auth)
 
 # ── New v2 feature routers ─────────────────────────────────────────────────────
 app.include_router(carving_router, dependencies=_auth)
 app.include_router(eraser_router, dependencies=_auth)
 app.include_router(audit_chain_router, dependencies=_auth)
-app.include_router(cert_router, dependencies=_auth)
 
 # ── Dual-mount: /api prefix variants (for frontend compatibility) ──────────────
 # The static UI's app.js sends requests to /api/... paths.
@@ -106,11 +109,11 @@ _api_sub.include_router(health_router)
 _api_sub.include_router(cases_router, dependencies=_auth)
 _api_sub.include_router(forensics_router, dependencies=_auth)
 _api_sub.include_router(sanitization_router, dependencies=_auth)
+_api_sub.include_router(cert_router, dependencies=_auth)
 _api_sub.include_router(evidence_router, dependencies=_auth)
 _api_sub.include_router(carving_router, dependencies=_auth)
 _api_sub.include_router(eraser_router, dependencies=_auth)
 _api_sub.include_router(audit_chain_router, dependencies=_auth)
-_api_sub.include_router(cert_router, dependencies=_auth)
 
 app.mount("/api", _api_sub)
 

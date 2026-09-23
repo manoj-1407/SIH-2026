@@ -11,8 +11,11 @@ Forensic Capabilities:
 - Evaluates degree of equalization in adjacent PoVs (2k, 2k+1) across RGB pixel channels
 - Estimates hidden payload capacity and flags covert channels for court disclosure
 """
+import io
 import math
 from typing import Dict, Any, List, Tuple, Optional
+
+from PIL import Image
 
 
 def shannon_entropy(data: bytes) -> float:
@@ -86,21 +89,21 @@ def chi_square_lsb_test(sample_bytes: bytes) -> Dict[str, Any]:
     chi_ratio = chi_sq / df
 
     # ── Detection logic ────────────────────────────────────────────────────
-    # PROBLEM with small df: when only a few distinct PoV pairs have counts
-    # (e.g. image with only 6 distinct byte values), chi_ratio is highly variable
-    # due to sampling noise (df=5 gives wide confidence intervals). We therefore
-    # use a composite detection approach:
-    #
-    # Score 1 — PoV equalization: low chi_ratio relative to df indicates
-    #            artificial equalization. Normalized: 1 - min(chi_ratio, df) / df
-    # Score 2 — LSB entropy:    random payload pushes LSB entropy near 8.0
-    #            Normalized: (lsb_ent - 6.0) / 2.0  (clamped 0..1)
-    #
-    # Composite score > 0.6 → detected.  This is robust across all df sizes.
+    # Real steganographic payloads usually show one of two very specific patterns:
+    #  1. LSBs look random (near 50/50 bit balance, high entropy) after payload
+    #     insertion into otherwise natural pixel values.
+    #  2. LSBs were overwritten deterministically (extreme parity bias, low entropy)
+    #     by a tool that sets almost every LSB to the same value.
+    # Natural byte streams with patterned but valid values do not exhibit both the
+    # signal-to-noise balance and the parity bias needed for a malicious verdict.
 
+    ones = sum(1 for b in sample_bytes if b & 1)
+    zeroes = len(sample_bytes) - ones
+    parity_bias = max(ones, zeroes) / len(sample_bytes)
     pov_score = max(0.0, 1.0 - min(chi_ratio, df) / max(df, 1))
-    lsb_score = max(0.0, min(1.0, (lsb_ent - 6.0) / 2.0))
-    composite = 0.45 * pov_score + 0.55 * lsb_score
+    lsb_suspicion = max(0.0, min(1.0, (lsb_ent - 5.0) / 3.0))
+    deterministic_suspicion = max(0.0, min(1.0, (parity_bias - 0.85) / 0.15)) if lsb_ent < 1.0 else 0.0
+    composite = 0.5 * lsb_suspicion + 0.5 * deterministic_suspicion
 
     # Chi-square critical value (chi2.ppf(0.95, df) approximation via Wilson-Hilferty)
     def chi2_critical_95(d):
@@ -109,12 +112,15 @@ def chi_square_lsb_test(sample_bytes: bytes) -> Dict[str, Any]:
 
     critical = chi2_critical_95(df)
 
-    if composite >= 0.62:
-        stego_prob = min(1.0, composite)
+    random_payload = (chi_ratio < 0.8 and lsb_ent > 6.0 and parity_bias < 0.65)
+    deterministic_overwrite = (lsb_ent < 1.0 and parity_bias > 0.9 and chi_ratio > 1.5)
+
+    if random_payload or deterministic_overwrite:
+        stego_prob = min(1.0, max(composite, 0.65))
         detected = True
         verdict = "SUSPECTED_LSB_STEGANOGRAPHY_DETECTED"
-    elif composite >= 0.45:
-        stego_prob = 0.65
+    elif composite >= 0.35 and (lsb_ent > 5.0 or parity_bias > 0.8):
+        stego_prob = 0.55
         detected = True
         verdict = "ELEVATED_LSB_ANOMALY"
     else:
@@ -134,7 +140,7 @@ def chi_square_lsb_test(sample_bytes: bytes) -> Dict[str, Any]:
         "chi_square_ratio": round(chi_ratio, 4),
         "pov_score": round(pov_score, 4),
         "lsb_plane_entropy": round(lsb_ent, 4),
-        "lsb_score": round(lsb_score, 4),
+        "lsb_score": round(lsb_suspicion, 4),
         "composite_score": round(composite, 4),
         "stego_probability": round(stego_prob, 4),
         "steganography_detected": detected,
@@ -144,9 +150,22 @@ def chi_square_lsb_test(sample_bytes: bytes) -> Dict[str, Any]:
     }
 
 
+def _decode_image_pixels(content: bytes) -> Optional[bytes]:
+    """Decode a real image into RGB pixel bytes when the input is an actual image file."""
+    try:
+        with Image.open(io.BytesIO(content)) as img:
+            if img.mode in {"RGB", "RGBA", "L", "LA", "P", "CMYK"}:
+                rgb = img.convert("RGB")
+                return rgb.tobytes()
+    except Exception:
+        return None
+    return None
+
+
 def analyze_file_for_steganography(file_path_or_bytes: Any) -> Dict[str, Any]:
     """
     Analyzes an image file or raw byte buffer for hidden steganographic payload.
+    For real images, the chi-square test runs against decoded pixel bytes, not the compressed file stream.
     """
     if isinstance(file_path_or_bytes, (str, bytes, bytearray)):
         if isinstance(file_path_or_bytes, str):
@@ -157,14 +176,20 @@ def analyze_file_for_steganography(file_path_or_bytes: Any) -> Dict[str, Any]:
     else:
         return {"error": "Unsupported input type", "steganography_detected": False}
 
-    # Focus analysis on the payload / scanline bytes (skipping file header if PNG/JPEG)
-    header_offset = 0
-    if content.startswith(b"\x89PNG\r\n\x1a\n"):
-        header_offset = 33 # Skip IHDR
-    elif content.startswith(b"\xff\xd8"):
-        header_offset = 128 # Skip SOI/APP markers
+    # Real-image byte streams must be decoded to pixel values before stego analysis.
+    decoded_pixels = _decode_image_pixels(content)
+    sample = decoded_pixels if decoded_pixels is not None else content
 
-    sample = content[header_offset:]
+    # Keep legacy raw-byte fallback for non-image content, but do not run the detector on compressed PNG/JPEG streams
+    header_offset = 0
+    if decoded_pixels is None:
+        if content.startswith(b"\x89PNG\r\n\x1a\n"):
+            header_offset = 33  # Skip IHDR
+        elif content.startswith(b"\xff\xd8"):
+            header_offset = 128  # Skip SOI/APP markers
+        sample = content[header_offset:]
+
     res = chi_square_lsb_test(sample)
     res["analyzed_offset"] = header_offset
+    res["source"] = "decoded_pixels" if decoded_pixels is not None else "raw_bytes"
     return res

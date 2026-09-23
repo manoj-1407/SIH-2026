@@ -561,17 +561,19 @@ async def compute_entropy_heatmap(case_id: str):
     except Exception:
         raise HTTPException(status_code=404, detail='Case not found')
 
-    acq = (case.get('acquisitions') or {}) if isinstance(case, dict) else {}
-    if not acq:
-        raise HTTPException(status_code=404, detail='No acquisition found for this case. Upload or seed an image first.')
+    source_path = getattr(case, 'source_path', None) if not isinstance(case, dict) else case.get('source_path')
+    if not source_path or not os.path.isfile(source_path):
+        acq = (case.get('acquisitions') or {}) if isinstance(case, dict) else {}
+        if not acq:
+            raise HTTPException(status_code=404, detail='No acquisition found for this case. Upload or seed an image first.')
 
-    # Pick the most recent acquisition
-    source_path = None
-    for _acq in acq.values():
-        p = _acq.get('source_path') if isinstance(_acq, dict) else getattr(_acq, 'source_path', None)
-        if p and os.path.isfile(p):
-            source_path = p
-            break
+        # Pick the most recent acquisition
+        source_path = None
+        for _acq in acq.values():
+            p = _acq.get('source_path') if isinstance(_acq, dict) else getattr(_acq, 'source_path', None)
+            if p and os.path.isfile(p):
+                source_path = p
+                break
 
     if not source_path:
         raise HTTPException(status_code=404, detail='Acquisition file not found on disk.')
