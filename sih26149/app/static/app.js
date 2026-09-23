@@ -25,6 +25,35 @@ const state = {
   activeTab: 'landing',
 };
 
+// ── THEME HANDLING ─────────────────────────────────────────────
+function applyTheme(themeName) {
+  const nextTheme = themeName === 'light' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', nextTheme);
+  document.body.setAttribute('data-theme', nextTheme);
+  localStorage.setItem('sih_theme', nextTheme);
+
+  const toggle = document.getElementById('themeToggle');
+  if (toggle) {
+    const isDark = nextTheme === 'dark';
+    toggle.setAttribute('aria-pressed', String(!isDark));
+    const label = toggle.querySelector('.theme-toggle-label');
+    if (label) label.textContent = isDark ? 'Dark' : 'Light';
+    toggle.classList.toggle('light-mode', !isDark);
+  }
+}
+
+function initializeTheme() {
+  const savedTheme = localStorage.getItem('sih_theme');
+  applyTheme(savedTheme || 'dark');
+
+  const toggle = document.getElementById('themeToggle');
+  if (!toggle) return;
+  toggle.addEventListener('click', () => {
+    const current = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+    applyTheme(current === 'dark' ? 'light' : 'dark');
+  });
+}
+
 // ═══════════════════════════════════════════════════════════════
 //  PARTICLE PHYSICS ENGINE
 // ═══════════════════════════════════════════════════════════════
@@ -1133,6 +1162,8 @@ function animateCounters() {
 // ═══════════════════════════════════════════════════════════════
 
 document.addEventListener('DOMContentLoaded', () => {
+  initializeTheme();
+
   // Particles
   Particles.init();
 

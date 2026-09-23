@@ -144,7 +144,7 @@ def verify_envelope_dict(
         return False, ClassifiedResult(
             classification=EvidenceClassification.INVALID,
             explanation='Cryptographic signature verification failed — invalid Ed25519 signature',
-            details={'key_id': key_id, 'signature_valid': False},
+            details={'key_id': key_id, 'signature_valid': False, 'tamper_detected': True},
         )
 
     return True, ClassifiedResult(
@@ -336,7 +336,7 @@ def verify_directory_package(
         return False, ClassifiedResult(
             classification=EvidenceClassification.INVALID,
             explanation="Cryptographic signature verification failed on package manifest",
-            details={"key_id": sig_data.get("key_id"), "signature_valid": False}
+            details={"key_id": sig_data.get("key_id"), "signature_valid": False, "tamper_detected": True}
         )
 
     # 4. Verify audit events hash chain if present

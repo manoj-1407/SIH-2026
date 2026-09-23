@@ -83,7 +83,8 @@ async def security_headers_middleware(request: Request, call_next):
     response.headers.setdefault(
         "Content-Security-Policy",
         "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
-        "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.gstatic.com; "
+        "img-src 'self' data: blob:; font-src 'self' https://fonts.gstatic.com https://fonts.googleapis.com data:; "
         "connect-src 'self' http: https:; object-src 'none'; base-uri 'self'; frame-ancestors 'none';",
     )
     return response
