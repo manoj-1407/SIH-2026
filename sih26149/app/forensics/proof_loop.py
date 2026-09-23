@@ -33,181 +33,215 @@ def execute_forensic_proof_loop(
     Executes the closed-loop forensic assurance workflow on a provided or synthetic disk stream.
     Returns complete sequential proof metrics, differential findings, verification/validation results,
     and a signed evidence payload.
+
+    Important: this function never silently swallows invalid inputs. If the stream is missing,
+    malformed, or cannot be processed, it returns a structured FAILURE payload with the reason.
     """
     t0 = time.time()
 
-    # 1. KNOWN TEST EVIDENCE INITIALIZATION
-    media_size = len(raw_bytes)
-    initial_hash = hashlib.sha256(raw_bytes).hexdigest()
+    try:
+        if raw_bytes is None:
+            raise ValueError("raw_bytes is required for proof-loop execution")
+        if not isinstance(raw_bytes, (bytes, bytearray, memoryview)):
+            raise TypeError(f"raw_bytes must be bytes-like, got {type(raw_bytes).__name__}")
+        raw_bytes = bytes(raw_bytes)
 
-    # 2. PRE-SANITIZATION RECOVERY (STAGE 1)
-    t_pre_start = time.time()
-    pre_carve_summary = carve_image_summary(raw_bytes, target_types=None, max_results=100)
-    pre_carve_time_ms = round((time.time() - t_pre_start) * 1000, 2)
-    pre_artifacts_found = pre_carve_summary.get("total_carved", 0)
+        # 1. KNOWN TEST EVIDENCE INITIALIZATION
+        media_size = len(raw_bytes)
+        initial_hash = hashlib.sha256(raw_bytes).hexdigest()
 
-    # 3. SANITIZATION EXECUTION (STAGE 2) — in-memory validation probe only
-    t_san_start = time.time()
-    san_method = method.upper() if method.upper() in ["CLEAR", "PURGE", "DESTROY"] else "CLEAR"
+        # 2. PRE-SANITIZATION RECOVERY (STAGE 1)
+        t_pre_start = time.time()
+        pre_carve_summary = carve_image_summary(raw_bytes, target_types=None, max_results=100)
+        pre_carve_time_ms = round((time.time() - t_pre_start) * 1000, 2)
+        pre_artifacts_found = pre_carve_summary.get("total_carved", 0)
 
-    if san_method == "PURGE" or san_method == "DESTROY":
-        # Simulated in-memory probe (NOT hardware Purge/Destroy)
-        import secrets
-        sanitized_bytes = secrets.token_bytes(media_size)
-        method_applied = f"SIMULATED_{san_method}"
-        execution_mode = "IN_MEMORY_VALIDATION_PROBE"
-    else:
-        sanitized_bytes = b'\x00' * media_size
-        method_applied = "CLEAR_ZERO_FILL"
-        execution_mode = "IN_MEMORY_VALIDATION_PROBE"
+        # 3. SANITIZATION EXECUTION (STAGE 2) — in-memory validation probe only
+        t_san_start = time.time()
+        san_method = method.upper() if isinstance(method, str) and method.upper() in ["CLEAR", "PURGE", "DESTROY"] else "CLEAR"
 
-    san_time_ms = round((time.time() - t_san_start) * 1000, 2)
-    post_hash = hashlib.sha256(sanitized_bytes).hexdigest()
+        if san_method == "PURGE" or san_method == "DESTROY":
+            import secrets
+            sanitized_bytes = secrets.token_bytes(media_size)
+            method_applied = f"SIMULATED_{san_method}"
+            execution_mode = "IN_MEMORY_VALIDATION_PROBE"
+        else:
+            sanitized_bytes = b'\x00' * media_size
+            method_applied = "CLEAR_ZERO_FILL"
+            execution_mode = "IN_MEMORY_VALIDATION_PROBE"
 
-    # 4. POST-SANITIZATION RECOVERY PROBE (STAGE 3)
-    t_post_start = time.time()
-    post_carve_summary = carve_image_summary(sanitized_bytes, target_types=None, max_results=100)
-    post_carve_time_ms = round((time.time() - t_post_start) * 1000, 2)
-    post_artifacts_found = post_carve_summary.get("total_carved", 0)
+        san_time_ms = round((time.time() - t_san_start) * 1000, 2)
+        post_hash = hashlib.sha256(sanitized_bytes).hexdigest()
 
-    # 5. BEFORE / AFTER COMPARISON & DIFFERENTIAL ANALYSIS
-    eliminated_artifacts = max(0, pre_artifacts_found - post_artifacts_found)
-    erasure_rate = 1.0 if pre_artifacts_found == 0 else (eliminated_artifacts / pre_artifacts_found)
+        # 4. POST-SANITIZATION RECOVERY PROBE (STAGE 3)
+        t_post_start = time.time()
+        post_carve_summary = carve_image_summary(sanitized_bytes, target_types=None, max_results=100)
+        post_carve_time_ms = round((time.time() - t_post_start) * 1000, 2)
+        post_artifacts_found = post_carve_summary.get("total_carved", 0)
 
-    # 6. VERIFICATION vs VALIDATION DISTINCTION
-    # Verification: Did the sanitization function run without exception and alter the media?
-    verification_passed = (initial_hash != post_hash) or (media_size == 0)
-    verification_notes = (
-        "Sanitization process executed cleanly; hash shift confirmed."
-        if verification_passed else
-        "Verification failed: post-sanitization hash identical to pre-sanitization."
-    )
+        # 5. BEFORE / AFTER COMPARISON & DIFFERENTIAL ANALYSIS
+        eliminated_artifacts = max(0, pre_artifacts_found - post_artifacts_found)
+        erasure_rate = 1.0 if pre_artifacts_found == 0 else (eliminated_artifacts / pre_artifacts_found)
 
-    # Validation: Is post-sanitization recovery count 0 for the selected sensitivity level?
-    validation_passed = (post_artifacts_found == 0)
-    if validation_passed:
-        validation_status = "VALIDATED_ZERO_RECOVERABLE"
-        validation_notes = (
-            f"Validation Probe Confirmed: 0 / {pre_artifacts_found} pre-existing artifacts recoverable "
-            f"under {method_applied} ({execution_mode}) for {data_sensitivity} sensitivity."
-        )
-    else:
-        validation_status = "VALIDATION_FAILED_RESIDUAL_ARTIFACTS"
-        validation_notes = (
-            f"Validation Warning: {post_artifacts_found} residual artifact(s) detected after "
-            f"{method_applied} in-memory probe. Escalate sanitization policy as required for "
-            f"{data_sensitivity} sensitivity (media-specific Purge/Destroy is out of scope here)."
+        # 6. VERIFICATION vs VALIDATION DISTINCTION
+        verification_passed = (initial_hash != post_hash) or (media_size == 0)
+        verification_notes = (
+            "Sanitization process executed cleanly; hash shift confirmed."
+            if verification_passed else
+            "Verification failed: post-sanitization hash identical to pre-sanitization."
         )
 
-    total_duration_ms = round((time.time() - t0) * 1000, 2)
+        validation_passed = (post_artifacts_found == 0)
+        if validation_passed:
+            validation_status = "VALIDATED_ZERO_RECOVERABLE"
+            validation_notes = (
+                f"Validation Probe Confirmed: 0 / {pre_artifacts_found} pre-existing artifacts recoverable "
+                f"under {method_applied} ({execution_mode}) for {data_sensitivity} sensitivity."
+            )
+        else:
+            validation_status = "VALIDATION_FAILED_RESIDUAL_ARTIFACTS"
+            validation_notes = (
+                f"Validation Warning: {post_artifacts_found} residual artifact(s) detected after "
+                f"{method_applied} in-memory probe. Escalate sanitization policy as required for "
+                f"{data_sensitivity} sensitivity (media-specific Purge/Destroy is out of scope here)."
+            )
 
-    # 7. SIGNED ASSURANCE PACKAGE
-    op_id = new_operation_id()
-    ev_id = new_evidence_id()
-    
-    proof_result = {
-        "proof_loop_status": "SUCCESS" if (verification_passed and validation_passed) else "WARNING",
-        "case_id": case_id,
-        "method_requested": san_method,
-        "data_sensitivity": data_sensitivity,
-        "media_size_bytes": media_size,
-        "pre_sanitization": {
-            "sha256": initial_hash,
-            "artifacts_found": pre_artifacts_found,
-            "by_type": pre_carve_summary.get("by_type", {}),
-            "scan_time_ms": pre_carve_time_ms,
-        },
-        "sanitization_execution": {
+        total_duration_ms = round((time.time() - t0) * 1000, 2)
+
+        # 7. SIGNED ASSURANCE PACKAGE
+        op_id = new_operation_id()
+        ev_id = new_evidence_id()
+
+        proof_result = {
+            "proof_loop_status": "SUCCESS" if (verification_passed and validation_passed) else "WARNING",
+            "case_id": case_id,
             "method_requested": san_method,
-            "method_applied": method_applied,
-            "execution_mode": execution_mode,
-            "post_sha256": post_hash,
-            "passes_completed": 1,
-            "execution_time_ms": san_time_ms,
-            "note": (
-                "PURGE/DESTROY in this proof loop are SIMULATED in-memory probes only — "
-                "not NIST hardware Purge/Destroy."
-                if san_method in ("PURGE", "DESTROY") else
-                "CLEAR applied as in-memory zero-fill validation probe."
-            ),
-        },
-        "post_sanitization_probe": {
-            "artifacts_recovered": post_artifacts_found,
-            "probe_time_ms": post_carve_time_ms,
-            "by_type": post_carve_summary.get("by_type", {}),
-        },
-        "differential": {
-            "artifacts_eliminated": eliminated_artifacts,
-            "erasure_percentage": round(erasure_rate * 100, 1),
-        },
-        "assurance": {
-            "verification": {
-                "passed": verification_passed,
-                "detail": verification_notes,
-            },
-            "validation": {
-                "status": validation_status,
-                "passed": validation_passed,
-                "detail": validation_notes,
-            },
-            "decision_logic_reference": "Decision logic informed by NIST SP 800-88 Rev. 2 and IEEE 2883-2022 standards.",
-        },
-        "execution_duration_total_ms": total_duration_ms,
-    }
-
-    # Build signed Ed25519 payload
-    key_id, priv_key = get_or_create_primary_key()
-    payload = build_evidence_payload(
-        case_id=case_id,
-        operation_id=op_id,
-        evidence_type="SANITIZATION_PROOF_LOOP",
-        input_meta={
-            "initial_hash": initial_hash,
-            "sanitization_method_requested": san_method,
-            "sanitization_method_applied": method_applied,
-            "execution_mode": execution_mode,
+            "data_sensitivity": data_sensitivity,
             "media_size_bytes": media_size,
-        },
-        operation_meta={
-            "operation_type": "PROOF_LOOP_VALIDATION",
-            "passes": 1,
-        },
-        result_meta=proof_result,
-        scope=f"Controlled Validation Probe ({data_sensitivity})",
-        key_id=key_id,
-        evidence_id=ev_id,
-    )
-    
-    signed_pkg = sign_evidence_envelope(payload, priv_key)
-    evidence_store.save(signed_pkg)
+            "pre_sanitization": {
+                "sha256": initial_hash,
+                "artifacts_found": pre_artifacts_found,
+                "by_type": pre_carve_summary.get("by_type", {}),
+                "scan_time_ms": pre_carve_time_ms,
+            },
+            "sanitization_execution": {
+                "method_requested": san_method,
+                "method_applied": method_applied,
+                "execution_mode": execution_mode,
+                "post_sha256": post_hash,
+                "passes_completed": 1,
+                "execution_time_ms": san_time_ms,
+                "note": (
+                    "PURGE/DESTROY in this proof loop are SIMULATED in-memory probes only — "
+                    "not NIST hardware Purge/Destroy."
+                    if san_method in ("PURGE", "DESTROY") else
+                    "CLEAR applied as in-memory zero-fill validation probe."
+                ),
+            },
+            "post_sanitization_probe": {
+                "artifacts_recovered": post_artifacts_found,
+                "probe_time_ms": post_carve_time_ms,
+                "by_type": post_carve_summary.get("by_type", {}),
+            },
+            "differential": {
+                "artifacts_eliminated": eliminated_artifacts,
+                "erasure_percentage": round(erasure_rate * 100, 1),
+            },
+            "assurance": {
+                "verification": {
+                    "passed": verification_passed,
+                    "detail": verification_notes,
+                },
+                "validation": {
+                    "status": validation_status,
+                    "passed": validation_passed,
+                    "detail": validation_notes,
+                },
+                "decision_logic_reference": "Decision logic informed by NIST SP 800-88 Rev. 2 and IEEE 2883-2022 standards.",
+            },
+            "execution_duration_total_ms": total_duration_ms,
+        }
 
-    case_store.record_operation_and_evidence(
-        case_id=case_id,
-        operation_id=op_id,
-        evidence_id=ev_id,
-        operation_type='PROOF_LOOP',
-        result_data=signed_pkg,
-    )
+        # Build signed Ed25519 payload
+        key_id, priv_key = get_or_create_primary_key()
+        payload = build_evidence_payload(
+            case_id=case_id,
+            operation_id=op_id,
+            evidence_type="SANITIZATION_PROOF_LOOP",
+            input_meta={
+                "initial_hash": initial_hash,
+                "sanitization_method_requested": san_method,
+                "sanitization_method_applied": method_applied,
+                "execution_mode": execution_mode,
+                "media_size_bytes": media_size,
+            },
+            operation_meta={
+                "operation_type": "PROOF_LOOP_VALIDATION",
+                "passes": 1,
+            },
+            result_meta=proof_result,
+            scope=f"Controlled Validation Probe ({data_sensitivity})",
+            key_id=key_id,
+            evidence_id=ev_id,
+        )
 
-    audit_logger.log(
-        case_id=case_id,
-        event_type='PROOF_LOOP_COMPLETED',
-        actor='VALIDATION_PROBE_ENGINE',
-        operation_id=op_id,
-        evidence_id=ev_id,
-        details={
-            'validation_status': validation_status,
-            'erasure_percentage': round(erasure_rate * 100, 1),
-            'method_applied': method_applied,
-        },
-        hash_ref=signed_pkg.get('evidence_hash'),
-    )
+        signed_pkg = sign_evidence_envelope(payload, priv_key)
+        evidence_store.save(signed_pkg)
 
-    return {
-        "proof_result": proof_result,
-        "signed_evidence": signed_pkg,
-        "evidence_id": ev_id,
-        "operation_id": op_id,
-    }
+        case_store.record_operation_and_evidence(
+            case_id=case_id,
+            operation_id=op_id,
+            evidence_id=ev_id,
+            operation_type='PROOF_LOOP',
+            result_data=signed_pkg,
+        )
+
+        audit_logger.log(
+            case_id=case_id,
+            event_type='PROOF_LOOP_COMPLETED',
+            actor='VALIDATION_PROBE_ENGINE',
+            operation_id=op_id,
+            evidence_id=ev_id,
+            details={
+                'validation_status': validation_status,
+                'erasure_percentage': round(erasure_rate * 100, 1),
+                'method_applied': method_applied,
+            },
+            hash_ref=signed_pkg.get('evidence_hash'),
+        )
+
+        return {
+            "proof_result": proof_result,
+            "signed_evidence": signed_pkg,
+            "evidence_id": ev_id,
+            "operation_id": op_id,
+        }
+    except Exception as exc:  # no silent failure swallow; return a structured error payload
+        err_payload = {
+            "proof_result": {
+                "proof_loop_status": "FAILURE",
+                "case_id": case_id,
+                "method_requested": method,
+                "data_sensitivity": data_sensitivity,
+                "error": str(exc),
+                "assurance": {
+                    "verification": {"passed": False, "detail": "Proof loop execution failed before verification could complete."},
+                    "validation": {"status": "ERROR", "passed": False, "detail": f"Proof loop error: {exc}"},
+                },
+            },
+            "signed_evidence": None,
+            "evidence_id": None,
+            "operation_id": None,
+        }
+        try:
+            audit_logger.log(
+                case_id=case_id,
+                event_type='PROOF_LOOP_FAILED',
+                actor='VALIDATION_PROBE_ENGINE',
+                details={'error': str(exc), 'method_requested': method},
+            )
+        except Exception:
+            pass
+        return err_payload
 
 

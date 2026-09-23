@@ -15,7 +15,7 @@
 | **Portable Evidence Package** | **PROVEN** | `app/core/package.py` | `demo/run_demo.py`, `test_adversarial_1_valid_package` | Directory layout with self-contained manifest & raw PEM. |
 | **Independent Verifier** | **PROVEN** | `app/core/independent_verifier.py` | Standalone execution; tested without application DB | Independent of database and producer runtime. |
 | **ext4 Deleted Inode Recovery** | **DEMONSTRATED** | `app/forensics/recovery.py` | `tests/integration/test_forensic_pipeline.py` via `icat`/`fls` | Requires The Sleuth Kit binaries installed. |
-| **NTFS / FAT32 Metadata Recovery**| **UNSUPPORTED** | `app/forensics/filesystem.py` | Surfaces `RAW_CARVING_FALLBACK` honestly | Inode/MFT timestamps not extracted; raw carving applies. |
+| **NTFS Recovery (native MFT parser)** | **PARTIAL** | `app/forensics/ntfs_mft.py`, `app/forensics/recovery.py` | Native parser scans $MFT records and reconstructs resident/non-resident payloads in controlled cases | Not a full filesystem-wide NTFS recovery engine; still falls back to raw carving for unsupported or fragmented cases. |
 | **Raw Carving (JPEG, PNG, PDF, ZIP, MP4)** | **PROVEN** | `app/forensics/carving.py` | `tests/corpus/test_24_case_matrix.py` (24 cases) | Signature & structural marker dependent. |
 | **Multi-Layer File Validation** | **PROVEN** | `app/forensics/validation.py` | `validate_carved_file` with in-memory decoder tests | Safe in-memory decoding; never executes native code. |
 | **Bounded Fragment Reconstruction**| **IMPLEMENTED** | `app/forensics/carving.py` | `test_case_08_two_fragments_gap` (Bifragment scan) | Bounded to 4 cluster hops (2MB); does not solve arbitrary n-way interleaving. |

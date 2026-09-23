@@ -13,28 +13,44 @@ EXCLUDE_PATTERNS = [
     "__pycache__",
     ".pytest_cache",
     ".git",
+    "data",
     "data/cases",
     "data/evidence",
     "data/audit",
     "data/artifacts",
     "data/uploads",
-    "data/real_samples/*.raw",
-    "*.pyc"
+    "data/keys",
+    "data/real_samples",
+    "*.pyc",
+    "*.pyo",
+    "*.raw",
+    "*.img",
+    "*.priv",
+    "*.pem",
+    "*.key",
+    "*.jsonl",
+    "*.env",
+    "*.zip",
 ]
 
+
 def should_exclude(rel_path: str) -> bool:
+    normalized = rel_path.replace('\\', '/').lower()
     for pat in EXCLUDE_PATTERNS:
-        if pat.endswith("/*"):
-            prefix = pat[:-2]
-            if rel_path.startswith(prefix) and rel_path != prefix:
+        low_pat = pat.lower()
+        if low_pat.endswith("/*"):
+            prefix = low_pat[:-2]
+            if normalized.startswith(prefix) and normalized != prefix:
                 return True
-        elif pat.startswith("*."):
-            ext = pat[1:]
-            if rel_path.endswith(ext):
+        elif low_pat.startswith("*."):
+            ext = low_pat[1:]
+            if normalized.endswith(ext):
                 return True
-        elif pat in rel_path.split("/"):
+        elif normalized == low_pat or normalized.startswith(low_pat + "/"):
             return True
-        elif rel_path.startswith(pat):
+        elif low_pat in normalized.split("/"):
+            return True
+        elif normalized.startswith(low_pat):
             return True
     return False
 
