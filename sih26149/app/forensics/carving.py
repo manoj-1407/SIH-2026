@@ -591,37 +591,53 @@ def carve_bytes(
 ) -> list[CarvedFile]:
     """
     Scan raw bytes and carve recoverable files.
+
+    This uses signature-based candidate discovery instead of brute-forcing every byte offset.
+    The old implementation was O(n * signatures * pattern length) and could stall on large
+    forensic images; the new path is still correct but dramatically faster on real evidence.
     """
     results: list[CarvedFile] = []
-    pos = 0
-    length = len(data)
     found_offsets: set[int] = set()
+    length = len(data)
+    max_results = max(1, max_results)
 
-    while pos < length - 8:
-        # Check MP4 (ftyp at pos+4)
-        if pos + 12 <= length and data[pos + 4:pos + 8] == b'ftyp':
-            if pos not in found_offsets:
-                carved = _carve_mp4(data, pos)
-                if carved and (target_types is None or carved.file_type in target_types):
-                    results.append(carved)
-                    found_offsets.add(pos)
-                    if len(results) >= max_results:
-                        break
+    def maybe_add(carved: Optional[CarvedFile]):
+        if carved is None:
+            return
+        if target_types is not None and carved.file_type not in target_types:
+            return
+        if carved.offset not in found_offsets:
+            results.append(carved)
+            found_offsets.add(carved.offset)
 
-        # Check all other signatures
-        for sig, type_name, carver in _SIGNATURES:
-            if target_types and type_name not in target_types:
-                continue
-            sig_len = len(sig)
-            if data[pos:pos + sig_len] == sig:
-                if pos not in found_offsets:
-                    carved = carver(data, pos)
-                    if carved:
-                        results.append(carved)
-                        found_offsets.add(pos)
-                        if len(results) >= max_results:
-                            break
-        pos += 1
+    # Signature scan: find each candidate offset once using Python's optimized search.
+    candidates = list(_SIGNATURES)
+    if target_types is None or "MP4" in target_types:
+        candidates.append((b'ftyp', 'MP4', None))
+
+    for sig, type_name, carver in candidates:
+        if target_types is not None and type_name not in target_types:
+            continue
+
+        pos = 0
+        while pos <= length - len(sig):
+            found = data.find(sig, pos)
+            if found == -1:
+                break
+            pos = found + 1
+
+            if sig == b'ftyp':
+                candidate_offset = found - 4
+                if candidate_offset < 0:
+                    continue
+                carved = _carve_mp4(data, candidate_offset)
+            else:
+                carved = carver(data, found)
+
+            maybe_add(carved)
+            if len(results) >= max_results:
+                break
+
         if len(results) >= max_results:
             break
 
@@ -630,7 +646,7 @@ def carve_bytes(
             r.hex_preview = format_hex_dump(data[r.offset : r.offset + min(r.size, 256)])
 
     results.sort(key=lambda x: x.confidence_score, reverse=True)
-    return results
+    return results[:max_results]
 
 
 def carve_image(

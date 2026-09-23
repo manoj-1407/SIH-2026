@@ -29,6 +29,10 @@ id_ed25519
 
 # Forensic / Attack payloads
 *.img
+*.dd
+*.raw
+*.pptx
+read_ppt.py
 *_shadow
 *_evil_payload*
 
