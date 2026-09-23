@@ -241,6 +241,27 @@ const api = {
   upload: (path, form)  => api.call('POST', path, form, true),
 };
 
+async function apiFetch(url, options = {}) {
+  const opts = { ...options };
+  const headers = { 'X-Demo-Mode': '1', ...(opts.headers || {}) };
+  const apiKey = localStorage.getItem('sih_api_key');
+  if (apiKey) headers['X-API-Key'] = apiKey.trim();
+  opts.headers = headers;
+
+  if (opts.body && !(opts.body instanceof FormData) && !(opts.body instanceof Blob) && !(opts.body instanceof ArrayBuffer) && !(opts.body instanceof URLSearchParams) && typeof opts.body !== 'string') {
+    opts.headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(opts.body);
+  }
+
+  const res = await fetch(url, opts);
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try { const j = await res.json(); detail = j.detail || detail; } catch {}
+    throw new Error(detail);
+  }
+  return res;
+}
+
 // ═══════════════════════════════════════════════════════════════
 //  NAVIGATION
 // ═══════════════════════════════════════════════════════════════
