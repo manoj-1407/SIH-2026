@@ -19,7 +19,7 @@ import platform
 from enum import Enum
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, Any
 
 
 class MediaType(str, Enum):
@@ -59,10 +59,14 @@ class DeviceCapability:
     warnings: list = field(default_factory=list)
     hpa_dco_warning: str = ""              # Host Protected Area / Device Config Overlay advisory
     write_protection_note: str = ""        # Write-blocker / read-only enforcement status
+    is_sed_opal_capable: bool = False      # TCG Opal / Enterprise SSC Self-Encrypting Drive
+    opal_ssc_version: Optional[str] = None # e.g. "TCG Opal 2.0"
+    crypto_erase_recommended: bool = False # Prefer Cryptographic Erase over 4-hour overwrite
+    crypto_erase_rationale: str = ""       # Legal & operational rationale per NIST 800-88 §2.4
 
     @property
     def recommended_level(self) -> SanitizationLevel:
-        if self.purge_supported:
+        if self.purge_supported or self.crypto_erase_recommended:
             return SanitizationLevel.PURGE
         if self.clear_supported:
             return SanitizationLevel.CLEAR
@@ -74,14 +78,18 @@ class DeviceCapability:
             "recommended_level": self.recommended_level.value,
             "nist_reference": self.recommended_level.nist_reference,
             "clear_supported": self.clear_supported,
-            "purge_supported": self.purge_supported,
-            "purge_command": self.purge_command,
+            "purge_supported": self.purge_supported or self.crypto_erase_recommended,
+            "purge_command": self.purge_command or ("TCG OPAL CRYPTOGRAPHIC ERASE (MEK Invalidation)" if self.crypto_erase_recommended else None),
             "destroy_recommendation": self.destroy_recommendation,
             "scope_statement": self.scope_statement,
             "classification_basis": self.classification_basis,
             "warnings": self.warnings,
             "hpa_dco_warning": self.hpa_dco_warning,
             "write_protection_note": self.write_protection_note,
+            "is_sed_opal_capable": self.is_sed_opal_capable,
+            "opal_ssc_version": self.opal_ssc_version,
+            "crypto_erase_recommended": self.crypto_erase_recommended,
+            "crypto_erase_rationale": self.crypto_erase_rationale,
         }
 
 
@@ -365,3 +373,94 @@ def _sd_capability(basis: list, warnings: list) -> DeviceCapability:
         ),
         classification_basis=basis, warnings=warnings,
     )
+
+
+# ── TCG Opal Self-Encrypting Drive (SED) Discovery Parser ──────────────────────
+
+def parse_tcg_level0_discovery(discovery_bytes: bytes) -> Dict[str, Any]:
+    """
+    Parses a TCG Storage Architecture Level 0 Discovery Response.
+    Standardized by Trusted Computing Group (TCG) Storage Core Specification.
+
+    Feature Codes:
+      0x0001: TPer Feature
+      0x0002: Locking Feature
+      0x0200: Opal SSC V1.00
+      0x0203: Opal SSC V2.00
+      0x0301: Enterprise SSC
+      0x0402: Ruby SSC
+    """
+    if len(discovery_bytes) < 48:
+        return {"is_sed": False, "reason": "Discovery payload smaller than 48 bytes"}
+
+    import struct
+    param_data_len = struct.unpack_from(">I", discovery_bytes, 0)[0]
+    major_ver, minor_ver = struct.unpack_from(">HH", discovery_bytes, 4)
+
+    features = {}
+    is_opal = False
+    opal_ver = None
+    locking_supported = False
+
+    offset = 48  # Feature descriptors start at offset 0x30
+    limit = min(len(discovery_bytes), param_data_len + 4)
+
+    while offset + 4 <= limit:
+        code, ver_res, length = struct.unpack_from(">HBB", discovery_bytes, offset)
+        feat_data = discovery_bytes[offset + 4:offset + 4 + length]
+
+        features[f"0x{code:04X}"] = {
+            "version": ver_res >> 4,
+            "length": length
+        }
+
+        if code == 0x0002:
+            locking_supported = True
+        elif code == 0x0200:
+            is_opal = True
+            opal_ver = "TCG Opal SSC V1.0"
+        elif code == 0x0203:
+            is_opal = True
+            opal_ver = "TCG Opal SSC V2.0"
+        elif code == 0x0301:
+            is_opal = True
+            opal_ver = "TCG Enterprise SSC"
+        elif code == 0x0402:
+            is_opal = True
+            opal_ver = "TCG Ruby SSC"
+
+        offset += 4 + length
+
+    return {
+        "is_sed": is_opal or locking_supported,
+        "opal_capable": is_opal,
+        "opal_version": opal_ver,
+        "locking_supported": locking_supported,
+        "feature_count": len(features),
+        "features": features,
+    }
+
+
+def evaluate_opal_capability(target_path: str, raw_discovery_bytes: Optional[bytes] = None) -> DeviceCapability:
+    """
+    Evaluates storage device for TCG Opal Self-Encrypting Drive capability.
+    When Opal SED is detected, promotes sanitization recommendation to instant
+    Cryptographic Erase per NIST SP 800-88 Rev. 2 §2.4 Purge.
+    """
+    cap = detect_media_type(target_path)
+    if raw_discovery_bytes:
+        parsed = parse_tcg_level0_discovery(raw_discovery_bytes)
+        if parsed.get("opal_capable"):
+            cap.is_sed_opal_capable = True
+            cap.opal_ssc_version = parsed.get("opal_version")
+            cap.crypto_erase_recommended = True
+            cap.crypto_erase_rationale = (
+                f"TCG Opal Self-Encrypting Drive confirmed ({parsed.get('opal_version')}). "
+                "Hardware Media Encryption Key (MEK) cryptographic destruction fulfills "
+                "NIST SP 800-88 Rev. 2 §2.4 Purge instantly with zero wear-leveling endurance loss."
+            )
+            cap.purge_supported = True
+            cap.purge_command = "TCG OPAL CRYPTOGRAPHIC ERASE (PSID Revert / MEK Invalidation)"
+            cap.classification_basis.append(f"TCG Level 0 Discovery verified: {parsed.get('opal_version')}")
+    return cap
+

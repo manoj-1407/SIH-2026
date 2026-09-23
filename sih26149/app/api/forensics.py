@@ -505,3 +505,142 @@ def run_anti_forensics_audit(case_id: str, req: Optional[AntiForensicsRequest] =
     return report
 
 
+@router.post('/steganography')
+def run_steganography_audit(case_id: str, artifact_offset: Optional[int] = None):
+    """
+    Run Chi-Square (χ²) PoVs analysis on acquired evidence image or recovered image artifact.
+    Detects covert LSB steganographic payloads and calculates statistical probability.
+    """
+    validate_case_id(case_id)
+    try:
+        case = case_store.get(case_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail='Case not found')
+
+    if not case.source_path or not os.path.exists(case.source_path):
+        raise HTTPException(status_code=400, detail='No acquired evidence image found for this case')
+
+    from app.forensics.steganography import analyze_file_for_steganography
+
+    with open(case.source_path, "rb") as f:
+        if artifact_offset is not None and artifact_offset >= 0:
+            f.seek(artifact_offset)
+            sample_data = f.read(256 * 1024) # 256KB sample
+        else:
+            sample_data = f.read(512 * 1024)
+
+    report = analyze_file_for_steganography(sample_data)
+
+    audit_logger.log(
+        case_id=case_id,
+        event_type='STEGANOGRAPHY_SCANNED',
+        actor='STEGO_DETECTOR',
+        details={
+            'stego_detected': report.get('steganography_detected', False),
+            'probability': report.get('stego_probability', 0.0),
+            'verdict': report.get('verdict', 'UNKNOWN'),
+        }
+    )
+
+    return report
+
+
+@router.post('/entropy')
+async def compute_entropy_heatmap(case_id: str):
+    """
+    Compute Shannon entropy for each 512-byte sector of the acquisition image.
+    Returns up to 2048 sectors for browser-side heatmap rendering.
+    Classification: ENCRYPTED (H>7.5), COMPRESSED (H>6.5),
+                    STRUCTURED (H>3.0), EMPTY (H<1.0), NORMAL otherwise.
+    """
+    import math
+
+    validate_case_id(case_id)
+    try:
+        case = case_store.get(case_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail='Case not found')
+
+    acq = (case.get('acquisitions') or {}) if isinstance(case, dict) else {}
+    if not acq:
+        raise HTTPException(status_code=404, detail='No acquisition found for this case. Upload or seed an image first.')
+
+    # Pick the most recent acquisition
+    source_path = None
+    for _acq in acq.values():
+        p = _acq.get('source_path') if isinstance(_acq, dict) else getattr(_acq, 'source_path', None)
+        if p and os.path.isfile(p):
+            source_path = p
+            break
+
+    if not source_path:
+        raise HTTPException(status_code=404, detail='Acquisition file not found on disk.')
+
+    SECTOR_SIZE = 512
+    MAX_SECTORS = 2048
+
+    def _sector_entropy(data: bytes) -> float:
+        if not data:
+            return 0.0
+        freq = [0] * 256
+        for b in data:
+            freq[b] += 1
+        n = len(data)
+        h = 0.0
+        for f in freq:
+            if f > 0:
+                p = f / n
+                h -= p * math.log2(p)
+        return round(h, 4)
+
+    def _classify(h: float) -> str:
+        if h < 1.0:
+            return 'EMPTY'
+        if h < 3.0:
+            return 'SPARSE'
+        if h < 6.5:
+            return 'STRUCTURED'
+        if h < 7.5:
+            return 'COMPRESSED'
+        return 'ENCRYPTED'
+
+    file_size = os.path.getsize(source_path)
+    total_sectors = file_size // SECTOR_SIZE
+    step = max(1, total_sectors // MAX_SECTORS)
+
+    sectors = []
+    with open(source_path, 'rb') as f:
+        sector_idx = 0
+        while sector_idx < total_sectors and len(sectors) < MAX_SECTORS:
+            f.seek(sector_idx * SECTOR_SIZE)
+            data = f.read(SECTOR_SIZE)
+            if not data:
+                break
+            h = _sector_entropy(data)
+            sectors.append({
+                'sector': sector_idx,
+                'offset': sector_idx * SECTOR_SIZE,
+                'entropy': h,
+                'classification': _classify(h),
+            })
+            sector_idx += step
+
+    audit_logger.log(
+        case_id=case_id,
+        event_type='ENTROPY_ANALYSIS',
+        actor='ENTROPY_ENGINE',
+        details={
+            'total_sectors_sampled': len(sectors),
+            'file_size_bytes': file_size,
+            'source_path': os.path.basename(source_path),
+        }
+    )
+
+    return {
+        'case_id': case_id,
+        'file_size_bytes': file_size,
+        'sector_size': SECTOR_SIZE,
+        'total_sectors': total_sectors,
+        'sampled_sectors': len(sectors),
+        'sectors': sectors,
+    }

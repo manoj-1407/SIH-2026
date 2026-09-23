@@ -27,6 +27,34 @@
   <!-- Toast notifications -->
   <div id="toastContainer" class="toast-container" role="alert" aria-live="polite"></div>
 
+  <!-- Live Ticker Bar -->
+  <div class="ticker-bar" id="tickerBar">
+    <div class="ticker-track" id="tickerTrack">
+      <!-- items populated by startTicker() -->
+    </div>
+  </div>
+
+  <!-- Hex Inspector Panel (slide-in overlay) -->
+  <div class="hex-inspector-overlay" id="hexInspectorOverlay" onclick="closeHexInspector(event)">
+    <div class="hex-inspector">
+      <div class="hex-insp-header">
+        <span class="hex-insp-title">HEX INSPECTOR</span>
+        <span class="hex-insp-meta" id="hexInspMeta">sector 0 · offset 0x0000</span>
+        <button class="hex-insp-close" onclick="closeHexInspectorPanel()">✕ Close</button>
+      </div>
+      <div class="hex-insp-body" id="hexInspBody"></div>
+    </div>
+  </div>
+
+  <!-- Entropy Tooltip -->
+  <div class="entropy-tooltip" id="entropyTooltip">
+    <div class="ett-row"><span class="ett-label">Sector</span><span class="ett-val" id="ettSector">—</span></div>
+    <div class="ett-row"><span class="ett-label">Offset</span><span class="ett-val" id="ettOffset">—</span></div>
+    <div class="ett-row"><span class="ett-label">Entropy</span><span class="ett-val" id="ettEntropy">—</span></div>
+    <div class="ett-row"><span class="ett-label">Class</span><span class="ett-val" id="ettClass">—</span></div>
+    <div style="margin-top:0.4rem;font-size:0.62rem;color:var(--text-dim)">Click to open Hex Inspector</div>
+  </div>
+
   <!-- Top header bar -->
   <header class="topbar" id="topbar">
     <div class="topbar-left">
@@ -117,6 +145,11 @@
       <span>Verifier</span>
       <div class="nav-glow"></div>
     </button>
+    <button class="nav-item" data-tab="telemetry" onclick="switchTab('telemetry', this)">
+      <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      <span>Live Telemetry</span>
+      <div class="nav-glow"></div>
+    </button>
 
     <div class="nav-section-label" style="margin-top:1.5rem">QUICK ACTIONS</div>
     <button class="nav-item nav-action" onclick="seedOfficialDemoCase()">
@@ -172,14 +205,14 @@
 
         <div class="hero-stats">
           <div class="stat-card">
-            <div class="stat-num" id="statTests">220</div>
+            <div class="stat-num" id="statTests">275</div>
             <div class="stat-label">Tests Passing</div>
             <div class="stat-tag">RC2 Certified</div>
           </div>
           <div class="stat-card">
-            <div class="stat-num">14</div>
-            <div class="stat-label">Attack Vectors</div>
-            <div class="stat-tag">All Rejected</div>
+            <div class="stat-num" id="statCases">—</div>
+            <div class="stat-label">Active Cases</div>
+            <div class="stat-tag">Live Count</div>
           </div>
           <div class="stat-card">
             <div class="stat-num">Ed25519</div>
@@ -187,9 +220,28 @@
             <div class="stat-tag">RFC 8032</div>
           </div>
           <div class="stat-card">
-            <div class="stat-num">NIST</div>
-            <div class="stat-label">800-88 Rev.2</div>
-            <div class="stat-tag">IEEE 2883</div>
+            <div class="stat-num" id="statEvidence">—</div>
+            <div class="stat-label">Evidence Pkgs</div>
+            <div class="stat-tag">Signed+Sealed</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Radar Chart + SMART Telemetry Widget -->
+      <div class="content-section">
+        <div class="section-header">
+          <h2 class="section-title">SYSTEM CAPABILITY RADAR</h2>
+          <div class="section-line"></div>
+        </div>
+        <div class="radar-section" id="radarSection">
+          <canvas id="radarCanvas" width="220" height="220"></canvas>
+          <div class="radar-legend" id="radarLegend">
+            <div class="radar-leg-item"><div class="radar-leg-dot" style="background:var(--cyan)"></div><span class="radar-leg-label">Native Carver</span><span class="radar-leg-val" id="rl-carver">—</span></div>
+            <div class="radar-leg-item"><div class="radar-leg-dot" style="background:var(--blue)"></div><span class="radar-leg-label">NTFS MFT Parser</span><span class="radar-leg-val" id="rl-ntfs">—</span></div>
+            <div class="radar-leg-item"><div class="radar-leg-dot" style="background:var(--purple)"></div><span class="radar-leg-label">Anti-Forensics</span><span class="radar-leg-val" id="rl-af">—</span></div>
+            <div class="radar-leg-item"><div class="radar-leg-dot" style="background:var(--green)"></div><span class="radar-leg-label">Cryptography</span><span class="radar-leg-val" id="rl-crypto">—</span></div>
+            <div class="radar-leg-item"><div class="radar-leg-dot" style="background:var(--gold)"></div><span class="radar-leg-label">SleuthKit TSK</span><span class="radar-leg-val" id="rl-tsk">—</span></div>
+            <div class="radar-leg-item"><div class="radar-leg-dot" style="background:var(--orange)"></div><span class="radar-leg-label">Persistence</span><span class="radar-leg-val" id="rl-persist">Atomic fsync</span></div>
           </div>
         </div>
       </div>
@@ -405,9 +457,36 @@
                 <span id="progressLabel" style="font-size:0.72rem;color:var(--text-muted)">Uploading…</span>
               </div>
             </div>
-            <div id="fsResult" class="result-box" style="display:none"></div>
+            <div id="uploadFsResult" class="result-box" style="display:none"></div>
+
+            <!-- Entropy Heatmap (appears after upload) -->
+            <div class="entropy-section" id="entropySection" style="display:none">
+              <div class="entropy-header">
+                <h4>⚡ Entropy Heatmap — Byte Distribution Analysis</h4>
+                <div class="entropy-legend">
+                  <div class="ent-key"><div class="ent-dot empty"></div>Empty</div>
+                  <div class="ent-key"><div class="ent-dot sparse"></div>Sparse</div>
+                  <div class="ent-key"><div class="ent-dot structured"></div>Structured</div>
+                  <div class="ent-key"><div class="ent-dot compressed"></div>Compressed</div>
+                  <div class="ent-key"><div class="ent-dot encrypted"></div>Encrypted</div>
+                </div>
+              </div>
+              <div class="entropy-canvas-wrap" id="entropyCanvasWrap">
+                <div class="entropy-shimmer" id="entropyShimmer"></div>
+                <canvas id="entropyCanvas" style="display:none"></canvas>
+              </div>
+              <div class="entropy-stats-row" id="entropyStatsRow">
+                <div class="ent-stat"><div class="ent-stat-label">Sectors Sampled</div><div class="ent-stat-val" id="entStatSectors">—</div></div>
+                <div class="ent-stat"><div class="ent-stat-label">Avg Entropy</div><div class="ent-stat-val" id="entStatAvg">—</div></div>
+                <div class="ent-stat"><div class="ent-stat-label">Encrypted Sectors</div><div class="ent-stat-val" id="entStatEnc">—</div></div>
+                <div class="ent-stat"><div class="ent-stat-label">Empty Sectors</div><div class="ent-stat-val" id="entStatEmpty">—</div></div>
+                <div class="ent-stat"><div class="ent-stat-label">File Size</div><div class="ent-stat-val" id="entStatSize">—</div></div>
+              </div>
+            </div>
           </div>
         </div>
+
+        <div class="step-connector"><div class="step-connector-arrow">↓</div></div>
 
         <!-- Step 2: Detect Filesystem -->
         <div class="step-card" id="stepFS">
@@ -423,6 +502,8 @@
           </div>
         </div>
 
+        <div class="step-connector"><div class="step-connector-arrow">↓</div></div>
+
         <!-- Step 3: Discover -->
         <div class="step-card" id="stepDiscover">
           <div class="step-number">03</div>
@@ -436,6 +517,8 @@
             <div id="discoverResult" class="result-box" style="display:none"></div>
           </div>
         </div>
+
+        <div class="step-connector"><div class="step-connector-arrow">↓</div></div>
 
         <!-- Step 4: Recover -->
         <div class="step-card" id="stepRecover">
@@ -452,6 +535,8 @@
           </div>
         </div>
 
+        <div class="step-connector"><div class="step-connector-arrow">↓</div></div>
+
         <!-- Step 5: Anti-Forensics & Concealment Detection -->
         <div class="step-card" id="stepAntiForensics">
           <div class="step-number">05</div>
@@ -463,6 +548,22 @@
               Scan for Concealment &amp; Timestomping
             </button>
             <div id="antiForensicsResult" class="result-box" style="display:none"></div>
+          </div>
+        </div>
+
+        <div class="step-connector"><div class="step-connector-arrow">↓</div></div>
+
+        <!-- Step 6: Steganography Scanner -->
+        <div class="step-card" id="stepStego">
+          <div class="step-number">06</div>
+          <div class="step-body">
+            <h3>🕵️ Steganography Detection</h3>
+            <p>Chi-Square Proof-of-Value statistical analysis + Shannon entropy scan to detect LSB payload embedding in image/media sectors. Flags covert data exfiltration artifacts.</p>
+            <button class="btn-secondary" id="stegoScanBtn" onclick="runSteganographyScan()">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              Run Steganography Scan
+            </button>
+            <div id="stegoResult" style="display:none"></div>
           </div>
         </div>
       </div>
@@ -752,6 +853,21 @@
         <p class="page-desc">Cryptographically signed Ed25519 evidence envelopes. RFC 8785 JCS canonical serialization.</p>
       </div>
 
+      <!-- Legal Affidavit Generator -->
+      <div class="affidavit-panel">
+        <div class="affidavit-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+        </div>
+        <div class="affidavit-text">
+          <h4>Legal Reliability Affidavit</h4>
+          <p>Generate a court-admissible BSA 2023 §63(4) / Daubert Rule 702 affidavit for this examination. Opens as a formatted HTML document ready to print or export to PDF.</p>
+        </div>
+        <button class="btn-affidavit" id="affidavitBtn" onclick="generateAffidavit()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          Generate Affidavit
+        </button>
+      </div>
+
       <div class="panel glass" id="tamperDemoPanel">
         <div class="panel-header">
           <h3>🔴 Live Tamper Detection Demo</h3>
@@ -832,6 +948,81 @@
               <p>Run verification to see the cryptographic validation result.</p>
             </div>
           </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════ TELEMETRY TAB ═══════════════════════════════ -->
+    <section class="tab-section telemetry-tab-section" id="tab-telemetry">
+      <div class="page-header">
+        <h1 class="page-title"><span class="page-title-accent">08</span> Live System Telemetry</h1>
+        <p class="page-desc">Real-time forensic engine subsystem health, SMART drive indicators, and cryptographic module status.</p>
+      </div>
+
+      <!-- Engine Status -->
+      <div class="panel glass">
+        <div class="panel-header">
+          <h3>Engine Subsystem Status</h3>
+          <button class="btn-icon" onclick="loadTelemetry()" title="Refresh">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+          </button>
+        </div>
+        <div class="panel-body">
+          <div class="subsys-grid" id="subsysGrid">
+            <div class="empty-state"><p>Click Refresh to load engine telemetry.</p></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Drive Health Gauges -->
+      <div class="panel glass">
+        <div class="panel-header"><h3>Drive Health Indicators</h3></div>
+        <div class="panel-body">
+          <div class="telemetry-grid" id="telemetryGauges">
+            <div class="gauge-card">
+              <svg class="gauge-svg" viewBox="0 0 100 60">
+                <path class="gauge-arc-bg" d="M 10 55 A 40 40 0 0 1 90 55"/>
+                <path class="gauge-arc-fg" id="gaugeCryptoArc" d="M 10 55 A 40 40 0 0 1 90 55" stroke="var(--cyan)" style="stroke-dasharray:0 126"/>
+              </svg>
+              <div class="gauge-val" id="gaugeCryptoVal">—</div>
+              <div class="gauge-label">Crypto Engine</div>
+            </div>
+            <div class="gauge-card">
+              <svg class="gauge-svg" viewBox="0 0 100 60">
+                <path class="gauge-arc-bg" d="M 10 55 A 40 40 0 0 1 90 55"/>
+                <path class="gauge-arc-fg" id="gaugeCarverArc" d="M 10 55 A 40 40 0 0 1 90 55" stroke="var(--blue)" style="stroke-dasharray:0 126"/>
+              </svg>
+              <div class="gauge-val" id="gaugeCarverVal">—</div>
+              <div class="gauge-label">Native Carver</div>
+            </div>
+            <div class="gauge-card">
+              <svg class="gauge-svg" viewBox="0 0 100 60">
+                <path class="gauge-arc-bg" d="M 10 55 A 40 40 0 0 1 90 55"/>
+                <path class="gauge-arc-fg" id="gaugeNtfsArc" d="M 10 55 A 40 40 0 0 1 90 55" stroke="var(--purple)" style="stroke-dasharray:0 126"/>
+              </svg>
+              <div class="gauge-val" id="gaugeNtfsVal">—</div>
+              <div class="gauge-label">NTFS Parser</div>
+            </div>
+            <div class="gauge-card">
+              <svg class="gauge-svg" viewBox="0 0 100 60">
+                <path class="gauge-arc-bg" d="M 10 55 A 40 40 0 0 1 90 55"/>
+                <path class="gauge-arc-fg" id="gaugeTskArc" d="M 10 55 A 40 40 0 0 1 90 55" stroke="var(--gold)" style="stroke-dasharray:0 126"/>
+              </svg>
+              <div class="gauge-val" id="gaugeTskVal">—</div>
+              <div class="gauge-label">SleuthKit TSK</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Raw Health Response -->
+      <div class="panel glass">
+        <div class="panel-header">
+          <h3>Raw Health Endpoint Response</h3>
+          <span class="mono" style="font-size:0.7rem;color:var(--text-dim)">GET /health</span>
+        </div>
+        <div class="panel-body">
+          <div id="rawHealthOutput" class="result-box" style="display:block;min-height:3rem">Loading…</div>
         </div>
       </div>
     </section>

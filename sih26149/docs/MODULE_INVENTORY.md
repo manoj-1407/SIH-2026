@@ -1,7 +1,7 @@
 # SIH26149 — Module Inventory
 
-**Generated**: 2026-09-21  
-**Baseline**: 157 passed / 7 skipped
+**Generated**: 2026-09-23  
+**Baseline**: 285 passed / 7 skipped
 
 ---
 
@@ -18,13 +18,13 @@
 |--------|---------|
 | `app/api/health.py` | `GET /health` — system status and tool availability |
 | `app/api/cases.py` | `GET/POST /cases`, `GET /cases/{id}`, `GET /cases/{id}/timeline`, `POST /cases/seed-demo` |
-| `app/api/forensics.py` | Upload, filesystem, artifacts, recover, forensic, seed-synthetic-evidence |
+| `app/api/forensics.py` | Upload, filesystem, artifacts, recover, forensic, seed-synthetic-evidence, entropy, stego |
 | `app/api/sanitization.py` | Sanitize, proof-loop, decision-profile, benchmark |
 | `app/api/evidence.py` | Evidence list, get, verify, verify-package, demo-tamper |
 | `app/api/carving.py` | `POST /cases/{id}/carve` — raw file carving |
 | `app/api/eraser.py` | erase-preview, erase-files, detect-device |
 | `app/api/audit_chain.py` | timeline GET, timeline/verify GET, timeline/demo-tamper POST |
-| `app/api/certificates.py` | certificate.html, certificate.pdf |
+| `app/api/certificates.py` | certificate.html, certificate.pdf, legal-affidavit |
 | `app/api/auth.py` | `require_api_key` dependency — X-API-Key header enforcement |
 | `app/api/deps.py` | Shared singletons: case_store, audit_logger, evidence_store, trust_registry, UPLOADS_DIR, get_or_create_primary_key |
 | `app/api/rate_limit.py` | Sliding-window rate limiter (in-memory) |
@@ -46,6 +46,7 @@
 | `app/core/evidence_envelope.py` | Evidence payload builder, operation/evidence ID generators |
 | `app/core/package.py` | `EvidencePackageBuilder` — self-contained evidence directory |
 | `app/core/independent_verifier.py` | Standalone package verifier (zero DB dependency) |
+| `app/core/legal_reliability.py` | BSA 2023 §63(4) / Daubert legal affidavit & chain of custody generator |
 | `app/core/classification.py` | Forensic classification enums (VERIFIED, PARTIAL, FAILED, BLOCKED, …) |
 | `app/core/certificate.py` | HTML/PDF evidence certificate generator |
 | `app/core/persistence.py` | Atomic fsync-rename JSON persistence primitives |
@@ -64,11 +65,13 @@
 | `app/forensics/proof_loop.py` | Pre-carve → sanitize → post-probe assurance loop |
 | `app/forensics/benchmark.py` | In-process recovery benchmark runner |
 | `app/forensics/synthetic.py` | Synthetic disk image generator for testing |
+| `app/forensics/steganography.py` | Chi-square LSB steganography detection with composite scoring & LSB entropy |
 
 ### `app/sanitization/` — Sanitization Engine
 | Module | Purpose |
 |--------|---------|
-| `app/sanitization/device_detector.py` | NIST SP 800-88 Rev. 2 media classification |
+| `app/sanitization/device_detector.py` | NIST SP 800-88 Rev. 2 media classification & TCG Opal / SED detection |
+| `app/sanitization/smart_telemetry.py` | NVMe/SATA SMART health telemetry & SSD wear indicators |
 | `app/sanitization/authorization.py` | Operator authorization model |
 | `app/sanitization/methods.py` | CLEAR/ZERO_FILL/RANDOM_FILL execution |
 | `app/sanitization/file_eraser.py` | Selective file/folder eraser with metadata scrubbing |
@@ -98,6 +101,8 @@
 | POST | `/cases/{case_id}/recover` | `forensics` | API Key |
 | POST | `/cases/{case_id}/forensic` | `forensics` | API Key |
 | POST | `/cases/{case_id}/seed-synthetic-evidence` | `forensics` | API Key |
+| POST | `/cases/{case_id}/entropy` | `forensics` | API Key |
+| POST | `/cases/{case_id}/stego` | `forensics` | API Key |
 | POST | `/cases/{case_id}/sanitize` | `sanitization` | API Key |
 | POST | `/cases/{case_id}/proof-loop` | `sanitization` | API Key |
 | POST | `/cases/{case_id}/decision-profile` | `sanitization` | API Key |
@@ -115,6 +120,7 @@
 | POST | `/cases/{case_id}/timeline/demo-tamper` | `audit_chain` | API Key |
 | GET | `/evidence/{evidence_id}/certificate.html` | `certificates` | API Key |
 | GET | `/evidence/{evidence_id}/certificate.pdf` | `certificates` | API Key |
+| GET | `/evidence/{evidence_id}/legal-affidavit` | `certificates` | API Key |
 
 ---
 
