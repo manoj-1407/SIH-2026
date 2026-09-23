@@ -1,115 +1,70 @@
-# SIH 2026 — Production & Render Deployment Guide
+# SIH 2026 — Problem 149 Deployment Guide
 
-This guide details deploying both **SIH26013** and **SIH26149** on **Render** (or any Docker-compliant host) using containerized FastAPI services with optional persistent disks.
+This deployment guide covers the NTRO forensic workstation for Smart India Hackathon 2026, problem statement 149.
 
----
+## 1. Deployment model
 
-## 1. Architecture Overview
+The solution is designed as a single self-contained FastAPI application with:
 
-Both applications are self-contained Dockerized workstations:
-- **SIH26013**: Cadastral Boundary AI Harmonization & Multi-Source Geospatial Conflict Detection (Ministry of Rural Development).
-- **SIH26149**: Integrated Forensic File Recovery & NIST SP 800-88 Rev. 2 Data Sanitization Workstation (National Technical Research Organisation).
+- a secure web-based operator interface
+- forensic case and evidence workflows
+- signed evidence packages and audit trails
+- optional API-key enforcement and request throttling
+- support for local, Docker, and cloud-style deployment
 
-```
-                      GitHub Private Repo (main branch)
-                                     │
-                    ┌────────────────┴────────────────┐
-                    │                                 │
-                    ▼                                 ▼
-         Render Web Service 1              Render Web Service 2
-             (SIH26013)                         (SIH26149)
-        Dockerfile: sih26013/Dockerfile    Dockerfile: sih26149/Dockerfile
-                    │                                 │
-                    ▼                                 ▼
-             Persistent Disk                   Persistent Disk
-             Mount: /app/data                  Mount: /app/data
+## 2. Recommended runtime
+
+### Local run
+```bash
+cd sih26149
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
----
+### Docker run
+```bash
+cd sih26149
+docker-compose up --build -d
+```
 
-## 2. Deploying on Render (Step-by-Step)
+Open the application at http://localhost:8000
 
-### Step 1: Connect Repository
-1. Log into your [Render Dashboard](https://dashboard.render.com/).
-2. Click **New +** → **Web Service**.
-3. Select **Build and deploy from a Git repository** and connect `manoj-1407/SIH-2026`.
+## 3. Environment variables
 
----
-
-### Step 2: Configure Service 1 — SIH26013 (Geospatial Harmonization)
-
-| Setting | Value |
-|---|---|
-| **Name** | `sih26013-cadastral` |
-| **Region** | Singapore / Frankfurt / Oregon |
-| **Branch** | `main` |
-| **Root Directory** | `sih26013` |
-| **Runtime** | `Docker` |
-| **Dockerfile Path** | `Dockerfile` (relative to `sih26013`) |
-| **Plan** | Free (for live demo) or Starter (for persistent disk) |
-
-#### Environment Variables (SIH26013):
 ```env
-SIH26013_DATA_DIR=/app/data
-SIH26013_API_KEY=your_secure_api_key_here
-DEMO_MODE=0
-PORT=8000
-```
-*(Note: In demo/judging evaluation sessions, set `DEMO_MODE=1` to allow interactive tamper tests from the UI).*
-
-#### Persistent Disk (Recommended for Production / Starter plan):
-- **Mount Path**: `/app/data`
-- **Size**: 1 GB
-
----
-
-### Step 3: Configure Service 2 — SIH26149 (Digital Forensics & Sanitization)
-
-| Setting | Value |
-|---|---|
-| **Name** | `sih26149-forensics` |
-| **Region** | Same region as Service 1 |
-| **Branch** | `main` |
-| **Root Directory** | `sih26149` |
-| **Runtime** | `Docker` |
-| **Dockerfile Path** | `Dockerfile` (relative to `sih26149`) |
-| **Plan** | Free (for live demo) or Starter (for persistent disk) |
-
-#### Environment Variables (SIH26149):
-```env
+DEMO_MODE=1
 SIH26149_DATA_DIR=/app/data
-SIH26149_API_KEY=your_secure_api_key_here
-SIH26149_CORS_ORIGINS=https://your-frontend-domain.onrender.com
-DEMO_MODE=0
-PORT=8000
+SIH26149_API_KEY=your_secure_key_here
+SIH26149_CORS_ORIGINS=http://localhost:8000
+SIH26149_RATE_LIMIT_GENERAL=120
+SIH26149_RATE_LIMIT_UPLOAD=10
 ```
 
-#### Persistent Disk (Recommended for Production / Starter plan):
-- **Mount Path**: `/app/data`
-- **Size**: 2 GB (holds uploaded test images, audit logs, signed envelopes, and cryptographic certificates)
+## 4. Production notes
 
----
+- Store evidence and signed material under a persistent volume.
+- Keep the API key in the deployment environment, not in source control.
+- Use `DEMO_MODE=0` in production-style deployments where authenticated access is required.
+- Use rate limits and request validation to protect upload and forensic endpoints.
 
-## 3. Persistent Storage vs. Free Tier Behavior
+## 5. Health and verification checks
 
-- **Render Free Tier**:
-  - Ephemeral disk: `/app/data` resets on container restart/spindown.
-  - Signing keys and evidence generated during a single session remain fully valid during that session.
-  - Best for: Interactive live hackathon demonstration presentations.
-- **Render Starter (Paid) with Persistent Disk**:
-  - Durably retains Ed25519 signing identity (`primary_examiner.priv` / `geo_examiner.priv`), trust registries, case histories, and audit timelines across all redeployments.
+After deployment, validate:
 
----
+- `GET /health`
+- `GET /docs`
+- `GET /api/health`
+- `GET /cases/CASE-DEMO-2026` or relevant seeded demo case
 
-## 4. Health & Verification Endpoints
+## 6. Security checklist
 
-Once deployed, verify your instances:
+- no secrets committed to git
+- all evidence writes use safe persistence patterns
+- key material kept outside the repo
+- API requests protected with header validation
+- rate limiting enabled for general and upload traffic
+- clear scope statements attached to sanitization outcomes
 
-- **SIH26013**:
-  - Health check: `GET https://<your-sih26013-app>.onrender.com/health`
-  - Interactive UI: `GET https://<your-sih26013-app>.onrender.com/`
-  - OpenAPI Docs: `GET https://<your-sih26013-app>.onrender.com/docs`
-- **SIH26149**:
-  - Health check: `GET https://<your-sih26149-app>.onrender.com/health`
-  - Interactive UI: `GET https://<your-sih26149-app>.onrender.com/`
-  - OpenAPI Docs: `GET https://<your-sih26149-app>.onrender.com/docs`
+This keeps the system audit-friendly and suitable for judges, reviewers, and operational teams.

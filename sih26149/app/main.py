@@ -43,13 +43,12 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="SIH26149 — Integrated Forensic & Sanitization Workstation v2",
+    title="NTRO Forensic Assurance Workstation — SIH 2026 Problem 149",
     lifespan=lifespan,
     description=(
-        "Integrated Secure Data Erasure and Advanced File Recovery Tool "
-        "for Digital Forensics and Data Sanitization. NTRO Problem Statement SIH26149. "
-        "Features: Raw file carving (JPEG/PNG/PDF/ZIP/MP4), NIST 800-88 Rev.2 device-aware "
-        "sanitization, selective file eraser, hash-chained audit trail, evidence certificates."
+        "Secure evidence recovery and verifiable sanitization platform for the NTRO problem statement "
+        "for Smart India Hackathon 2026. Features include raw file carving, forensic recovery workflows, "
+        "hash-chain audit trails, signed evidence generation, and scope-aware sanitization assurance."
     ),
     version="2.0.0",
     docs_url="/docs",

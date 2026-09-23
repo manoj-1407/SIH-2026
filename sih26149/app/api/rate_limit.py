@@ -73,9 +73,8 @@ _upload_limiter = SlidingWindowLimiter()
 
 
 def _client_key(request) -> str:
-    # Bucket by (API key, IP) together — see sih26013/app/core/rate_limit.py
-    # for why keying by API key alone breaks under the shared-key deployment
-    # model in docker-compose.yml.
+    # Bucket by (API key, IP) together so a shared-key deployment cannot
+    # accidentally throttle unrelated clients behind the same credential.
     api_key = request.headers.get("X-API-Key")
     client = request.client
     ip = client.host if client else "unknown"

@@ -48,15 +48,6 @@ sih26149/data/certificates/*
 sih26149/demo/workdir/*
 !sih26149/demo/workdir/.gitkeep
 
-sih26013/data/audit/*
-!sih26013/data/audit/.gitkeep
-sih26013/data/evidence/*
-!sih26013/data/evidence/.gitkeep
-sih26013/data/cases/*
-!sih26013/data/cases/.gitkeep
-sih26013/data/keys/*
-!sih26013/data/keys/.gitkeep
-
 # OS generated files
 .DS_Store
 Thumbs.db

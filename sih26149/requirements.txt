@@ -1,6 +1,5 @@
-# Exact-pinned to the versions this codebase is tested against (88/88 unit
-# tests passing on this pin set, including the real Sleuth Kit integration
-# tests). See sih26013/requirements.txt for the same rationale.
+# Exact-pinned to the versions this codebase is tested against for the
+# problem 149 forensic workstation and its real Sleuth Kit integration tests.
 fastapi==0.141.1
 uvicorn[standard]==0.52.4
 pydantic==2.13.5

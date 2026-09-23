@@ -1,50 +1,56 @@
-# SIH 2026 — Security Model & Threat Mitigations
+# SIH 2026 — Problem 149 Security Model
 
-This document outlines the defense-in-depth architecture, cryptographic controls, and threat mitigations implemented across **SIH26013** and **SIH26149**.
+This document captures the core security controls for the NTRO forensic assurance platform behind problem statement 149.
 
----
+## 1. Security objectives
 
-## 1. Cryptographic Evidence & Trust Registry
+The platform is designed to protect both the evidence lifecycle and the integrity of the digital workflow:
 
-Both platforms implement Ed25519 digital signatures and SHA-256 canonical envelopes for non-repudiation:
+- preserve evidence accurately and avoid silent mutation
+- keep all cryptographic claims tamper-evident
+- enforce bounded sanitization conclusions with clear scope statements
+- restrict untrusted access to operator and evidence endpoints
+- throttle API abuse and reject unsafe paths
 
-- **Private Key Isolation**: Private signing keys (`.priv`) are generated at first startup on the host/volume and are strictly excluded from source control (`.gitignore`). They are never exposed over any API endpoint.
-- **Independent Trust Registry**: Public keys are indexed by `key_id` in `trust_registry.json`. Independent verification resolves keys exclusively from this registry, preventing untrusted key substitution attacks.
-- **Hash-Chained Audit Logs (SIH26149)**: Every administrative and forensic operation is logged with SHA-256 block hashing (`previous_hash` → `entry_hash`), creating a tamper-evident chain of custody verified via `GET /cases/{id}/timeline/verify`.
-- **Structured JSONL Audit Logs (SIH26013)**: Case operations are appended to per-case JSONL audit files with SHA-256 `entry_hash` linked via `previous_hash` for tamper evidence. SIH26013 does not expose a dedicated chain-verify API like SIH26149; treat the logs as structured, hash-linked custody records rather than a full verify UI surface.
+## 2. Trust and integrity
 
----
+- Evidence operations use persistent storage and atomic write patterns to reduce partial-write risks.
+- Hash-chain and signed evidence patterns provide a tamper-evident trail for case operations.
+- Independent verification is separated from runtime case state so a reviewer can validate the package without trusting the main database.
+- Keys and trust registries are resolved from controlled storage rather than package-internal values.
 
-## 2. Path Traversal & File Eraser Confinement
+## 3. API protection
 
-- **Dereferenced Symlink Containment**: In `sih26149`, `_validate_erasure_paths` invokes `Path(target).resolve()` before evaluating `is_relative_to(UPLOADS_DIR)`. Any target path resolving outside the case uploads root (including symlink escapes and `../` traversal) is strictly rejected with `HTTP 403 Forbidden`.
-- **Evidence ID Sanitization**: All evidence retrieval and certificate routes validate `evidence_id` against the strict regex `^[a-zA-Z0-9_\-]+$`, preventing directory traversal when constructing persistence paths.
+- Requests may require an `X-API-Key` header in production-like operation.
+- `DEMO_MODE` is reserved for local evaluation and should not be used for public deployments.
+- Cross-origin exposure is controlled via explicit configuration.
+- Rate limiting is enforced for general traffic and high-cost upload routes.
 
----
+## 4. Path and file safety
 
-## 3. Production Authentication & RBAC
+- Upload and case paths are constrained to the allowed storage roots.
+- Unsafe or traversal-like paths are rejected before write or read operations.
+- Evidence IDs and file paths are validated before constructing persistent locations.
 
-- **Header Authentication**: Production API requests require the `X-API-Key` header matched against `SIH26149_API_KEY` / `SIH26013_API_KEY`.
-- **Demo Mode Isolation**: `DEMO_MODE=1` is reserved strictly for local/evaluation testing. When `DEMO_MODE=0` (production default), demo-tamper routes and unauthenticated requests are rejected with `HTTP 401 Unauthorized` / `HTTP 403 Forbidden`.
-- **CORS Allowlist**: Configurable via `SIH26149_CORS_ORIGINS` to prevent cross-origin script execution.
+## 5. Sanitization safety
 
----
+The platform avoids overstating the effect of erasure. It separates:
 
-## 4. Concurrency & Integrity Controls
+- proven in-scope zero-fill verification
+- unsupported hardware-level claims
+- preliminary recovery or classification results
 
-- **Atomic File Replacement**: File persistence operations follow an atomic sequence (`write temp` -> `fsync` -> `atomic replace` with 30-attempt backoff retry) to prevent torn reads and partial writes under high thread contention.
-- **Per-Case Isolation**: All evidence vault queries and timeline audits are scoped strictly to the authenticated `case_id`.
+This prevents false or misleading statements about storage media beyond the actual verified scope.
 
----
+## 6. Operational hardening
 
-## 5. Independent Verifier Adversarial Defenses (RC2 Gate)
+Recommended deployment controls:
 
-The standalone cryptographic verifier (`app/core/independent_verifier.py`) enforces strict validation against 14 adversarial attack vectors:
+- run behind a reverse proxy with HTTPS termination
+- keep secrets out of source control
+- use environment-based configuration for all sensitive values
+- restrict filesystem permissions for data and keys
+- log and monitor failed auth and rate-limit events
 
-- **Manifest Hash Tampering**: Raw payload mutations fail SHA-256 canonical hashing before signature verification.
-- **Signature Truncation & Bit Flips**: Ed25519 signatures are verified in constant time; bit-flipped or truncated signatures fail verification.
-- **Key Substitution Attacks**: Public keys embedded inside untrusted evidence packages are ignored; public keys are resolved exclusively from the registered `trust_registry.json`.
-- **Unmanifested / Extra Injected Files (DEF-005)**: Reverse directory walking detects any unmanifested file within an evidence package and flags it immediately.
-- **Directory Traversal in Package Extraction**: Package paths containing `..`, absolute drives, or symlinks outside target directory boundaries trigger immediate extraction rejection.
-- **Fail-Closed Purge Boundary**: Requests targeting non-volatile flash or SSD media without physical hardware access return `VERIFIED_WITHIN_SCOPE` with documented hardware boundaries, avoiding false claims.
+This makes the system well-suited for evaluation, controlled deployment, and demonstration in front of judges and stakeholders.
 

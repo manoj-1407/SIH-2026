@@ -1,116 +1,71 @@
-# Smart India Hackathon (SIH) 2026 — Unified Repository
+# SIH 2026 — Problem Statement 149
 
-This repository contains two production-grade, containerized digital forensic and geospatial workstations developed for Smart India Hackathon 2026:
+This repository is the NTRO-focused forensic workstation for Smart India Hackathon 2026, problem statement 149.
+
+The implementation is centered on one mission: proving what happened to digital evidence and what was actually removed during secure sanitization.
+
+## What is included
+
+- Forensic intake, case management, and evidence capture
+- Recovery workflows for deleted and hidden data
+- Raw-byte carving for common file types and media patterns
+- Secure sanitization validation with explicit scope limits
+- Hash-chain audit trail and signed evidence packages
+- Independent verification workflow for judges, investigators, and reviewers
+- Production-ready Python FastAPI backend with an interactive web UI
+
+## Repository layout
 
 ```
-SIH_FINAL_v5/
-├── sih26013/             # Geospatial Harmonization Platform (Tri-Reality & Provenance DAG)
-├── sih26149/             # Integrated Forensic File Recovery & NIST/IEEE Sanitization Workstation
-├── AUDIT_REVIEW_GUIDE.md # Complete Evaluation & Audit Verification Manual
-├── DEPLOYMENT.md         # Complete Docker & Render Deployment Guide
-├── SECURITY.md           # Cryptographic Security Architecture & Threat Model
-└── .gitignore            # Clean repository rules (0 keys, 0 payloads, 0 runtime caches)
+.
+├── README.md                 # Project overview and quick start
+├── DEPLOYMENT.md             # Deployment and runtime guidance
+├── SECURITY.md               # Security controls and threat model
+├── AUDIT_REVIEW_GUIDE.md     # Demo and evaluation checklist
+├── sih26149/                 # Main NTRO forensic workstation
+├── make_zip.py               # Packaging helper for final submission
+├── make_zip.ps1              # Windows packaging helper
+└── .gitignore                # Repository hygiene rules
 ```
 
----
+## Why this project matters
 
-## Solutions Overview
+Problem statement 149 requires a trustworthy forensic system that can both recover useful evidence and prove the sanitization outcome without overstating claims. The platform therefore combines:
 
-### 1. SIH26013 — Multi-Source Geospatial Data Harmonization
-- **Organization**: Ministry of Rural Development / Department of Land Resources (DoLR)
-- **Problem Statement**: SIH26013
-- **Core Innovations**:
-  - **Tri-Reality Boundary Reconciliation**: Reconciles Legal (Cadastral), Surveyed (GNSS), and Observed (Drone ORI) boundaries with dynamic RSS error-propagation envelopes.
-  - **Explainable Conflict Hypotheses**: Evaluates centroid displacements and generates Evidence-Weighted Hypotheses for official field-verification.
-  - **DAG Lineage Provenance**: Traverses cross-departmental ancestry graphs to identify shared-origin dependencies ("3 records from 1 source = 1 independent origin").
-  - **Deterministic Hybrid Entity Matcher**: IoU geometric overlap, Hausdorff metric distance, and token similarity.
-  - **Automated Topology Repair**: Resolves cadastral overlaps and micro-slivers while preserving spatial invariants.
-  - **Ed25519 Cryptographic Assurance**: Generates tamper-evident signed proposal envelopes (*The system recommends · The authority decides*).
+- evidence-preserving acquisition
+- explicit classification of outcomes
+- cryptographic signing and audit-chain integrity
+- bounded claims for sanitization and recovery
+- secure, rate-limited API access and local-first operation
 
-### 2. SIH26149 — Forensic Recovery & Secure Data Sanitization
-- **Organization**: National Technical Research Organisation (NTRO)
-- **Problem Statement**: SIH26149
-- **Core Innovations**:
-  - **Sequential Forensic Proof Loop**: Closed-loop assurance (Known Evidence → Pre-Sanitization Recovery Scan → Sanitization Execution → Post-Sanitization Recovery Probe → Signed Assurance Package).
-  - **Raw Byte Stream Carving**: Pure-Python reconstruction of JPEG, PNG, PDF, ZIP, and MP4 structures with bounded gap-scan fragment assembly.
-  - **Standards-Informed Sanitization**: Storage-device capability classification informed by NIST SP 800-88 Rev. 2 and IEEE 2883-2022.
-  - **Scope-Confined Selective Eraser**: Multi-pass zero-fill with filesystem metadata scrubbing and directory name scrambling.
-  - **Tamper-Evident SHA-256 Audit Trail**: Cryptographic append-only hash chain with real-time mutation detection.
-  - **Independent Verification & Adversarial Resilience**: Ed25519 digital signature verification with 14-vector attack rejection (independent DB-free verifier).
-  - **RC2 Real-World Certification**: Master verification gate enforcing 6 tracks of operational and stress-testing assurance.
+## Fast start
 
----
-
-## Quick Start — Windows (No Docker Required)
-
-The fastest way to run on any Windows machine:
-
-### SIH26149 — Forensic Workstation (Port 8000)
+### Windows
 ```bat
 cd sih26149
 pip install -r requirements.txt
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
-→ Open **http://localhost:8000** in your browser
 
-Or just double-click **`sih26149\run_windows.bat`** — it installs dependencies and starts the server automatically.
+Open http://localhost:8000
 
-### SIH26013 — Geospatial Workstation (Port 8001)
-```bat
-cd sih26013
+### Linux / WSL2
+```bash
+cd sih26149
+python -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
-python -m uvicorn app.api.server:app --host 127.0.0.1 --port 8001
-```
-→ Open **http://localhost:8001** in your browser
-
-Or just double-click **`sih26013\run_windows.bat`**.
-
-> **No API key needed on localhost:** Both systems run in `DEMO_MODE=1` by default locally — the connection indicator will show 🟢 **API Online** immediately. If you see **Auth Required** (amber), click the connection pill (top-right) → enter your API key in the modal → **Save Key**.
-
----
-
-## Quick Start (Docker)
-
-### Run SIH26013:
-```bash
-cd sih26013
-docker-compose up --build -d
-# UI accessible at http://localhost:8001
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-### Run SIH26149:
+## Verification
+
 ```bash
 cd sih26149
-docker-compose up --build -d
-# UI accessible at http://localhost:8000
+python -m pytest -q
 ```
 
----
+The project includes automated tests for validation, forensics, sanitization, and security flows.
 
-## Single-Command Master Verification & Test Suites
-
-Both applications contain automated unit, integration, adversarial, and security test suites:
-
-### SIH26149 RC2 Master Verification Gate (6 Validation Tracks)
-```bash
-cd sih26149
-python scripts/bootstrap_and_verify.py
-```
-*Executes all 6 tracks:* 220 Automated Tests, 20/20 Operational Gate Checks, 14 Verifier Adversarial Attacks, 6 Crash Resilience Invariants, 6 NIST Storage Profiles, and 12 Real-World Corpus Evaluations (**100% Pass / RC2 Certified**).
-
-### Individual Test Commands
-```bash
-# Test SIH26013 (59 passed / 1 skipped on Windows, 60 passed on Linux)
-cd sih26013 && python -m pytest tests/ -v
-
-# Test SIH26149 (220 passed, 7 skipped)
-cd sih26149 && python -m pytest tests/ -v
-```
-
-Total verification: **279+ automated tests** with **0 failures** under `pytest -q`.
-
-See [AUDIT_REVIEW_GUIDE.md](AUDIT_REVIEW_GUIDE.md) for full step-by-step evaluator instructions.  
-See [DEPLOYMENT.md](DEPLOYMENT.md) for cloud and Render deployment steps.  
-See [SECURITY.md](SECURITY.md) for cryptographic signing and defense details.  
-See [sih26149/docs/RC2_VALIDATION_REPORT.md](sih26149/docs/RC2_VALIDATION_REPORT.md) for RC2 evaluation metrics.
+See [DEPLOYMENT.md](DEPLOYMENT.md), [SECURITY.md](SECURITY.md), and [AUDIT_REVIEW_GUIDE.md](AUDIT_REVIEW_GUIDE.md) for production and evaluation guidance.
 
