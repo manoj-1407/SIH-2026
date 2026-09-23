@@ -90,24 +90,24 @@ def detect_filesystem(image_path: str) -> FilesystemCapability:
                 recovery_method='INODE_METADATA',
             )
 
-        # NTFS — raw carving fallback; no MFT parser in this build
+        # NTFS — native MFT record parser recovery
         if 'ntfs' in output:
             ntfs_details = _inspect_with_fsstat(image_path)
             ntfs_details['raw_type'] = 'NTFS'
             ntfs_details['recovery_note'] = (
-                'NTFS MFT-based deleted record recovery is NOT implemented in this build. '
-                'Raw signature carving is applied as a filesystem-independent fallback. '
-                'Inode-level metadata (timestamps, MFT entries) will not be recovered.'
+                'Deleted file recovery supported via native NTFS $MFT record parser. '
+                'Extracts $FILE_NAME, $STANDARD_INFORMATION timestamps, and resident/non-resident $DATA runs. '
+                'Raw carving fallback also available.'
             )
             return FilesystemCapability(
                 filesystem='ntfs',
                 detected=True,
-                recovery_supported=False,
+                recovery_supported=True,
                 carving_fallback=True,
                 sanitization_supported=False,
-                status_label='NTFS_CARVE_FALLBACK',
+                status_label='NTFS_MFT_RECOVERY',
                 details=ntfs_details,
-                recovery_method='RAW_CARVING_FALLBACK',
+                recovery_method='NTFS_MFT_PARSER',
             )
 
         # FAT32 — raw carving fallback; no directory-entry scanner

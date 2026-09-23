@@ -35,13 +35,30 @@ class DiscoveryError(Exception):
 
 def discover_deleted_artifacts(image_path: str, timeout: int = 60) -> list[Artifact]:
     """
-    Use fls to discover deleted artifacts in an ext4 image.
-
-    Returns list of deleted inodes.
-    Raises DiscoveryError on fls failure or tool unavailability.
+    Discover deleted artifacts using either Sleuth Kit (fls) for ext4
+    or native NTFS $MFT parser for NTFS media.
     """
+    # 1. Check for native NTFS MFT records first if fls is missing or image is NTFS
+    try:
+        from app.forensics.ntfs_mft import scan_ntfs_image_for_deleted_files
+        ntfs_artifacts = scan_ntfs_image_for_deleted_files(image_path)
+        if ntfs_artifacts:
+            return [
+                Artifact(
+                    inode=str(m.record_number),
+                    name=m.filename,
+                    is_deleted=True,
+                    size_bytes=m.size_bytes,
+                    artifact_type='r' if not m.is_directory else 'd'
+                )
+                for m in ntfs_artifacts
+            ]
+    except Exception as e:
+        logger.debug(f"NTFS MFT scan skipped: {e}")
+
+    # 2. Sleuth Kit fls for ext4
     if not shutil.which('fls'):
-        raise DiscoveryError('fls (Sleuth Kit) not found in PATH')
+        raise DiscoveryError('fls (Sleuth Kit) not found in PATH and no NTFS MFT records detected')
 
     try:
         result = subprocess.run(

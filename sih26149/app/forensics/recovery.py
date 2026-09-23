@@ -67,15 +67,37 @@ def recover_artifact(image_path: str, inode: str, timeout: int = 60) -> Recovery
     Raises:
         RecoveryError only on tool errors (icat not found, timeout, non-zero exit).
     """
-    if not shutil.which('icat'):
-        raise RecoveryError('icat (Sleuth Kit) not found in PATH')
-
     try:
         inode_int = int(inode)
         if inode_int < 0:
             raise ValueError()
     except (ValueError, TypeError):
         raise RecoveryError(f'Invalid inode: {inode!r}')
+
+    # 1. Native NTFS $MFT record recovery
+    try:
+        from app.forensics.ntfs_mft import MFT_RECORD_SIZE, parse_mft_record
+        with open(image_path, "rb") as f:
+            f.seek(inode_int * MFT_RECORD_SIZE)
+            chunk = f.read(MFT_RECORD_SIZE)
+            if len(chunk) == MFT_RECORD_SIZE and chunk[:4] == b"FILE":
+                mft_file = parse_mft_record(chunk, record_number=inode_int)
+                if mft_file and mft_file.data_bytes:
+                    return RecoveryResult(
+                        inode=str(inode_int),
+                        image_path=image_path,
+                        recovered_bytes=mft_file.data_bytes,
+                        sha256=hash_bytes(mft_file.data_bytes),
+                        size_bytes=len(mft_file.data_bytes),
+                        layer_status=RecoveryLayerStatus.RECOVERED,
+                        forensic_note=f"Recovered via native NTFS $MFT parser: {mft_file.filename} (Resident: {mft_file.is_resident})"
+                    )
+    except Exception:
+        pass
+
+    # 2. Ext4 Sleuth Kit icat recovery
+    if not shutil.which('icat'):
+        raise RecoveryError('icat (Sleuth Kit) not found in PATH and no NTFS MFT record matched')
 
     try:
         result = subprocess.run(
