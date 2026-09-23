@@ -18,3 +18,7 @@ data/uploads/*
 !data/uploads/.gitkeep
 data/keys/*
 !data/keys/.gitkeep
+
+*.raw
+data/real_samples/
+

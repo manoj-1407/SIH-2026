@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
 from typing import Optional
 
-from app.api.deps import audit_logger
+from app.api.deps import audit_logger, case_store
 from app.api.validation import validate_case_id
 
 router = APIRouter(prefix='/cases/{case_id}/timeline', tags=['Audit Chain'])
@@ -14,6 +14,10 @@ router = APIRouter(prefix='/cases/{case_id}/timeline', tags=['Audit Chain'])
 def get_timeline(case_id: str):
     """Get the full chain-of-custody timeline for a case."""
     validate_case_id(case_id)
+    try:
+        case_store.get(case_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail='Case not found')
     return audit_logger.get_timeline(case_id)
 
 
@@ -24,6 +28,10 @@ def verify_audit_chain(case_id: str):
     Returns whether the chain is intact and details of any violations.
     """
     validate_case_id(case_id)
+    try:
+        case_store.get(case_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail='Case not found')
     is_valid, violations = audit_logger.verify_chain(case_id)
     return {
         'case_id': case_id,
