@@ -406,7 +406,7 @@ def generate_synthetic_disk_stream() -> bytes:
         b"xref\n0 4\n0000000000 65535 f\n0000000009 00000 n\n0000000058 00000 n\n0000000115 00000 n\n"
         b"trailer<</Size 4/Root 1 0 R>>\nstartxref\n185\n%%EOF\n"
     )
-    padding_end = b"\x55" * 256
+    padding_end = bytes((i * 37 + 11) % 256 for i in range(256))
     return padding_front + jpeg_data + padding_mid + png_data + padding_mid2 + pdf_data + padding_end
 
 

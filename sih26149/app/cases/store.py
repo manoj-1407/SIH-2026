@@ -106,7 +106,19 @@ class CaseStore:
         result_data: dict,
     ) -> Case:
         with self._lock_for(case_id):
-            case = self.get(case_id)
+            try:
+                case = self.get(case_id)
+            except CaseNotFoundError:
+                case = Case(
+                    case_id=case_id,
+                    created_at=time.time(),
+                    status=CaseStatus.ACTIVE,
+                    workflow=WorkflowType.FORENSIC,
+                    title=f'Auto-created {case_id}',
+                    description='Auto-created to capture an operation and evidence trail.',
+                    updated_at=time.time(),
+                )
+                self.save(case)
             if operation_id not in case.operation_ids:
                 case.operation_ids.append(operation_id)
             if evidence_id not in case.evidence_ids:

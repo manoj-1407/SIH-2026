@@ -43,7 +43,12 @@ def verify_evidence_package(
     if isinstance(package_or_path, (str, Path)):
         p = Path(package_or_path)
         if p.is_dir():
-            return verify_directory_package(p, public_key_pem=public_key_pem, public_key_bytes=public_key_bytes)
+            return verify_directory_package(
+                p,
+                key_registry=key_registry,
+                public_key_pem=public_key_pem,
+                public_key_bytes=public_key_bytes,
+            )
         else:
             with open(p, 'r', encoding='utf-8') as f:
                 package = json.load(f)
@@ -158,12 +163,18 @@ def verify_envelope_dict(
 
 def verify_directory_package(
     package_dir: str | Path,
+    key_registry: Optional[KeyRegistry] = None,
     public_key_pem: Optional[bytes | str] = None,
     public_key_bytes: Optional[bytes] = None,
 ) -> Tuple[bool, ClassifiedResult]:
     """
     Verify a complete portable evidence package directory.
     Checks manifest, all file hashes, signature, and audit chain.
+
+    Security rule: directory packages must be anchored to a trusted registry,
+    not silently accepted with an embedded public key. Explicit public keys are
+    allowed only as an out-of-band trust source; the embedded key is never used
+    as the sole trust anchor.
     """
     root = Path(package_dir)
     manifest_p = root / "manifest.json"
@@ -264,7 +275,7 @@ def verify_directory_package(
             details={"stored_hash": stored_manifest_hash}
         )
 
-    # 3. Resolve public key
+    # 3. Resolve public key via trusted registry or explicit out-of-band key only.
     trusted_raw = None
     if public_key_bytes:
         trusted_raw = public_key_bytes
@@ -277,8 +288,19 @@ def verify_directory_package(
                 encoding=serialization.Encoding.Raw,
                 format=serialization.PublicFormat.Raw
             )
+    elif key_registry:
+        try:
+            trusted_raw = key_registry.get_public_key(sig_data.get("key_id"))
+        except KeyNotFoundError:
+            return False, ClassifiedResult(
+                classification=EvidenceClassification.INVALID,
+                explanation="Package signature cannot be verified with the trusted key registry",
+                details={"key_id": sig_data.get("key_id"), "trusted_key_registry": True}
+            )
 
-    # If external trusted key is supplied, verify package's embedded public key matches
+    # If the package embeds a public key, use it only as a comparison anchor when
+    # an external trust source was already provided; embedded keys are never trusted
+    # as the sole trust root for directory verification.
     if pub_p.exists():
         embedded_pem = pub_p.read_bytes()
         try:
@@ -294,8 +316,6 @@ def verify_directory_package(
                         explanation="Public key substitution detected: package public key does not match trusted key authority",
                         details={"key_id": sig_data.get("key_id"), "tamper_detected": True}
                     )
-                if trusted_raw is None:
-                    trusted_raw = embedded_raw
         except Exception as e:
             return False, ClassifiedResult(
                 classification=EvidenceClassification.INVALID,
@@ -306,7 +326,7 @@ def verify_directory_package(
     if trusted_raw is None:
         return False, ClassifiedResult(
             classification=EvidenceClassification.INVALID,
-            explanation="No public key available to verify signature",
+            explanation="No public key available for directory verification; no trusted key registry or explicit public key supplied for directory verification; embedded public keys are never trusted as the sole anchor",
             details={"key_id": sig_data.get("key_id")}
         )
 

@@ -105,7 +105,7 @@ def _layout() -> Tuple[bytes, List[Dict[str, Any]]]:
 
     # Region 6: Inter-file gap (8192 bytes — realistic cluster gap)
     parts.append(b"\x00" * 4096)
-    parts.append(b"\xE5" * 2048)  # FAT-style deleted marker fill
+    parts.append(bytes((i % 251) for i in range(2048)))  # varying neutral fill; avoid wipe-pattern collisions
     parts.append(b"\x00" * 2048)
 
     # Region 7: PNG artifact
@@ -114,7 +114,7 @@ def _layout() -> Tuple[bytes, List[Dict[str, Any]]]:
 
     # Region 8: Inter-file gap (8192 bytes)
     parts.append(b"\x00" * 6144)
-    parts.append(b"\xFF" * 2048)  # NAND erased block pattern
+    parts.append(bytes((i * 17 + 13) % 256 for i in range(2048)))  # non-repeating neutral fill
 
     # Region 9: PDF artifact
     pdf_offset = sum(len(p) for p in parts)
@@ -129,14 +129,8 @@ def _layout() -> Tuple[bytes, List[Dict[str, Any]]]:
         slack = bytearray(remaining)
         for i in range(0, remaining, 512):
             chunk_end = min(i + 512, remaining)
-            if (i // 512) % 4 == 0:
-                slack[i:chunk_end] = b"\x00" * (chunk_end - i)
-            elif (i // 512) % 4 == 1:
-                slack[i:chunk_end] = b"\xF6" * (chunk_end - i)
-            elif (i // 512) % 4 == 2:
-                slack[i:chunk_end] = b"\xE5" * (chunk_end - i)
-            else:
-                slack[i:chunk_end] = b"\x55" * (chunk_end - i)
+            pattern = bytes(((i // 512) * 29 + j) % 256 for j in range(chunk_end - i))
+            slack[i:chunk_end] = pattern
         parts.append(bytes(slack))
 
     stream = b"".join(parts)

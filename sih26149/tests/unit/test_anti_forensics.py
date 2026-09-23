@@ -85,3 +85,11 @@ def test_analyze_anti_forensics_facade_tampered():
     assert res["anti_forensics_detected"] is True
     assert res["verdict"] == "DELIBERATE_CONCEALMENT_DETECTED"
     assert res["by_severity"]["CRITICAL"] >= 1
+
+
+def test_synthetic_demo_padding_does_not_trigger_wipe_pattern_detection():
+    from app.forensics.synthetic import generate_synthetic_disk_stream
+
+    stream = generate_synthetic_disk_stream()
+    findings = scan_raw_clusters_for_anti_forensics(stream, cluster_size=4096)
+    assert not any(f.indicator == AntiForensicIndicator.WIPE_TOOL_FIXED_PATTERN for f in findings)

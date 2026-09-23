@@ -1,7 +1,10 @@
 """Unit tests for trust registry / key registry."""
 import pytest
+from pathlib import Path
 from app.core.trust import TrustRegistry, KeyStatus, KeyNotFoundError, TrustRegistryError
 from app.core.signing import generate_keypair
+from app.core.package import EvidencePackageBuilder
+from app.core.independent_verifier import verify_directory_package
 
 
 @pytest.fixture
@@ -109,3 +112,23 @@ def test_substituted_key_rejected(registry, keypair):
     # If attacker substitutes key_id pointing to attacker_pub: won't be in registry
     with pytest.raises(KeyNotFoundError):
         registry.get_public_key('attacker-key-not-registered')
+
+
+def test_directory_verifier_requires_trusted_key_registry(tmp_path, keypair):
+    """Portable directory verification must not silently trust embedded keys when no trust anchor is supplied."""
+    priv_pem, _ = keypair
+    priv_obj = __import__('cryptography.hazmat.primitives.serialization', fromlist=['load_pem_private_key']).load_pem_private_key(priv_pem, password=None)
+    pub_pem = priv_obj.public_key().public_bytes(
+        encoding=__import__('cryptography.hazmat.primitives.serialization', fromlist=['Encoding']).Encoding.PEM,
+        format=__import__('cryptography.hazmat.primitives.serialization', fromlist=['PublicFormat']).PublicFormat.SubjectPublicKeyInfo,
+    )
+    builder = EvidencePackageBuilder('CASE-ALLOWLIST-01', tmp_path)
+    builder.write_source_metadata({'source_path': '/tmp/test.raw', 'sha256': 'abc', 'size_bytes': 1})
+    builder.write_recovery_artifacts({'total_carved': 1}, [{'offset': 0, 'type': 'JPEG', 'sha256': 'abc'}])
+    builder.write_sanitization_result({'target': '/tmp/test.raw', 'method': 'CLEAR_ZERO_FILL', 'verified': True})
+    meta = builder.build_and_sign(private_key_pem=priv_pem, public_key_pem=pub_pem, key_id='KEY-01')
+    package_dir = Path(meta['package_path'])
+
+    is_valid, result = verify_directory_package(package_dir)
+    assert is_valid is False
+    assert 'trusted key registry' in result.explanation.lower()

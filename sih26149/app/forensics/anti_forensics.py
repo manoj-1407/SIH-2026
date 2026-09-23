@@ -239,7 +239,9 @@ def scan_raw_clusters_for_anti_forensics(
     findings: List[AntiForensicFinding] = []
     limit = min(len(data), max_scan_bytes)
 
-    # Recognizable wiping patterns (DoD / SDelete / Gutmann fragments)
+    # Recognizable wiping patterns (DoD / SDelete / Gutmann fragments).
+    # Keep the threshold tight enough to detect genuine wipe passes while avoiding
+    # the neutral padding used in the synthetic demo generator.
     wipe_patterns = [
         (b"\x55" * 64, "0x55 (DoD 5220.22-M / SDelete Pass Pattern)"),
         (b"\xAA" * 64, "0xAA (DoD 5220.22-M / SDelete Pass Pattern)"),

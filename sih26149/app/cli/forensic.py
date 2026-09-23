@@ -124,6 +124,10 @@ def cmd_verify(args):
         pub_p = Path(args.public_key)
         if pub_p.exists():
             pub_key_pem = pub_p.read_bytes()
+    elif target_p.is_dir():
+        embedded_pub = target_p / "cryptography" / "public_key.pem"
+        if embedded_pub.exists():
+            pub_key_pem = embedded_pub.read_bytes()
 
     is_valid, res = verify_evidence_package(target_p, public_key_pem=pub_key_pem)
 

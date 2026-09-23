@@ -181,33 +181,27 @@ def execute_forensic_proof_loop(
     signed_pkg = sign_evidence_envelope(payload, priv_key)
     evidence_store.save(signed_pkg)
 
-    try:
-        case_store.record_operation_and_evidence(
-            case_id=case_id,
-            operation_id=op_id,
-            evidence_id=ev_id,
-            operation_type='PROOF_LOOP',
-            result_data=signed_pkg,
-        )
-    except Exception:
-        pass
+    case_store.record_operation_and_evidence(
+        case_id=case_id,
+        operation_id=op_id,
+        evidence_id=ev_id,
+        operation_type='PROOF_LOOP',
+        result_data=signed_pkg,
+    )
 
-    try:
-        audit_logger.log(
-            case_id=case_id,
-            event_type='PROOF_LOOP_COMPLETED',
-            actor='VALIDATION_PROBE_ENGINE',
-            operation_id=op_id,
-            evidence_id=ev_id,
-            details={
-                'validation_status': validation_status,
-                'erasure_percentage': round(erasure_rate * 100, 1),
-                'method_applied': method_applied,
-            },
-            hash_ref=signed_pkg.get('evidence_hash'),
-        )
-    except Exception:
-        pass
+    audit_logger.log(
+        case_id=case_id,
+        event_type='PROOF_LOOP_COMPLETED',
+        actor='VALIDATION_PROBE_ENGINE',
+        operation_id=op_id,
+        evidence_id=ev_id,
+        details={
+            'validation_status': validation_status,
+            'erasure_percentage': round(erasure_rate * 100, 1),
+            'method_applied': method_applied,
+        },
+        hash_ref=signed_pkg.get('evidence_hash'),
+    )
 
     return {
         "proof_result": proof_result,

@@ -48,9 +48,9 @@ def run_full_demo():
     disk_data = (
         (b'\x00' * 4096) +
         jpeg_bytes +
-        (b'\x55' * 8192) +
+        bytes((i * 17 + 3) % 256 for i in range(8192)) +
         png_bytes +
-        (b'\xAA' * 4096) +
+        bytes((i * 29 + 9) % 256 for i in range(4096)) +
         pdf_bytes +
         (b'\x00' * 2048)
     )
