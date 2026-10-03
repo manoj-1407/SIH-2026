@@ -1,4 +1,5 @@
 """Case persistence — atomic writes, one JSON file per case."""
+import shutil
 import threading
 import time
 from pathlib import Path
@@ -131,3 +132,93 @@ class CaseStore:
 
             self.save(case)
             return case
+
+
+class CaseDemoSnapshot:
+    def __init__(self, cases_dir: str | Path, evidence_dir: str | Path, audit_dir: str | Path, backup_dir: str | Path):
+        self.cases_dir = Path(cases_dir)
+        self.evidence_dir = Path(evidence_dir)
+        self.audit_dir = Path(audit_dir)
+        self.backup_dir = Path(backup_dir)
+        self.backup_dir.mkdir(parents=True, exist_ok=True)
+        self._lock_guard = threading.Lock()
+        self._case_locks: dict[str, threading.Lock] = {}
+
+    def _lock_for(self, case_id: str) -> threading.Lock:
+        with self._lock_guard:
+            lock = self._case_locks.get(case_id)
+            if lock is None:
+                lock = threading.Lock()
+                self._case_locks[case_id] = lock
+            return lock
+
+    def _case_backup_dir(self, case_id: str) -> Path:
+        return self.backup_dir / case_id
+
+    def _evidence_ids_for_case(self, case_id: str) -> list[str]:
+        ids: list[str] = []
+        for p in list_json_files(self.evidence_dir):
+            try:
+                pkg = load_json(p)
+                if pkg.get('case_id') == case_id:
+                    ids.append(p.stem)
+            except PersistenceError:
+                continue
+        return ids
+
+    def has_snapshot(self, case_id: str) -> bool:
+        return self._case_backup_dir(case_id).is_dir()
+
+    def create_snapshot(self, case_id: str) -> bool:
+        with self._lock_for(case_id):
+            backup = self._case_backup_dir(case_id)
+            if backup.is_dir():
+                shutil.rmtree(backup)
+            backup.mkdir(parents=True, exist_ok=True)
+
+            (backup / 'cases').mkdir(exist_ok=True)
+            (backup / 'evidence').mkdir(exist_ok=True)
+            (backup / 'audit').mkdir(exist_ok=True)
+
+            case_src = self.cases_dir / f'{case_id}.json'
+            if case_src.exists():
+                shutil.copy2(case_src, backup / 'cases' / f'{case_id}.json')
+
+            audit_src = self.audit_dir / f'{case_id}.jsonl'
+            if audit_src.exists():
+                shutil.copy2(audit_src, backup / 'audit' / f'{case_id}.jsonl')
+
+            for evid in self._evidence_ids_for_case(case_id):
+                src = self.evidence_dir / f'{evid}.json'
+                if src.exists():
+                    shutil.copy2(src, backup / 'evidence' / f'{evid}.json')
+
+            return True
+
+    def restore_snapshot(self, case_id: str) -> bool:
+        with self._lock_for(case_id):
+            backup = self._case_backup_dir(case_id)
+            if not backup.is_dir():
+                return False
+
+            case_backup = backup / 'cases' / f'{case_id}.json'
+            if case_backup.exists():
+                dest = self.cases_dir / f'{case_id}.json'
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(case_backup, dest)
+
+            audit_backup = backup / 'audit' / f'{case_id}.jsonl'
+            dest_audit = self.audit_dir / f'{case_id}.jsonl'
+            dest_audit.parent.mkdir(parents=True, exist_ok=True)
+            if audit_backup.exists():
+                shutil.copy2(audit_backup, dest_audit)
+            elif dest_audit.exists():
+                dest_audit.unlink()
+
+            for evid_p in (backup / 'evidence').glob('*.json'):
+                dest = self.evidence_dir / evid_p.name
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(evid_p, dest)
+
+            shutil.rmtree(backup)
+            return True

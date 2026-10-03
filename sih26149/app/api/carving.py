@@ -8,6 +8,9 @@ from app.api.deps import case_store, audit_logger, evidence_store, get_or_create
 from app.api.validation import validate_case_id
 from app.forensics.carving import carve_image_summary
 from app.core.evidence_envelope import build_evidence_payload, sign_evidence_envelope, new_operation_id, new_evidence_id
+from app.core.legal_reliability import generate_artifact_admissibility_paragraph
+
+DEFAULT_EXAMINER = {'examiner_id': 'DEFAULT-EXAMINER-001', 'examiner_name': 'NTRO Certified Examiner'}
 
 router = APIRouter(prefix='/cases/{case_id}', tags=['Advanced Carving'])
 
@@ -41,6 +44,21 @@ def run_carving(case_id: str, req: CarvingRequest):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Carving failed: {e}')
+
+    try:
+        case_dict = case.to_dict() if hasattr(case, 'to_dict') else case
+    except Exception:
+        case_dict = {'case_id': case_id, 'title': ''}
+    case_dict.setdefault('case_id', case_id)
+
+    for artifact_key in ('artifacts', 'carved_files', 'carved_artifacts'):
+        artifacts = summary.get(artifact_key, [])
+        if artifacts:
+            for artifact in artifacts:
+                try:
+                    artifact['legal_reliability_text'] = generate_artifact_admissibility_paragraph(artifact, case_dict, DEFAULT_EXAMINER)
+                except Exception:
+                    artifact['legal_reliability_text'] = ''
 
     # Build signed evidence package for this carving run
     key_id, priv_key = get_or_create_primary_key()

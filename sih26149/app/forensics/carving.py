@@ -20,10 +20,11 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
 
-# Bounded bifragment reconstruction parameters
-CLUSTER_SIZE     = 512 * 1024    # 512 KB typical cluster gap
-FRAGMENT_HOP_COUNT = 4           # Scan up to 4 cluster hops forward (2 MB)
-MAX_FRAGMENT_SCAN = CLUSTER_SIZE * FRAGMENT_HOP_COUNT
+CLUSTER_SIZE      = 512 * 1024
+FRAGMENT_HOP_COUNT = 4
+MAX_FRAGMENT_SCAN = 16 * 1024 * 1024
+CLUSTER_FORWARD_HOPS = 3
+DEEP_BIFRAGMENT_ENABLED = False
 
 
 class CarvingConfidence(str, Enum):
@@ -129,7 +130,7 @@ _JPEG_SOI = b'\xFF\xD8\xFF'
 _JPEG_EOI = b'\xFF\xD9'
 
 
-def _carve_jpeg(data: bytes, offset: int) -> Optional[CarvedFile]:
+def _carve_jpeg(data: bytes, offset: int, max_fragment_scan=None, deep_bifragment=False) -> Optional[CarvedFile]:
     """Parse JPEG structure from SOI marker at `offset`.
 
     If EOI is not found contiguously, performs a bounded forward gap-scan
@@ -277,7 +278,7 @@ _PNG_IHDR   = b'IHDR'
 _PNG_IEND   = b'IEND'
 
 
-def _carve_png(data: bytes, offset: int) -> Optional[CarvedFile]:
+def _carve_png(data: bytes, offset: int, max_fragment_scan=None) -> Optional[CarvedFile]:
     """Parse PNG structure from 8-byte magic at `offset`."""
     factors = []
     if data[offset:offset + 8] != _PNG_MAGIC:
@@ -374,7 +375,7 @@ _PDF_HEADER = b'%PDF-'
 _PDF_EOF    = b'%%EOF'
 
 
-def _carve_pdf(data: bytes, offset: int) -> Optional[CarvedFile]:
+def _carve_pdf(data: bytes, offset: int, max_fragment_scan=None) -> Optional[CarvedFile]:
     """Carve PDF from %PDF- header."""
     factors = []
     if not data[offset:offset + 5] == _PDF_HEADER:
@@ -569,17 +570,639 @@ def _carve_mp4(data: bytes, offset: int) -> Optional[CarvedFile]:
     )
 
 
+# ── OLE2 CFB / DOC / XLS / PPT / MSG Carver ────────────────────────────────────
+
+_OLE_MAGIC = b'\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1'
+_OLE_CLASS_MSG = b'\x00\x01\x00\x00\x00\x00\x00\x00\xc0\x00\x00\x00\x00\x00\x00\x46'
+
+
+def _carve_ole(data: bytes, offset: int) -> Optional[CarvedFile]:
+    factors = []
+    length = len(data)
+    if offset + 512 > length:
+        return None
+    if data[offset:offset + 8] != _OLE_MAGIC:
+        return None
+    if offset % 512 != 0:
+        pass
+
+    factors.append("OLE2 CFB magic signature verified")
+
+    sector_shift = _read_u16be(data, offset + 0x1E)
+    mini_sector_shift = _read_u16be(data, offset + 0x20)
+    num_dir_sectors = _read_u32le(data, offset + 0x28)
+
+    sector_checks = 0
+    if sector_shift in (9, 12):
+        sector_checks += 1
+        factors.append(f"Sector shift valid: {sector_shift}")
+    else:
+        factors.append(f"Invalid sector shift: {sector_shift}")
+
+    if mini_sector_shift == 6:
+        sector_checks += 1
+        factors.append("Mini sector shift valid: 6")
+    else:
+        factors.append(f"Invalid mini sector shift: {mini_sector_shift}")
+
+    if num_dir_sectors != 0:
+        sector_checks += 1
+        factors.append(f"Num Directory Sectors nonzero: {num_dir_sectors}")
+    else:
+        factors.append("Num Directory Sectors is 0 (allowed for small files)")
+        sector_checks += 1
+
+    sector_size = 1 << sector_shift if sector_shift in (9, 12) else 512
+
+    file_type = "OLE"
+    subtype_found = False
+
+    first_sector_start = offset + 512
+    if first_sector_start + sector_size <= length:
+        first_sector = data[first_sector_start:first_sector_start + sector_size]
+
+        if len(first_sector) >= 0x200 and first_sector[0x1FE:0x200] == b'\xEC\xA5':
+            file_type = "DOC"
+            factors.append("DOC: WordDocument stream magic (EC A5) at known offset")
+            subtype_found = True
+
+        if not subtype_found and b'\x09\x08\x10\x00' in first_sector[:128]:
+            file_type = "XLS"
+            factors.append("XLS: BIFF8 Workbook substream magic detected")
+            subtype_found = True
+
+        if not subtype_found and (b'Current User' in first_sector or b'Powerpoint Document' in first_sector):
+            file_type = "PPT"
+            factors.append("PPT: Current User / Powerpoint Document stream heuristic")
+            subtype_found = True
+
+        if not subtype_found:
+            search_region = data[first_sector_start:min(first_sector_start + sector_size * 4, length)]
+            if b'__recip_version1.0_' in search_region or b'\x00\x01\x00\x00\x00\x00\x00\x00\xc0\x00\x00\x00\x00\x00\x00\x46' in search_region:
+                file_type = "MSG"
+                factors.append("MSG: Outlook Storage Item class detected")
+                subtype_found = True
+
+    declared_size_guess = min(length - offset, 100 * 1024 * 1024)
+    stream_scan_end = min(offset + declared_size_guess, length)
+
+    ole_end_markers = [b'\xFE\xFF', b'\xFF\xFE']
+    last_ole_pos = offset + 512
+    scan_pos = offset + 512
+    while scan_pos < stream_scan_end - 2:
+        if data[scan_pos] in (0xFE, 0xFF):
+            last_ole_pos = scan_pos
+        scan_pos += 1
+
+    end_guess = min(stream_scan_end, last_ole_pos + sector_size)
+
+    if sector_checks == 3:
+        conf = CarvingConfidence.HIGH
+        factors.append("All 3 OLE sector checks passed → HIGH confidence")
+    else:
+        conf = CarvingConfidence.HEADER_ONLY
+        factors.append(f"Only {sector_checks}/3 OLE sector checks → HEADER_ONLY")
+
+    raw = data[offset:min(end_guess, length)]
+    return CarvedFile(
+        offset=offset, size=len(raw),
+        file_type=file_type, confidence=conf,
+        confidence_score=conf.score,
+        sha256=_sha256(raw), evidence_factors=factors
+    )
+
+
+# ── EML Carver ─────────────────────────────────────────────────────────────────
+
+_EML_HEADERS_STANDARD = [b'From:', b'To:', b'Subject:', b'Date:']
+_EML_BOUNDARY_END = b'--'
+
+
+def _carve_eml(data: bytes, offset: int) -> Optional[CarvedFile]:
+    factors = []
+    length = len(data)
+    if offset + 32 > length:
+        return None
+
+    preamble = data[offset:min(offset + 8192, length)]
+    line_starts = []
+    for line in preamble.split(b'\n'):
+        stripped = line.lstrip(b'\r\t ')
+        line_starts.append(stripped)
+
+    top_matches = 0
+    for ls in line_starts[:10]:
+        if ls.startswith(b'From - '):
+            top_matches += 1
+            factors.append("EML: 'From - ' mbox line-start signature")
+            break
+        if ls.startswith(b'Received: from '):
+            top_matches += 1
+            factors.append("EML: 'Received: from ' line-start")
+            break
+        if ls.startswith(b'Content-Type: multipart/'):
+            top_matches += 1
+            factors.append("EML: 'Content-Type: multipart/' near top")
+            break
+
+    if top_matches == 0:
+        return None
+
+    header_count = 0
+    for h in _EML_HEADERS_STANDARD:
+        if h in preamble:
+            header_count += 1
+            factors.append(f"Standard header present: {h.decode('ascii', 'replace')}")
+
+    scan_end = min(offset + 100 * 1024 * 1024, length)
+    scan_pos = offset
+    final_end = scan_end
+
+    last_boundary_idx = data.rfind(b'\n--', offset, scan_end)
+    if last_boundary_idx != -1:
+        after_last = data[last_boundary_idx + 1:last_boundary_idx + 128]
+        if after_last.startswith(b'--'):
+            nl_pos = data.find(b'\n', last_boundary_idx + 3)
+            if nl_pos == -1:
+                nl_pos = min(last_boundary_idx + 128, scan_end)
+            final_end = nl_pos
+
+    raw = data[offset:min(final_end, length)]
+    if header_count >= 2:
+        conf = CarvingConfidence.HIGH
+        factors.append(f"{header_count} standard headers present → HIGH confidence")
+    else:
+        conf = CarvingConfidence.PARTIAL_STRUCT
+        factors.append(f"Only {header_count} standard headers → PARTIAL_STRUCT")
+
+    return CarvedFile(
+        offset=offset, size=len(raw),
+        file_type="EML", confidence=conf,
+        confidence_score=conf.score,
+        sha256=_sha256(raw), evidence_factors=factors
+    )
+
+
+# ── MSG Carver (OLE alias + stronger Outlook check) ────────────────────────────
+
+def _carve_msg(data: bytes, offset: int) -> Optional[CarvedFile]:
+    carved_ole = _carve_ole(data, offset)
+    if carved_ole is None:
+        return None
+
+    length = len(data)
+    search_region = data[offset:min(offset + 512 * 1024, length)]
+    is_msg = False
+
+    if b'__recip_version1.0_' in search_region:
+        is_msg = True
+        carved_ole.evidence_factors.append("MSG: recipient storage table found")
+    if _OLE_CLASS_MSG in search_region:
+        is_msg = True
+        carved_ole.evidence_factors.append("MSG: IMessage OLE class GUID present")
+    if b'001A0003' in search_region or b'0037001E' in search_region:
+        is_msg = True
+        carved_ole.evidence_factors.append("MSG: MAPI property stream tags")
+
+    if not is_msg and carved_ole.file_type != "MSG":
+        return None
+
+    carved_ole.file_type = "MSG"
+    return carved_ole
+
+
+# ── BMP Carver ─────────────────────────────────────────────────────────────────
+
+_BMP_MAGIC = b'BM'
+
+
+def _carve_bmp(data: bytes, offset: int) -> Optional[CarvedFile]:
+    factors = []
+    length = len(data)
+    if offset + 26 > length:
+        return None
+    if data[offset:offset + 2] != _BMP_MAGIC:
+        return None
+
+    factors.append("BMP: BM magic verified")
+
+    file_size = _read_u32le(data, offset + 0x02)
+    pixel_offset = _read_u32le(data, offset + 0x0A)
+
+    factors.append(f"BMP: declared size {file_size} bytes, pixel data offset {pixel_offset}")
+
+    valid = True
+    if pixel_offset <= 14:
+        factors.append("BMP: invalid pixel offset (≤14)")
+        valid = False
+    if file_size < 54:
+        factors.append("BMP: file size < 54 header minimum")
+        valid = False
+
+    end = offset + file_size if valid and offset + file_size <= length else min(offset + max(pixel_offset + 54, 128), length)
+
+    if valid and file_size >= 54 and pixel_offset > 14:
+        conf = CarvingConfidence.HIGH
+        factors.append("BMP: size + offset structurally valid → HIGH")
+    else:
+        conf = CarvingConfidence.HEADER_ONLY
+        factors.append("BMP: structure checks failed → HEADER_ONLY")
+
+    raw = data[offset:min(end, length)]
+    return CarvedFile(
+        offset=offset, size=len(raw),
+        file_type="BMP", confidence=conf,
+        confidence_score=conf.score,
+        sha256=_sha256(raw), evidence_factors=factors
+    )
+
+
+# ── GIF Carver ─────────────────────────────────────────────────────────────────
+
+_GIF_MAGICS = [b'GIF87a', b'GIF89a']
+_GIF_TRAILER = 0x3B
+_GIF_IMAGE_SEP = 0x2C
+_GIF_GCE = 0x21
+
+
+def _carve_gif(data: bytes, offset: int) -> Optional[CarvedFile]:
+    factors = []
+    length = len(data)
+    if offset + 14 > length:
+        return None
+    magic = data[offset:offset + 6]
+    if magic not in _GIF_MAGICS:
+        return None
+
+    factors.append(f"GIF: {magic.decode('ascii', 'replace')} magic verified")
+
+    flags_byte = data[offset + 10]
+    factors.append(f"GIF: logical screen descriptor flags 0x{flags_byte:02X}")
+
+    gct_entries = 0
+    if flags_byte & 0x80:
+        gct_size = 2 << (flags_byte & 0x07)
+        gct_entries = gct_size * 3
+        factors.append(f"GIF: global color table present, {gct_size} entries")
+
+    gce_found = False
+    image_block_found = False
+    trailer_found = False
+
+    scan_start = offset + 13 + gct_entries
+    scan_end = min(offset + 100 * 1024 * 1024, length)
+    pos = scan_start
+    last_marker_pos = scan_start
+
+    while pos < scan_end:
+        b = data[pos]
+        if b == _GIF_GCE:
+            gce_found = True
+            last_marker_pos = pos
+        elif b == _GIF_IMAGE_SEP:
+            image_block_found = True
+            last_marker_pos = pos
+        elif b == _GIF_TRAILER:
+            trailer_found = True
+            last_marker_pos = pos
+            break
+        pos += 1
+
+    if gce_found:
+        factors.append("GIF: GCE (0x21) block present")
+    if image_block_found:
+        factors.append("GIF: Image separator (0x2C) present")
+    if trailer_found:
+        factors.append("GIF: Trailer (0x3B) terminator found")
+
+    end = last_marker_pos + 1 if trailer_found else min(pos + 1, scan_end)
+
+    if gce_found and image_block_found and trailer_found:
+        conf = CarvingConfidence.INTACT
+        factors.append("GIF: GCE+Image+Trailer present → INTACT")
+    elif image_block_found or trailer_found:
+        conf = CarvingConfidence.HIGH
+        factors.append("GIF: structural blocks present → HIGH")
+    else:
+        conf = CarvingConfidence.HEADER_ONLY
+        factors.append("GIF: no image/trailer blocks → HEADER_ONLY")
+
+    raw = data[offset:min(end, length)]
+    return CarvedFile(
+        offset=offset, size=len(raw),
+        file_type="GIF", confidence=conf,
+        confidence_score=conf.score,
+        sha256=_sha256(raw), evidence_factors=factors
+    )
+
+
+# ── TIFF Carver ────────────────────────────────────────────────────────────────
+
+_TIFF_LE = b'II*\x00'
+_TIFF_BE = b'MM\x00*'
+
+
+def _carve_tiff(data: bytes, offset: int) -> Optional[CarvedFile]:
+    factors = []
+    length = len(data)
+    if offset + 8 > length:
+        return None
+
+    hdr = data[offset:offset + 4]
+    is_le = hdr == _TIFF_LE
+    is_be = hdr == _TIFF_BE
+    if not (is_le or is_be):
+        return None
+
+    endian = "<" if is_le else ">"
+    factors.append(f"TIFF: {'little' if is_le else 'big'}-endian header verified")
+
+    ifd_offset = struct.unpack_from(endian + "I", data, offset + 0x04)[0]
+    factors.append(f"TIFF: first IFD offset = {ifd_offset}")
+
+    if ifd_offset <= 8:
+        conf = CarvingConfidence.HEADER_ONLY
+        factors.append("TIFF: IFD offset ≤ 8 invalid → HEADER_ONLY")
+        end = min(offset + 128, length)
+    else:
+        declared_ifd_range = ifd_offset * 2
+        if ifd_offset <= declared_ifd_range:
+            conf = CarvingConfidence.HIGH
+            factors.append("TIFF: IFD offset valid within 2× range → HIGH")
+        else:
+            conf = CarvingConfidence.PARTIAL_STRUCT
+            factors.append("TIFF: IFD out of 2× range → PARTIAL")
+
+        scan_pos = offset + ifd_offset
+        if scan_pos < length and scan_pos - offset < 100 * 1024 * 1024:
+            if scan_pos + 2 <= length:
+                num_entries = struct.unpack_from(endian + "H", data, scan_pos)[0]
+                if 0 < num_entries < 2000:
+                    factors.append(f"TIFF: {num_entries} IFD entries")
+                    scan_pos += 2 + (12 * num_entries) + 4
+                    end = min(scan_pos, length)
+                else:
+                    end = min(offset + ifd_offset + 512, length)
+            else:
+                end = min(offset + ifd_offset + 512, length)
+        else:
+            end = min(offset + 1024, length)
+
+    raw = data[offset:min(end, length)]
+    return CarvedFile(
+        offset=offset, size=len(raw),
+        file_type="TIFF", confidence=conf,
+        confidence_score=conf.score,
+        sha256=_sha256(raw), evidence_factors=factors
+    )
+
+
+# ── MOV / MP4 ftyp Carver ──────────────────────────────────────────────────────
+
+_MOV_BRANDS = {b'isom', b'mp41', b'qt  ', b'M4A ', b'M4V '}
+
+
+def _carve_mov(data: bytes, offset: int) -> Optional[CarvedFile]:
+    factors = []
+    length = len(data)
+    if offset + 16 > length:
+        return None
+
+    box_size = _read_u32be_full(data, offset)
+    box_type = data[offset + 4:offset + 8]
+    if box_type != b'ftyp':
+        return None
+
+    brand = data[offset + 8:offset + 12]
+    if brand not in _MOV_BRANDS and brand not in _MP4_BRANDS:
+        return None
+
+    factors.append(f"MOV/MP4: ftyp brand {brand.decode(errors='replace')}")
+
+    compat_start = offset + 16
+    compat_brands = []
+    scan_c = compat_start
+    while scan_c + 4 <= min(compat_start + 256, length) and data[scan_c:scan_c + 4].isalpha():
+        compat_brands.append(data[scan_c:scan_c + 4])
+        scan_c += 4
+
+    if compat_brands:
+        factors.append(f"MOV: {len(compat_brands)} compatible brands listed")
+
+    pos = offset
+    search_limit = min(offset + 500 * 1024 * 1024, length)
+    has_moov = False
+    has_mdat = False
+
+    while pos + 8 <= search_limit:
+        atom_size = _read_u32be_full(data, pos)
+        if atom_size < 8:
+            break
+        atom_type = data[pos + 4:pos + 8]
+        if atom_type == b'moov':
+            has_moov = True
+            factors.append("MOV: moov box found")
+        elif atom_type == b'mdat':
+            has_mdat = True
+            factors.append("MOV: mdat box found")
+        pos += atom_size
+        if pos >= search_limit:
+            break
+
+    file_type = "MOV"
+    if brand in _MP4_BRANDS:
+        file_type = "MP4"
+
+    raw = data[offset:min(pos, length)]
+    if has_moov and has_mdat:
+        conf = CarvingConfidence.INTACT
+    elif has_moov:
+        conf = CarvingConfidence.HIGH
+    else:
+        conf = CarvingConfidence.PARTIAL_STRUCT
+
+    return CarvedFile(
+        offset=offset, size=len(raw),
+        file_type=file_type, confidence=conf,
+        confidence_score=conf.score,
+        sha256=_sha256(raw), evidence_factors=factors,
+        is_bifragmented=not (has_moov and has_mdat)
+    )
+
+
+# ── MP3 Carver ─────────────────────────────────────────────────────────────────
+
+_MP3_ID3 = b'ID3'
+_MP3_SYNC_MASK = 0xFFE0
+_MP3_SYNC_MASK_WIDE = 0xFFF0
+
+
+def _syncsafe_int(b: bytes) -> int:
+    if len(b) < 4:
+        return 0
+    return ((b[0] & 0x7F) << 21) | ((b[1] & 0x7F) << 14) | ((b[2] & 0x7F) << 7) | (b[3] & 0x7F)
+
+
+def _carve_mp3(data: bytes, offset: int) -> Optional[CarvedFile]:
+    factors = []
+    length = len(data)
+    if offset + 10 > length:
+        return None
+
+    hdr = data[offset:offset + 3]
+    has_id3 = hdr == _MP3_ID3
+    frame_sync_val = struct.unpack_from(">H", data, offset)[0]
+    has_sync = (frame_sync_val & _MP3_SYNC_MASK) == _MP3_SYNC_MASK or (frame_sync_val & _MP3_SYNC_MASK_WIDE) == _MP3_SYNC_MASK_WIDE
+
+    if not (has_id3 or has_sync):
+        return None
+
+    declared_size = 0
+
+    if has_id3:
+        factors.append("MP3: ID3 tag header detected")
+        size_bytes = data[offset + 6:offset + 10]
+        declared_size = 10 + _syncsafe_int(size_bytes)
+        factors.append(f"MP3: ID3 syncsafe size = {declared_size} bytes")
+    else:
+        factors.append("MP3: MPEG frame sync word detected")
+        hdr_word = struct.unpack_from(">I", data, offset)[0]
+        version = (hdr_word >> 19) & 0x3
+        layer = (hdr_word >> 17) & 0x3
+        bitrate_idx = (hdr_word >> 12) & 0xF
+        sample_rate_idx = (hdr_word >> 10) & 0x3
+        padding = (hdr_word >> 9) & 0x1
+
+        factors.append(f"MP3: MPEG v{version} layer {4-layer}")
+
+        layer_ok = layer in (1, 2, 3)
+        br_ok = bitrate_idx not in (0, 0xF)
+        sr_ok = sample_rate_idx != 0x3
+
+        if not (layer_ok and br_ok and sr_ok):
+            raw = data[offset:min(offset + 128, length)]
+            conf = CarvingConfidence.HEADER_ONLY
+            factors.append("MP3: invalid MPEG header fields → HEADER_ONLY")
+            return CarvedFile(
+                offset=offset, size=len(raw),
+                file_type="MP3", confidence=conf,
+                confidence_score=conf.score,
+                sha256=_sha256(raw), evidence_factors=factors
+            )
+
+    scan_start = offset + (declared_size if declared_size > 0 else 4)
+    scan_end = min(offset + 500 * 1024 * 1024, length)
+    pos = scan_start
+    frame_count = 1 if has_sync else 0
+    last_pos = offset + max(declared_size, 4)
+
+    while pos < scan_end - 4:
+        val = struct.unpack_from(">H", data, pos)[0]
+        if (val & _MP3_SYNC_MASK) == _MP3_SYNC_MASK:
+            frame_count += 1
+            last_pos = pos
+            skip = 576 if (struct.unpack_from(">I", data, pos)[0] >> 17) & 0x3 == 3 else 417
+            pos += max(skip, 4)
+            continue
+        pos += 1
+
+    if frame_count > 0:
+        factors.append(f"MP3: {frame_count} MPEG frames counted")
+
+    end = min(last_pos + 2048, scan_end)
+
+    if declared_size > 0 and frame_count > 1:
+        conf = CarvingConfidence.HIGH
+        factors.append("MP3: ID3 + MPEG frames → HIGH")
+    elif frame_count > 1:
+        conf = CarvingConfidence.HIGH
+        factors.append("MP3: multiple MPEG frames → HIGH")
+    elif declared_size > 0:
+        conf = CarvingConfidence.PARTIAL_STRUCT
+        factors.append("MP3: only ID3 tag → PARTIAL")
+    else:
+        conf = CarvingConfidence.HEADER_ONLY
+        factors.append("MP3: single frame → HEADER_ONLY")
+
+    raw = data[offset:min(end, length)]
+    return CarvedFile(
+        offset=offset, size=len(raw),
+        file_type="MP3", confidence=conf,
+        confidence_score=conf.score,
+        sha256=_sha256(raw), evidence_factors=factors
+    )
+
+
+# ── AVI (RIFF) Carver ──────────────────────────────────────────────────────────
+
+_RIFF_MAGIC = b'RIFF'
+_AVI_FORM = b'AVI '
+
+
+def _carve_avi(data: bytes, offset: int) -> Optional[CarvedFile]:
+    factors = []
+    length = len(data)
+    if offset + 12 > length:
+        return None
+
+    if data[offset:offset + 4] != _RIFF_MAGIC:
+        return None
+    if data[offset + 8:offset + 12] != _AVI_FORM:
+        return None
+
+    factors.append("AVI: RIFF....AVI header verified")
+
+    riff_size = _read_u32le(data, offset + 0x04)
+    factors.append(f"AVI: RIFF size field = {riff_size} bytes")
+
+    size_ok = riff_size >= 40
+
+    if size_ok:
+        conf = CarvingConfidence.HIGH
+        factors.append("AVI: RIFF size ≥ 40 plausible → HIGH")
+    else:
+        conf = CarvingConfidence.HEADER_ONLY
+        factors.append("AVI: RIFF size < 40 → HEADER_ONLY")
+
+    declared_end = offset + 8 + riff_size if size_ok and offset + 8 + riff_size <= length else min(offset + 4096, length)
+
+    raw = data[offset:min(declared_end, length)]
+    return CarvedFile(
+        offset=offset, size=len(raw),
+        file_type="AVI", confidence=conf,
+        confidence_score=conf.score,
+        sha256=_sha256(raw), evidence_factors=factors
+    )
+
+
 # ── Signature Registry ─────────────────────────────────────────────────────────
+
+def _carve_riff_dispatch(data: bytes, offset: int) -> Optional[CarvedFile]:
+    if offset + 12 > len(data):
+        return None
+    if data[offset + 8:offset + 12] == _AVI_FORM:
+        return _carve_avi(data, offset)
+    return None
+
 
 _SIGNATURES = [
     (b'\xFF\xD8\xFF',      "JPEG", _carve_jpeg),
     (_PNG_MAGIC,           "PNG",  _carve_png),
     (_PDF_HEADER,          "PDF",  _carve_pdf),
     (_ZIP_LOCAL_SIG,       "ZIP",  _carve_zip),
+    (_OLE_MAGIC,           "OLE",  _carve_ole),
+    (_BMP_MAGIC,           "BMP",  _carve_bmp),
+    (_TIFF_LE,             "TIFF", _carve_tiff),
+    (_TIFF_BE,             "TIFF", _carve_tiff),
+    (_RIFF_MAGIC,          "AVI",  _carve_riff_dispatch),
+    (_MP3_ID3,             "MP3",  _carve_mp3),
+    (_GIF_MAGICS[0],       "GIF",  _carve_gif),
+    (_GIF_MAGICS[1],       "GIF",  _carve_gif),
 ]
 
-# MP4: ftyp box at offset+4, can start with any 4-byte size
 _MP4_FTYP_AT_4 = True
+_EML_SIGNATURES = [b'From - ', b'Received: from ', b'Content-Type: multipart/']
+_MP3_MPEG_SYNC_SIGS = [b'\xFF\xE0', b'\xFF\xF0']
 
 
 # ── Main Scanner ───────────────────────────────────────────────────────────────
@@ -588,14 +1211,14 @@ def carve_bytes(
     data: bytes,
     max_results: int = 500,
     target_types: Optional[list] = None,
+    max_fragment_scan: Optional[int] = None,
+    deep_bifragment: Optional[bool] = None,
 ) -> list[CarvedFile]:
-    """
-    Scan raw bytes and carve recoverable files.
+    if max_fragment_scan is None:
+        max_fragment_scan = MAX_FRAGMENT_SCAN
+    if deep_bifragment is None:
+        deep_bifragment = DEEP_BIFRAGMENT_ENABLED
 
-    This uses signature-based candidate discovery instead of brute-forcing every byte offset.
-    The old implementation was O(n * signatures * pattern length) and could stall on large
-    forensic images; the new path is still correct but dramatically faster on real evidence.
-    """
     results: list[CarvedFile] = []
     found_offsets: set[int] = set()
     length = len(data)
@@ -610,10 +1233,15 @@ def carve_bytes(
             results.append(carved)
             found_offsets.add(carved.offset)
 
-    # Signature scan: find each candidate offset once using Python's optimized search.
     candidates = list(_SIGNATURES)
-    if target_types is None or "MP4" in target_types:
-        candidates.append((b'ftyp', 'MP4', None))
+    if target_types is None or "MP4" in target_types or "MOV" in target_types:
+        candidates.append((b'ftyp', 'MOV', None))
+    if target_types is None or "EML" in target_types:
+        for esig in _EML_SIGNATURES:
+            candidates.append((esig, 'EML', _carve_eml))
+    if target_types is None or "MP3" in target_types:
+        for msig in _MP3_MPEG_SYNC_SIGS:
+            candidates.append((msig, 'MP3', _carve_mp3))
 
     for sig, type_name, carver in candidates:
         if target_types is not None and type_name not in target_types:
@@ -630,9 +1258,17 @@ def carve_bytes(
                 candidate_offset = found - 4
                 if candidate_offset < 0:
                     continue
-                carved = _carve_mp4(data, candidate_offset)
+                carved = _carve_mov(data, candidate_offset)
+            elif carver is _carve_jpeg:
+                carved = carver(data, found,
+                                max_fragment_scan=max_fragment_scan,
+                                deep_bifragment=deep_bifragment)
+            elif carver is _carve_png:
+                carved = carver(data, found, max_fragment_scan=max_fragment_scan)
+            elif carver is _carve_pdf:
+                carved = carver(data, found, max_fragment_scan=max_fragment_scan)
             else:
-                carved = carver(data, found)
+                carved = carver(data, found) if carver else None
 
             maybe_add(carved)
             if len(results) >= max_results:

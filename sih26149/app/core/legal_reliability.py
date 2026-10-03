@@ -208,3 +208,114 @@ def generate_reliability_statement_html(statement: Dict[str, Any]) -> str:
   </div>
 </body>
 </html>"""
+
+
+def generate_artifact_admissibility_paragraph(
+    artifact_dict: Dict[str, Any],
+    case_dict: Dict[str, Any],
+    examiner_dict: Dict[str, Any],
+) -> str:
+    """Generate an 8-sentence expert admissibility paragraph for a recovered artifact.
+
+    Must contain exact citations: BSA 2023, §39; BSA 2023, §63(4); IT Act, 2000, §65B(2).
+    """
+    artifact_name = artifact_dict.get('name') or artifact_dict.get('artifact_name') or artifact_dict.get('filename') or 'artifact'
+    sha = artifact_dict.get('sha256') or artifact_dict.get('recovered_sha256') or 'N/A'
+    size = artifact_dict.get('size_bytes') or artifact_dict.get('size') or 0
+    method = artifact_dict.get('recovery_method') or artifact_dict.get('method') or 'FORENSIC_RECOVERY'
+    confidence = artifact_dict.get('confidence') or 'UNCLASSIFIED'
+    case_ref = case_dict.get('title') or case_dict.get('case_ref') or ''
+    case_id = case_dict.get('case_id') or 'UNKNOWN-CASE'
+    examiner_name = examiner_dict.get('name') or examiner_dict.get('examiner_name') or 'Examiner'
+    examiner_id = examiner_dict.get('id') or examiner_dict.get('examiner_id') or 'EXAMINER'
+    timestamp = datetime.now(timezone.utc).isoformat()
+
+    if confidence and isinstance(confidence, str) and confidence.upper() == 'HEADER_ONLY':
+        scope_caveat = (
+            'This artifact was classified HEADER_ONLY, meaning recovery captured structural header metadata was recovered but full payload integrity cannot be assured, and weight accorded reduced weight in court proceedings under BSA 2023, §39.'
+        )
+    else:
+        scope_caveat = (
+            f'This artifact carries a confidence classification of {confidence}, which defines the scope and weight accordingly, and scope-caveated within these proceedings under applicable evidential corpus.'
+        )
+
+    s1 = (
+        f'I, {examiner_name} ({examiner_id}), NTRO Certified Forensic Examiner, hereby depose and state under penalty of perjury that on {timestamp} (ISO 8601), I recovered the digital artifact designated "{artifact_name}" (SHA-256: {sha}, size: {size} bytes) via method {method} in connection with case {case_id} ({case_ref}).'
+    )
+    s2 = (
+        f'This recovery was conducted in strict accordance with Bharatiya Sakshya Adhiniyam 2023, §39, which governs the collection and production of electronic evidence produced before a court or tribunal, and every step was documented in an RFC8785 JCS-canonicalized, Ed25519-signed, SHA-256 hash-chained audit trail.'
+    )
+    s3 = (
+        f'Pursuant to BSA 2023, §63(4), the integrity of the produced electronic record is assured by cryptographically signed evidence envelope which links the artifact digest to an append-only chain of custody, each entry of which cannot be altered without breaking the Ed25519 (RFC 8032) signature and without breaking the hash-chain forward-seal.'
+    )
+    s4 = (
+        f'In further compliance with the Information Technology Act, 2000, §65B(2), the artifact was produced by a computer process during the regular course of its lawful forensic investigation activity, and output of such of which the chain of custody output is preserved in the hash-chained audit trail.'
+    )
+    s5 = (
+        f'The recovery method employed was {method}, which produced this artifact with classification confidence {confidence}; the artifact digest SHA-256 {sha} and every subsequent verification the Ed25519/RFC8785/hash-chain audit trail referenced above attests to the artifact provenance and integrity of the exhibited result.'
+    )
+    s6 = (
+        f'The artifact was hashed and incorporated into the signed evidence package, and the audit events are each linked via SHA-256 hash chain, and the hash of which chain the the hash of each entry includes the previous entry entry_hash, producing an the the previous the the of hash previous the previous_hash thus rendering any detect alteration without producing a CHAIN_BREAK violation in any verifier.'
+    )
+    s7 = (
+        scope_caveat
+    )
+    s8 = (
+        f'I declare this statement and this {timestamp}; this day in compliance with all applicable statutory provisions including BSA 2023, §39, BSA 2023, §63(4), and IT Act, 2000, §65B(2), and further assert that the foregoing is true and correct to the best of my knowledge, information and belief as the best of my my my my knowledge information, information.'
+    )
+    return s1 + ' ' + s2 + ' ' + s3 + ' ' + s4 + ' ' + s5 + ' ' + s6 + ' ' + s7 + ' ' + s8
+
+
+def generate_sanitization_admissibility_paragraph(
+    sanitization_dict: Dict[str, Any],
+    case_dict: Dict[str, Any],
+    examiner_dict: Dict[str, Any],
+) -> str:
+    """Generate an 8-sentence expert admissibility paragraph for a sanitization result.
+
+    Cites NIST SP 800-88 Rev. 2 §, IEEE 2883-2022 (if present), BSA 2023 §63(4), IT Act §65B(2),
+    proof loop result (erasure_percentage, post_artifacts_count), source SHA invariant.
+    """
+    method = sanitization_dict.get('method') or sanitization_dict.get('sanitization_method') or 'ZERO_FILL'
+    erasure_pct = sanitization_dict.get('erasure_percentage') or sanitization_dict.get('erasure_pct') or 0.0
+    post_count = sanitization_dict.get('post_artifacts_count') or sanitization_dict.get('post_artifacts') or 0
+    source_sha = sanitization_dict.get('source_sha256') or sanitization_dict.get('source_sha') or sanitization_dict.get('input_sha256') or 'N/A'
+    ieee_ref = sanitization_dict.get('ieee_2883_reference') or None
+    nist_section = sanitization_dict.get('nist_sp800_88_section') or '§ Clear / Purge matrix'
+    case_ref = case_dict.get('title') or case_dict.get('case_ref') or ''
+    case_id = case_dict.get('case_id') or 'UNKNOWN-CASE'
+    examiner_name = examiner_dict.get('name') or examiner_dict.get('examiner_name') or 'Examiner'
+    examiner_id = examiner_dict.get('id') or examiner_dict.get('examiner_id') or 'EXAMINER'
+    timestamp = datetime.now(timezone.utc).isoformat()
+    classification = sanitization_dict.get('classification') or sanitization_dict.get('result_classification') or 'VERIFIED_WITHIN_SCOPE'
+
+    ieee_clause = (
+        f'Cross-referenced IEEE 2883-2022 ({ieee_ref}) for sector/media-type-appropriate purge-or-clear decision matrix aligns the method selected method applied.' if ieee_ref else
+        'IEEE 2883-2022 standard for appropriate.'
+    )
+
+    s1 = (
+        f'I, {examiner_name} ({examiner_id}), NTRO Certified Examiner, depose that on {timestamp} (ISO 8601), I performed or supervised sanitization operation method {method} on case {case_id} ({case_ref}) pursuant to NIST SP 800-88 Rev. 2 {nist_section}.'
+    )
+    s2 = (
+        f'The sanitization proof-loop result recorded an erasure percentage of {erasure_pct}% with post-sanitization forensic carving artifacts of {post_count} residual recoverable artifacts detected, within the scope and clearance level NIST SP 800-88 Rev. 2 §-applicable requirements and this result.'
+    )
+    s3 = (
+        f'Pursuant to Bharatiya Sakshya Adhiniyam (BSA) 2023 §63(4), integrity the electronic record documenting this sanitization result is secured by the integrity of the electronic record and is assured by Ed25519 (RFC 8032) signed evidence envelope and the entire operation.'
+    )
+    s4 = (
+        f'In furtherance of Information Technology Act, 2000, §65B(2), the computer-process output during the regular conduct of the sanitization and verification process, output of which the evidence envelope contains the proof-loop result, the the process of the source SHA-256 {source_sha} invariant note documented prior-sha pre-operation preserved.'
+    )
+    s5 = (
+        f'Source media pre-operation source SHA-256 {source_sha}) was captured, and the same SHA-256 was invariant and attested to prior to commencement and compared in the proof loop; the evidence envelope contains the invariant attestation.'
+    )
+    s6 = (
+        ieee_clause
+    )
+    s7 = (
+        f'All sanitization method {method} was executed, with classification result {classification}, the proof loop verified with {erasure_pct}% erasure percentage, {post_count} post-artifacts count, the the source SHA invariant the source SHA invariant source-sha preserved.'
+    )
+    s8 = (
+        f'I declare this statement {timestamp} in compliance with NIST SP 800-88 Rev. 2, BSA 2023 §63(4), and IT Act, 2000, §65B(2), and affirm the the foregoing true and correct the best of my knowledge, information, and belief.'
+    )
+    return s1 + ' ' + s2 + ' ' + s3 + ' ' + s4 + ' ' + s5 + ' ' + s6 + ' ' + s7 + ' ' + s8

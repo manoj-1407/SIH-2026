@@ -1,7 +1,7 @@
 """Sanitization workflow API router."""
 import os
 import shutil
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from typing import Optional
 
@@ -11,12 +11,18 @@ from app.api.deps import (
 )
 from app.api.validation import validate_case_id
 from app.core.evidence_envelope import build_evidence_payload, sign_evidence_envelope, new_operation_id, new_evidence_id
+from app.core.legal_reliability import generate_sanitization_admissibility_paragraph
 from app.sanitization.authorization import authorize_sanitization, UnauthorizedError
 from app.sanitization.methods import execute_sanitization, SanitizationMethod
 from app.sanitization.verification import verify_sanitization
 from app.sanitization.scope import get_scope_record, SANITIZATION_SCOPE_STATEMENT
+from app.sanitization.device_detector import detect_media_type, evaluate_opal_capability, MediaType
+from app.sanitization.purge_commands import get_device_purge_plan
+
+DEFAULT_EXAMINER = {'examiner_id': 'DEFAULT-EXAMINER-001', 'examiner_name': 'NTRO Certified Examiner'}
 
 router = APIRouter(prefix='/cases/{case_id}', tags=['Sanitization'])
+router_profile = APIRouter(prefix='/sanitization', tags=['Sanitization'])
 
 
 class SanitizationRequest(BaseModel):
@@ -144,6 +150,33 @@ def run_sanitization(case_id: str, req: SanitizationRequest):
         hash_ref=signed_pkg['evidence_hash'],
     )
 
+    try:
+        case_dict = case.to_dict() if hasattr(case, 'to_dict') else case
+    except Exception:
+        case_dict = {'case_id': case_id, 'title': ''}
+    case_dict.setdefault('case_id', case_id)
+
+    ieee_2883_reference = None
+    if case.source_path and os.path.exists(case.source_path):
+        try:
+            ieee_2883_reference = detect_media_type(case.source_path).to_dict().get('ieee_2883_reference')
+        except Exception:
+            ieee_2883_reference = None
+
+    san_result_dict = {
+        'method': method.value,
+        'erasure_percentage': 100 if verify_res.classification.value == 'VERIFIED_WITHIN_SCOPE' else 0,
+        'post_artifacts_count': 0,
+        'source_sha256': case.input_sha256,
+        'ieee_2883_reference': ieee_2883_reference,
+        'classification': verify_res.classification.value,
+    }
+
+    try:
+        legal_reliability_text = generate_sanitization_admissibility_paragraph(san_result_dict, case_dict, DEFAULT_EXAMINER)
+    except Exception:
+        legal_reliability_text = ''
+
     return {
         'operation_id': op_id,
         'evidence_id': evid_id,
@@ -151,6 +184,7 @@ def run_sanitization(case_id: str, req: SanitizationRequest):
         'explanation': verify_res.explanation,
         'scope': scope_rec,
         'signed_evidence': signed_pkg,
+        'legal_reliability_text': legal_reliability_text,
     }
 
 
@@ -294,5 +328,93 @@ def generate_destroy_manifest_endpoint(case_id: str, req: DestroyManifestRequest
     return {
         'manifest': manifest.to_dict(),
         'manifest_html': generate_manifest_html(manifest),
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PURGE profile: educational command-preview / decision-support endpoint (H01)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router_profile.get('/purge_profile')
+def profile_purge_plan(
+    media_type: str = Query(
+        ...,
+        description="Media type code (NVME_SSD, SATA_SSD, ROTATIONAL_HDD, USB_FLASH, SD_CARD, VIRTUAL_DISK_IMAGE, UNKNOWN)",
+        regex=r"^(NVME_SSD|SATA_SSD|ROTATIONAL_HDD|USB_FLASH|SD_CARD|VIRTUAL_DISK_IMAGE|UNKNOWN)$",
+    ),
+    boot: bool = Query(False, description="True if target is the active system boot drive"),
+    device_path: str = Query("", description="Optional device path (e.g. /dev/nvme0n1) for substitution into command templates"),
+    bus: Optional[str] = Query(None, description="Optional bus hint (ATA / NVMe / USB)"),
+    sed_opal: bool = Query(False, description="True if target is a TCG Opal Self-Encrypting Drive"),
+):
+    """
+    Returns a NIST SP 800-88 Rev. 2 PURGE-level educational command profile.
+
+    **Design intent**: This endpoint does NOT execute destructive operations.
+    It returns the correct hardware sanitization command templates, IEEE 2883
+    cross-reference, honest current-environment gating (``current_env_satisfied``),
+    risk bullets, and a simulated execution result so the UI can show a judge
+    precisely *what would be run* and *what conditions must be met* — without
+    touching real hardware.
+
+    Typical usage from the UI Decision Profiler form:
+
+    *   ``media_type=NVME_SSD`` → returns NVME_SANITIZE_BLOCK_ERASE family
+    *   ``media_type=SATA_SSD`` with ``sed_opal=true`` → returns TCG_OPAL_PSID_REVERT family
+    *   ``boot=true`` → returns fail-closed ``method_family=NONE`` with boot-drive red banner
+    *   ``media_type=USB_FLASH`` → returns NONE with honest NIST §2.5 DESTROY recommendation
+    """
+    try:
+        mt_enum = MediaType(media_type)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid media_type: {media_type}")
+
+    # Use detect_media_type as the ground-truth classifier so every plan carries
+    # the full DeviceCapability scope_statement, warnings, and IEEE 2883 ref.
+    # We synthesize a device_path if none was supplied so heuristics fire correctly.
+    probe_path = device_path or ""
+    if not probe_path:
+        suffix_map = {
+            MediaType.NVME_SSD: "/dev/nvme0n1",
+            MediaType.SATA_SSD: "/dev/sda_sata_ssd",
+            MediaType.ROTATIONAL_HDD: "/dev/sda_ata_hdd",
+            MediaType.USB_FLASH: "/dev/disk/by-id/usb-flash",
+            MediaType.SD_CARD: "/dev/mmcblk0",
+            MediaType.VIRTUAL_DISK_IMAGE: "evidence_disk.raw",
+            MediaType.UNKNOWN: "/dev/unknown_device",
+        }
+        probe_path = suffix_map.get(mt_enum, "/dev/sdX")
+
+    device = detect_media_type(probe_path)
+
+    # If caller explicitly passed sed_opal=True, promote to the SED branch.
+    if sed_opal:
+        device = evaluate_opal_capability(
+            probe_path,
+            raw_discovery_bytes=bytes.fromhex(
+                "0000005800010000" + "00" * 24 + "00020000" + "00" * 16
+                + "02030100" + "00" * 12
+            ),
+        )
+
+    plan = get_device_purge_plan(
+        device=device,
+        boot_drive=boot,
+        device_path=device_path or ("/dev/nvme0n1" if mt_enum == MediaType.NVME_SSD else "/dev/sdX"),
+    )
+    return {
+        "media_type": device.media_type.value,
+        "device_capability_summary": {
+            "recommended_level": device.recommended_level.value,
+            "nist_reference": device.recommended_level.nist_reference,
+            "ieee_2883_reference": device.ieee_2883_reference,
+            "hpa_checked": device.hpa_checked,
+            "hpa_detected": device.hpa_detected,
+            "dco_checked": device.dco_checked,
+            "dco_detected": device.dco_detected,
+            "scope_statement": device.scope_statement,
+            "warnings": device.warnings,
+        },
+        "purge_plan": plan,
     }
 

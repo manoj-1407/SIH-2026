@@ -271,7 +271,7 @@ def test_multiple_operations_on_single_case_no_collision(tmp_path):
     import shutil
     import subprocess
     if not shutil.which("mkfs.ext4") or not shutil.which("debugfs") or not shutil.which("fls"):
-        pytest.skip("mkfs.ext4/debugfs/fls required for ext4 collision test")
+        pytest.skip("Skipping ext4 filesystem-aware recovery on this platform — requires mkfs.ext4/debugfs/fls/icat from Sleuth Kit on Linux PATH. Pure-Python NTFS/FAT32 engines (see tests/unit/test_ntfs_mft*.py, tests/unit/test_fat32.py) and raw signature carving (tests/unit/test_classification.py) are fully available on this platform.")
     img_path = str(tmp_path / "multi_op.img")
     with open(img_path, "wb") as f:
         f.truncate(20 * 1024 * 1024)

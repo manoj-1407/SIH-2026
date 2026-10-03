@@ -16,7 +16,8 @@ import struct
 import hashlib
 import logging
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple, Dict, Any
+from pathlib import Path
+from typing import List, Optional, Tuple, Dict, Any, Union
 
 logger = logging.getLogger(__name__)
 
@@ -144,7 +145,66 @@ def decode_runlist(runlist_bytes: bytes) -> List[Tuple[int, int]]:
     return runs
 
 
-def parse_mft_record(raw_record: bytes, record_number: int = 0) -> Optional[MFTRecoveredFile]:
+def parse_ntfs_bpb(boot_sector: bytes) -> Dict[str, int]:
+    """
+    Parses the NTFS BIOS Parameter Block (BPB) from the first 512-byte boot sector.
+    Returns dict with bytes_per_sector, sectors_per_cluster, cluster_size.
+    """
+    if len(boot_sector) < 0x0E:
+        return {
+            "bytes_per_sector": SECTOR_SIZE,
+            "sectors_per_cluster": 8,
+            "cluster_size": SECTOR_SIZE * 8,
+        }
+    bytes_per_sector = struct.unpack_from("<H", boot_sector, 0x0B)[0]
+    sectors_per_cluster = struct.unpack_from("<B", boot_sector, 0x0D)[0]
+    if bytes_per_sector == 0:
+        bytes_per_sector = SECTOR_SIZE
+    if sectors_per_cluster == 0:
+        sectors_per_cluster = 8
+    return {
+        "bytes_per_sector": bytes_per_sector,
+        "sectors_per_cluster": sectors_per_cluster,
+        "cluster_size": bytes_per_sector * sectors_per_cluster,
+    }
+
+
+def _read_image_region(
+    image_source: Optional[Union[bytes, bytearray, str, Path]],
+    offset: int,
+    length: int
+) -> bytes:
+    """
+    Reads a region from the image source, which may be raw bytes or a file path.
+    Returns empty bytes if the source is None or out of bounds.
+    """
+    if image_source is None:
+        return b""
+    try:
+        if isinstance(image_source, (bytes, bytearray)):
+            end = offset + length
+            if offset < 0 or offset >= len(image_source):
+                return b""
+            return bytes(image_source[offset:min(end, len(image_source))])
+        else:
+            path = Path(image_source)
+            if not path.exists():
+                return b""
+            with open(path, "rb") as f:
+                f.seek(offset)
+                return f.read(length)
+    except Exception as e:
+        logger.debug(f"Error reading image region at offset {offset}: {e}")
+        return b""
+
+
+def parse_mft_record(
+    raw_record: bytes,
+    record_number: int = 0,
+    image_source: Optional[Union[bytes, bytearray, str, Path]] = None,
+    bytes_per_sector: int = SECTOR_SIZE,
+    sectors_per_cluster: int = 8,
+) -> Optional[MFTRecoveredFile]:
     """
     Parses a single 1024-byte MFT record.
     Extracts deleted and active files, recovering resident and non-resident metadata.
@@ -210,9 +270,23 @@ def parse_mft_record(raw_record: bytes, record_number: int = 0) -> Optional[MFTR
                     is_resident = False
                     if len(attr_record) >= 64:
                         runlist_off = struct.unpack_from("<H", attr_record, 0x20)[0]
-                        data_size = struct.unpack_from("<Q", attr_record, 0x30)[0]
+                        content_size = struct.unpack_from("<Q", attr_record, 0x30)[0]
+                        data_size = content_size
                         runlist_bytes = attr_record[runlist_off:]
                         cluster_runs = decode_runlist(runlist_bytes)
+
+                        cluster_size = bytes_per_sector * sectors_per_cluster
+                        recovered_buf = bytearray()
+                        for (cnt, lcn) in cluster_runs:
+                            run_offset = lcn * cluster_size
+                            run_length = cnt * cluster_size
+                            chunk = _read_image_region(image_source, run_offset, run_length)
+                            recovered_buf.extend(chunk)
+
+                        if content_size > 0 and len(recovered_buf) >= content_size:
+                            recovered_data = bytes(recovered_buf[:content_size])
+                        else:
+                            recovered_data = bytes(recovered_buf)
 
             curr_offset += attr_len
 
@@ -240,30 +314,77 @@ def parse_mft_record(raw_record: bytes, record_number: int = 0) -> Optional[MFTR
         return None
 
 
-def scan_ntfs_image_for_deleted_files(image_path: str, max_records: int = 5000) -> List[MFTRecoveredFile]:
+def scan_ntfs_image_for_deleted_files(
+    image_path: Union[str, Path, bytes, bytearray],
+    max_records: int = 5000,
+) -> List[MFTRecoveredFile]:
     """
     Scans a raw image or NTFS partition for deleted MFT records.
     Returns all successfully parsed deleted file artifacts.
+    Accepts a file path (str or Path) or raw image bytes.
     """
     deleted_files = []
     record_num = 0
+    bytes_per_sector = SECTOR_SIZE
+    sectors_per_cluster = 8
 
     try:
-        with open(image_path, "rb") as f:
+        if isinstance(image_path, (bytes, bytearray)):
+            image_bytes = bytes(image_path)
+            if len(image_bytes) >= SECTOR_SIZE:
+                bpb = parse_ntfs_bpb(image_bytes[:SECTOR_SIZE])
+                bytes_per_sector = bpb["bytes_per_sector"]
+                sectors_per_cluster = bpb["sectors_per_cluster"]
+
+            offset = 0
             while len(deleted_files) < max_records:
-                chunk = f.read(MFT_RECORD_SIZE)
+                chunk = image_bytes[offset:offset + MFT_RECORD_SIZE]
                 if len(chunk) < MFT_RECORD_SIZE:
                     break
 
                 if chunk[:4] == b"FILE":
-                    rec = parse_mft_record(chunk, record_number=record_num)
+                    rec = parse_mft_record(
+                        chunk,
+                        record_number=record_num,
+                        image_source=image_bytes,
+                        bytes_per_sector=bytes_per_sector,
+                        sectors_per_cluster=sectors_per_cluster,
+                    )
                     if rec and rec.is_deleted and not rec.is_directory:
-                        # Exclude system internal records ($MFT, $LogFile, etc) if desired,
-                        # but keep genuine deleted user artifacts
                         if not rec.filename.startswith("$") or rec.size_bytes > 0:
                             deleted_files.append(rec)
 
+                offset += MFT_RECORD_SIZE
                 record_num += 1
+        else:
+            path = Path(image_path)
+            if path.exists():
+                with open(path, "rb") as f:
+                    boot_sector = f.read(SECTOR_SIZE)
+                    if len(boot_sector) >= SECTOR_SIZE:
+                        bpb = parse_ntfs_bpb(boot_sector)
+                        bytes_per_sector = bpb["bytes_per_sector"]
+                        sectors_per_cluster = bpb["sectors_per_cluster"]
+
+                with open(path, "rb") as f:
+                    while len(deleted_files) < max_records:
+                        chunk = f.read(MFT_RECORD_SIZE)
+                        if len(chunk) < MFT_RECORD_SIZE:
+                            break
+
+                        if chunk[:4] == b"FILE":
+                            rec = parse_mft_record(
+                                chunk,
+                                record_number=record_num,
+                                image_source=path,
+                                bytes_per_sector=bytes_per_sector,
+                                sectors_per_cluster=sectors_per_cluster,
+                            )
+                            if rec and rec.is_deleted and not rec.is_directory:
+                                if not rec.filename.startswith("$") or rec.size_bytes > 0:
+                                    deleted_files.append(rec)
+
+                        record_num += 1
     except Exception as e:
         logger.error(f"Error scanning NTFS image {image_path}: {e}")
 

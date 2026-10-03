@@ -63,6 +63,11 @@ class DeviceCapability:
     opal_ssc_version: Optional[str] = None # e.g. "TCG Opal 2.0"
     crypto_erase_recommended: bool = False # Prefer Cryptographic Erase over 4-hour overwrite
     crypto_erase_rationale: str = ""       # Legal & operational rationale per NIST 800-88 §2.4
+    ieee_2883_reference: Optional[str] = None  # IEEE 2883-2022 cross-reference per H02
+    hpa_checked: bool = False              # H03: actual HPA probe attempted
+    hpa_detected: Optional[bool] = None    # H03: True/False if checked, None if unknown
+    dco_checked: bool = False              # H03: actual DCO probe attempted
+    dco_detected: Optional[bool] = None    # H03: True/False if checked, None if unknown
 
     @property
     def recommended_level(self) -> SanitizationLevel:
@@ -77,6 +82,7 @@ class DeviceCapability:
             "media_type": self.media_type.value,
             "recommended_level": self.recommended_level.value,
             "nist_reference": self.recommended_level.nist_reference,
+            "ieee_2883_reference": self.ieee_2883_reference,
             "clear_supported": self.clear_supported,
             "purge_supported": self.purge_supported or self.crypto_erase_recommended,
             "purge_command": self.purge_command or ("TCG OPAL CRYPTOGRAPHIC ERASE (MEK Invalidation)" if self.crypto_erase_recommended else None),
@@ -85,6 +91,10 @@ class DeviceCapability:
             "classification_basis": self.classification_basis,
             "warnings": self.warnings,
             "hpa_dco_warning": self.hpa_dco_warning,
+            "hpa_checked": self.hpa_checked,
+            "hpa_detected": self.hpa_detected,
+            "dco_checked": self.dco_checked,
+            "dco_detected": self.dco_detected,
             "write_protection_note": self.write_protection_note,
             "is_sed_opal_capable": self.is_sed_opal_capable,
             "opal_ssc_version": self.opal_ssc_version,
@@ -106,6 +116,123 @@ _HDD_PATTERNS      = [r'hdd', r'rotational', r'ata', r'sata']
 def _match_any(text: str, patterns: list) -> bool:
     text_lower = text.lower()
     return any(re.search(p, text_lower) for p in patterns)
+
+
+def probe_hpa_dco(device_path: str) -> Dict[str, Any]:
+    """
+    Advisory-only Host Protected Area (HPA) / Device Configuration Overlay
+    (DCO) probe. Returns honest ``checked=False`` + advisory command strings
+    when the executing environment cannot run hdparm (non-POSIX, non-root,
+    binary absent). Never raises — always returns a valid dict.
+
+    On POSIX systems as root with hdparm on PATH, a best-effort subprocess
+    attempt is made and string-matched against hdparm's known output format.
+    """
+    import shutil
+    import subprocess
+
+    advisory_commands = {
+        "hpa_check": (
+            "/usr/sbin/hdparm -N /dev/sdX  "
+            "# Max Address field. If non-default (max sectors differs from drive-native), HPA is active."
+        ),
+        "dco_check": (
+            "/usr/sbin/hdparm --dco-identify /dev/sdX  "
+            "# Compare 'Real max sectors' vs 'current max sectors'. Different values = DCO hiding data."
+        ),
+    }
+    result: Dict[str, Any] = {
+        "hpa_checked": False,
+        "hpa_detected": None,
+        "dco_checked": False,
+        "dco_detected": None,
+        "commands": advisory_commands,
+        "probe_environment": {
+            "os": os.name,
+            "platform": platform.system(),
+            "is_posix": os.name == "posix",
+            "is_root": (os.geteuid() == 0) if os.name == "posix" else False,
+            "hdparm_available": bool(shutil.which("hdparm")),
+        },
+    }
+
+    if os.name != "posix":
+        result["gating_reason"] = (
+            "Non-POSIX host: hdparm ioctls require Linux /sys/block + block-device fd. "
+            "Run the advisory commands above on a Linux forensic workstation with direct block access."
+        )
+        return result
+
+    is_root = os.geteuid() == 0 if os.name == "posix" else False
+    has_hdparm = bool(shutil.which("hdparm"))
+    hdparm = shutil.which("hdparm") or "/usr/sbin/hdparm"
+
+    if not (is_root and has_hdparm):
+        missing = []
+        if not is_root:
+            missing.append("not root (UID 0)")
+        if not has_hdparm:
+            missing.append("hdparm binary not on PATH")
+        result["gating_reason"] = (
+            f"HPA/DCO probe skipped on POSIX: {', '.join(missing)}. "
+            f"Execute advisory commands with sudo on a forensic live-boot environment."
+        )
+        return result
+
+    try:
+        hpa_raw = subprocess.run(
+            [hdparm, "-N", device_path],
+            capture_output=True, text=True, timeout=8, check=False,
+        )
+        hpa_out = (hpa_raw.stdout or "") + (hpa_raw.stderr or "")
+        result["hpa_checked"] = True
+        if re.search(r"max sectors\s*=\s*\d+[^\n]*?\(native\s+\d+\)", hpa_out, re.I):
+            m = re.search(r"max sectors\s*=\s*(\d+)[^\n]*?\(native\s+(\d+)\)", hpa_out, re.I)
+            if m and int(m.group(1)) < int(m.group(2)):
+                result["hpa_detected"] = True
+            else:
+                result["hpa_detected"] = False
+        else:
+            result["hpa_detected"] = None
+        result["hpa_raw_output_snippet"] = hpa_out[:400]
+    except Exception as e:
+        result["hpa_error"] = f"{type(e).__name__}: {e}"
+
+    try:
+        dco_raw = subprocess.run(
+            [hdparm, "--dco-identify", device_path],
+            capture_output=True, text=True, timeout=10, check=False,
+        )
+        dco_out = (dco_raw.stdout or "") + (dco_raw.stderr or "")
+        result["dco_checked"] = True
+        real_max_match = re.search(r"Real\s+max\s+sectors\s*:\s*(\d+)", dco_out, re.I)
+        cur_max_match = re.search(r"current\s+max\s+sectors\s*:\s*(\d+)", dco_out, re.I)
+        if real_max_match and cur_max_match:
+            result["dco_detected"] = int(cur_max_match.group(1)) < int(real_max_match.group(1))
+        else:
+            result["dco_detected"] = None
+        result["dco_raw_output_snippet"] = dco_out[:400]
+    except Exception as e:
+        result["dco_error"] = f"{type(e).__name__}: {e}"
+
+    return result
+
+
+def _apply_hpa_dco_probe(cap: DeviceCapability, device_path: str) -> DeviceCapability:
+    """Run probe_hpa_dco and stamp results onto an existing DeviceCapability.
+    Safe for any media type — returns cap unchanged for virtual images."""
+    if cap.media_type == MediaType.VIRTUAL_DISK_IMAGE:
+        cap.hpa_checked = False
+        cap.hpa_detected = None
+        cap.dco_checked = False
+        cap.dco_detected = None
+        return cap
+    hpa = probe_hpa_dco(device_path)
+    cap.hpa_checked = hpa["hpa_checked"]
+    cap.hpa_detected = hpa["hpa_detected"]
+    cap.dco_checked = hpa["dco_checked"]
+    cap.dco_detected = hpa["dco_detected"]
+    return cap
 
 
 def detect_media_type(target_path: str) -> DeviceCapability:
@@ -154,32 +281,33 @@ def detect_media_type(target_path: str) -> DeviceCapability:
                 "Recovery mode operates read-only on source evidence. Carving engine reads "
                 "bytes from the image without writing. Source image integrity is preserved."
             ),
+            ieee_2883_reference="N/A — virtual image; IEEE 2883 does not apply to logical container files.",
         )
 
     # 2. Path-based heuristics (matches USB, SD, NVMe, SSD, HDD markers regardless of OS)
     path_str = str(target_path)
     if _match_any(path_str, _NVME_PATTERNS):
         basis.append("Path matches NVMe pattern")
-        return _nvme_capability(basis, warnings)
+        return _apply_hpa_dco_probe(_nvme_capability(basis, warnings), target_path)
     if _match_any(path_str, _USB_PATH_PATTERNS):
         basis.append("Path matches USB storage pattern")
-        return _usb_capability(basis, warnings)
+        return _apply_hpa_dco_probe(_usb_capability(basis, warnings), target_path)
     if _match_any(path_str, _SD_PATH_PATTERNS):
         basis.append("Path matches SD/MMC card pattern")
-        return _sd_capability(basis, warnings)
+        return _apply_hpa_dco_probe(_sd_capability(basis, warnings), target_path)
     if _match_any(path_str, _SSD_PATTERNS):
         basis.append("Path matches SSD pattern")
-        return _ssd_capability(basis, warnings)
+        return _apply_hpa_dco_probe(_ssd_capability(basis, warnings), target_path)
     if _match_any(path_str, _HDD_PATTERNS):
         basis.append("Path matches HDD pattern")
-        return _hdd_capability(basis, warnings)
+        return _apply_hpa_dco_probe(_hdd_capability(basis, warnings), target_path)
 
     # 3. Linux sysfs inspection (if on Linux and block device exists)
     if platform.system() == 'Linux':
         basis.append("Linux system detected — attempting sysfs inspection")
         dev_res = _detect_linux(target_path, basis, warnings)
         if dev_res.media_type != MediaType.VIRTUAL_DISK_IMAGE:
-            return dev_res
+            return _apply_hpa_dco_probe(dev_res, target_path)
 
     basis.append("No definitive media type markers found — defaulting to UNKNOWN")
     warnings.append(
@@ -187,7 +315,7 @@ def detect_media_type(target_path: str) -> DeviceCapability:
         "Only CLEAR (verified overwrite) is authorized. "
         "Do not claim PURGE without confirming hardware sanitize command support."
     )
-    return DeviceCapability(
+    cap = DeviceCapability(
         media_type=MediaType.UNKNOWN,
         clear_supported=True,
         purge_supported=False,
@@ -200,7 +328,12 @@ def detect_media_type(target_path: str) -> DeviceCapability:
         ),
         classification_basis=basis,
         warnings=warnings,
+        ieee_2883_reference=(
+            "Unknown media type — IEEE 2883 cross-reference not assignable. "
+            "Confirm bus/controller type before applying IEEE 2883-2022 §5.x guidance."
+        ),
     )
+    return _apply_hpa_dco_probe(cap, target_path)
 
 
 def _detect_linux(target_path: str, basis: list, warnings: list) -> DeviceCapability:
@@ -214,13 +347,13 @@ def _detect_linux(target_path: str, basis: list, warnings: list) -> DeviceCapabi
                 rot = f.read().strip()
             if rot == '1':
                 basis.append(f"sysfs rotational=1 for {device_name}")
-                return _hdd_capability(basis, warnings)
+                return _apply_hpa_dco_probe(_hdd_capability(basis, warnings), target_path)
             else:
                 basis.append(f"sysfs rotational=0 for {device_name}")
                 # Check if NVMe
                 if 'nvme' in device_name.lower():
-                    return _nvme_capability(basis, warnings)
-                return _ssd_capability(basis, warnings)
+                    return _apply_hpa_dco_probe(_nvme_capability(basis, warnings), target_path)
+                return _apply_hpa_dco_probe(_ssd_capability(basis, warnings), target_path)
     except Exception:
         pass
 
@@ -234,6 +367,7 @@ def _detect_linux(target_path: str, basis: list, warnings: list) -> DeviceCapabi
             "NIST SP 800-88 Rev. 2 §2.3 Clear."
         ),
         classification_basis=basis, warnings=warnings,
+        ieee_2883_reference="N/A — virtual image; IEEE 2883 does not apply.",
     )
 
 
@@ -264,6 +398,7 @@ def _hdd_capability(basis: list, warnings: list) -> DeviceCapability:
             "Recovery mode: source media should be accessed through a hardware write-blocker "
             "or mounted read-only (mount -o ro) to prevent accidental modification of evidence."
         ),
+        ieee_2883_reference=None,
     )
 
 
@@ -294,6 +429,10 @@ def _ssd_capability(basis: list, warnings: list) -> DeviceCapability:
         write_protection_note=(
             "Recovery mode: source media should be accessed through a hardware write-blocker. "
             "SSD TRIM commands can destroy evidence if write access is allowed."
+        ),
+        ieee_2883_reference=(
+            "IEEE 2883-2022 §5.2 — ATA Sanitize Device command (SANITIZE with CRYPTO SCRAMBLE "
+            "or BLOCK ERASE operation)."
         ),
     )
 
@@ -326,6 +465,10 @@ def _nvme_capability(basis: list, warnings: list) -> DeviceCapability:
             "with write-blocking capability (e.g., Tableau T356789). Direct NVMe attachment "
             "may trigger controller-initiated garbage collection or TRIM."
         ),
+        ieee_2883_reference=(
+            "IEEE 2883-2022 §5.3 — NVMe Sanitize command (Sanitize Action field: 0x01 Block "
+            "Erase, 0x02 Crypto Erase, 0x03 Overwrite, 0x04 Secure Erase if controller supports)."
+        ),
     )
 
 
@@ -351,6 +494,13 @@ def _usb_capability(basis: list, warnings: list) -> DeviceCapability:
             "NIST SP 800-88 Rev. 2 §2.5 recommends physical DESTROY for sensitive USB flash data."
         ),
         classification_basis=basis, warnings=warnings,
+        ieee_2883_reference=(
+            "IEEE 2883-2022 §5.5 — Removable flash storage: Block Erase recommended by IEEE "
+            "2883 but not uniformly supported by USB flash controllers (most do not expose "
+            "ATA/NVMe passthrough); Cryptographic Erase supported only on TCG Opal USB drives "
+            "with PSID. NIST recommends physical DESTROY for sensitive data "
+            "(NIST SP 800-88 Rev. 2 §2.5)."
+        ),
     )
 
 
@@ -372,6 +522,11 @@ def _sd_capability(basis: list, warnings: list) -> DeviceCapability:
             "NIST SP 800-88 Rev. 2 §2.5 recommends physical DESTROY."
         ),
         classification_basis=basis, warnings=warnings,
+        ieee_2883_reference=(
+            "IEEE 2883-2022 §5.5 (same as USB Flash) — additionally: SD CCCMD ERASE_WR "
+            "command exists but performs only logical erase; NAND over-provisioned regions "
+            "are inaccessible to the host and remain unerased unless physical DESTROY is performed."
+        ),
     )
 
 

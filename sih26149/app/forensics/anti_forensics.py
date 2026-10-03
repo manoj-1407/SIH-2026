@@ -90,9 +90,11 @@ def analyze_ntfs_timestamps(
 
     now_ts = datetime.now(timezone.utc).timestamp()
 
-    # Check 1: $SI Modified < $FN Modified (Backdated file modification)
+    # Check 1: SI and FN differ materially in either direction (suspicious timestomp or rollback).
     if si_mod is not None and fn_mod is not None:
-        if si_mod < (fn_mod - 1.0):  # Allow 1s tolerance for filesystem rounding
+        delta_mod = si_mod - fn_mod
+        if abs(delta_mod) > 1.0:
+            direction = "later" if delta_mod > 0 else "earlier"
             findings.append(AntiForensicFinding(
                 indicator=AntiForensicIndicator.TIMESTOMP_SI_FN_ANOMALY,
                 severity=AntiForensicSeverity.CRITICAL,
@@ -101,18 +103,21 @@ def analyze_ntfs_timestamps(
                     "attribute": "modified",
                     "si_timestamp": si_mod,
                     "fn_timestamp": fn_mod,
-                    "delta_seconds": round(fn_mod - si_mod, 2),
+                    "delta_seconds": round(abs(delta_mod), 2),
+                    "direction": direction,
                 },
                 court_explanation=(
-                    f"Deliberate backdating detected: $STANDARD_INFORMATION modified timestamp is "
-                    f"{round(fn_mod - si_mod, 1)} seconds earlier than kernel-protected $FILE_NAME timestamp. "
-                    "This is a classic signature of userland timestomping utilities attempting to conceal access."
+                    f"NTFS timestamp anomaly detected: $STANDARD_INFORMATION modified timestamp is "
+                    f"{round(abs(delta_mod), 1)} seconds {direction} than kernel-protected $FILE_NAME timestamp. "
+                    "This is a classic signature of userland timestomping utilities attempting to conceal access or create a false chronology."
                 )
             ))
 
-    # Check 2: $SI Created < $FN Created (Backdated file creation)
+    # Check 2: SI and FN created times differ materially in either direction.
     if si_cre is not None and fn_cre is not None:
-        if si_cre < (fn_cre - 1.0):
+        delta_cre = si_cre - fn_cre
+        if abs(delta_cre) > 1.0:
+            direction = "later" if delta_cre > 0 else "earlier"
             findings.append(AntiForensicFinding(
                 indicator=AntiForensicIndicator.TIMESTOMP_SI_FN_ANOMALY,
                 severity=AntiForensicSeverity.CRITICAL,
@@ -121,12 +126,13 @@ def analyze_ntfs_timestamps(
                     "attribute": "created",
                     "si_timestamp": si_cre,
                     "fn_timestamp": fn_cre,
-                    "delta_seconds": round(fn_cre - si_cre, 2),
+                    "delta_seconds": round(abs(delta_cre), 2),
+                    "direction": direction,
                 },
                 court_explanation=(
-                    f"Deliberate creation backdating: $STANDARD_INFORMATION created timestamp is "
-                    f"{round(fn_cre - si_cre, 1)} seconds earlier than kernel-protected $FILE_NAME timestamp. "
-                    "Indicates artificial timestamp regression."
+                    f"Creation timestamp anomaly detected: $STANDARD_INFORMATION created timestamp is "
+                    f"{round(abs(delta_cre), 1)} seconds {direction} than kernel-protected $FILE_NAME timestamp. "
+                    "Indicates artificial timestamp regression or synthetic metadata insertion."
                 )
             ))
 
@@ -171,6 +177,28 @@ _SDELETE_NAME_PATTERN = re.compile(rb'^[A-Z]{6}\.[A-Z]{3}$')
 _SDELETE_STR_PATTERN = re.compile(r'^[A-Z]{6}\.[A-Z]{3}$')
 
 
+def _looks_like_sequential_sdelete_names(names: List[str]) -> bool:
+    """Return True when names look like a clear sequential SDelete temp-file run."""
+    if len(names) < 2:
+        return False
+    stems = []
+    for name in names:
+        base = os.path.basename(name)
+        match = re.fullmatch(r"([A-Z]{6})\.([A-Z]{3})", base)
+        if not match:
+            return False
+        stems.append(match.group(1))
+
+    ordered = sorted(stems)
+    for idx in range(len(ordered) - 1):
+        left = ordered[idx]
+        right = ordered[idx + 1]
+        deltas = [ord(b) - ord(a) for a, b in zip(left, right)]
+        if not deltas or any(delta != 1 for delta in deltas):
+            return False
+    return True
+
+
 def scan_entries_for_wipe_artifacts(entry_names: List[str]) -> List[AntiForensicFinding]:
     """Inspect deleted or existing directory entries for wiping tool artifacts."""
     findings = []
@@ -193,16 +221,29 @@ def scan_entries_for_wipe_artifacts(entry_names: List[str]) -> List[AntiForensic
             ))
 
     if len(sdelete_candidates) >= 2:
-        findings.append(AntiForensicFinding(
-            indicator=AntiForensicIndicator.WIPE_TOOL_SDELETE_ARTIFACT,
-            severity=AntiForensicSeverity.CRITICAL,
-            target=f"{len(sdelete_candidates)} temporary file entries",
-            details={"candidates": sdelete_candidates[:10]},
-            court_explanation=(
-                f"Sysinternals SDelete free space wiping signature detected: {len(sdelete_candidates)} sequential "
-                "uppercase alphanumeric temp files (e.g. AAAAAA.AAA, ZZZZZZ.ZZZ) found in filesystem metadata."
-            )
-        ))
+        if _looks_like_sequential_sdelete_names(sdelete_candidates):
+            findings.append(AntiForensicFinding(
+                indicator=AntiForensicIndicator.WIPE_TOOL_SDELETE_ARTIFACT,
+                severity=AntiForensicSeverity.CRITICAL,
+                target=f"{len(sdelete_candidates)} temporary file entries",
+                details={"candidates": sdelete_candidates[:10]},
+                court_explanation=(
+                    f"Sysinternals SDelete free space wiping signature detected: {len(sdelete_candidates)} sequential "
+                    "uppercase alphanumeric temp files (e.g. AAAAAA.AAA, ZZZZZZ.ZZZ) found in filesystem metadata."
+                )
+            ))
+        else:
+            for name in sdelete_candidates:
+                findings.append(AntiForensicFinding(
+                    indicator=AntiForensicIndicator.WIPE_TOOL_SDELETE_ARTIFACT,
+                    severity=AntiForensicSeverity.CRITICAL,
+                    target=name,
+                    details={"candidate": name},
+                    court_explanation=(
+                        f"Sysinternals SDelete free space wiping signature detected in '{name}'. "
+                        "This naming pattern is consistent with temporary wipe files created during secure deletion."
+                    )
+                ))
 
     return findings
 

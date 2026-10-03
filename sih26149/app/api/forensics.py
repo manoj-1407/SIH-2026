@@ -16,10 +16,13 @@ from app.api.deps import (
 from app.api.validation import validate_case_id
 from app.core.hashing import hash_file
 from app.core.evidence_envelope import build_evidence_payload, sign_evidence_envelope, new_operation_id, new_evidence_id
+from app.core.legal_reliability import generate_artifact_admissibility_paragraph
 from app.forensics.filesystem import detect_filesystem
 from app.forensics.discovery import discover_deleted_artifacts
 from app.forensics.recovery import recover_artifact
 from app.forensics.verification import verify_recovery
+
+DEFAULT_EXAMINER = {'examiner_id': 'DEFAULT-EXAMINER-001', 'examiner_name': 'NTRO Certified Examiner'}
 
 router = APIRouter(prefix='/cases/{case_id}', tags=['Forensics'])
 
@@ -303,6 +306,17 @@ def get_deleted_artifacts(case_id: str):
         except Exception:
             art_dicts = []
 
+    try:
+        case_obj = case.to_dict() if hasattr(case, 'to_dict') else case
+    except Exception:
+        case_obj = {'case_id': case_id, 'title': ''}
+    case_obj.setdefault('case_id', case_id)
+    for ad in art_dicts:
+        try:
+            ad['legal_reliability_text'] = generate_artifact_admissibility_paragraph(ad, case_obj, DEFAULT_EXAMINER)
+        except Exception:
+            ad['legal_reliability_text'] = ''
+
     case.discovered_artifacts = art_dicts
     case_store.save(case)
 
@@ -390,7 +404,24 @@ def run_forensic_recovery(case_id: str, req: ForensicRecoveryRequest):
                 details={'classification': classified.classification.value, 'recovered_sha256': target.sha256},
                 hash_ref=target.sha256,
             )
-            return {
+            artifact_dict = {
+                'name': req.artifact_name or f'carved_{target.file_type.lower()}',
+                'artifact_name': req.artifact_name or f'carved_{target.file_type.lower()}',
+                'sha256': target.sha256,
+                'size_bytes': target.size,
+                'method': 'raw_carving_fallback',
+                'confidence': target.confidence.value if hasattr(target.confidence, 'value') else str(target.confidence),
+            }
+            try:
+                case_obj = case.to_dict() if hasattr(case, 'to_dict') else case
+            except Exception:
+                case_obj = {'case_id': case_id, 'title': ''}
+            case_obj.setdefault('case_id', case_id)
+            try:
+                lr_text = generate_artifact_admissibility_paragraph(artifact_dict, case_obj, DEFAULT_EXAMINER)
+            except Exception:
+                lr_text = ''
+            res = {
                 'operation_id': op_id,
                 'evidence_id': evid_id,
                 'classification': classified.classification.value,
@@ -402,7 +433,9 @@ def run_forensic_recovery(case_id: str, req: ForensicRecoveryRequest):
                 'match': req.reference_sha256 is not None and target.sha256.lower() == req.reference_sha256.lower(),
                 'size_bytes': target.size,
                 'signed_evidence': signed_pkg,
+                'legal_reliability_text': lr_text,
             }
+            return res
         else:
             raise HTTPException(status_code=404, detail=f'No recoverable artifact found for target: {req.inode}')
 

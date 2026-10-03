@@ -472,20 +472,34 @@ async function seedOfficialDemoCase() {
 //  FORENSICS MODULE
 // ═══════════════════════════════════════════════════════════════
 
+function applySeededDemoPresetFilter() {
+  const sel = $id('seededDemoPreset');
+  if (!sel) return;
+  const allowed = new Set(['NTFS', 'FAT32']);
+  [...sel.options].forEach(opt => {
+    if (!allowed.has(opt.value)) opt.remove();
+  });
+  const hasFls = sysCap.flsAvailable();
+  sel.title = hasFls
+    ? 'Seeded presets: NTFS + FAT32 native parsers + ext4 via SleuthKit'
+    : 'Seeded presets filtered to native pure-Python parsers. NTFS + FAT32 only (SleuthKit not detected).';
+}
+
 async function seedSyntheticEvidence() {
   if (!state.activeCaseId) {
     Toast.warning('No Case', 'Select or create a case first — click "Seed Demo Case" in the sidebar or create a case');
     return;
   }
+  const preset = val('seededDemoPreset') || 'NTFS';
   const box = $id('fsResult');
-  if (box) { box.style.display = ''; box.className = 'result-box'; box.textContent = 'Generating synthetic evidence disk with embedded JPEG, PNG, PDF…'; }
+  if (box) { box.style.display = ''; box.className = 'result-box'; box.textContent = `Generating ${preset} synthetic evidence disk with embedded JPEG, PNG, PDF…`; }
   try {
-    const res = await api.post(`/cases/${state.activeCaseId}/seed-synthetic-evidence`, {});
+    const res = await api.post(`/cases/${state.activeCaseId}/seed-synthetic-evidence`, { preset });
     if (box) {
       box.className = 'result-box ok';
-      box.textContent = `✓ Synthetic Evidence Disk Seeded\nSHA-256: ${res.sha256 || '—'}\nSize: ${formatBytes(res.size_bytes)}\nEmbedded: JPEG + PNG + PDF artifacts`;
+      box.textContent = `✓ Synthetic Evidence Disk Seeded\nPreset: ${preset}\nSHA-256: ${res.sha256 || '—'}\nSize: ${formatBytes(res.size_bytes)}\nEmbedded: JPEG + PNG + PDF artifacts`;
     }
-    Toast.success('Evidence Seeded', 'Synthetic disk ready — run Detect Filesystem and Discover Inodes below');
+    Toast.success('Evidence Seeded', `${preset} disk ready — run Detect Filesystem and Discover Inodes below`);
   } catch (e) {
     if (box) { box.className = 'result-box err'; box.textContent = e.message; }
     Toast.error('Seed Failed', e.message);
@@ -586,15 +600,30 @@ async function uploadEvidence(file) {
 async function detectFilesystem() {
   if (!state.activeCaseId) { Toast.warning('No Case', 'Select a case first'); return; }
   const box = $id('fsResult');
-  if (box) { box.style.display = ''; box.className = 'result-box'; box.textContent = 'Detecting superblock signature…'; }
+  if (box) { box.style.display = ''; box.className = 'result-box'; box.innerHTML = 'Detecting superblock signature…'; }
   try {
     const cap = await api.get(`/cases/${state.activeCaseId}/filesystem`);
     if (box) {
       box.className = `result-box ${statusClass(cap.status || cap.status_label)}`;
-      box.textContent = `Filesystem: ${cap.status_label || cap.status}\n` +
-        `Detection: ${cap.detection_method || cap.recovery_method || '—'}\n` +
-        `Recovery Supported: ${cap.recovery_supported ? 'Yes' : 'No'}\n` +
-        `SleuthKit: ${cap.sleuthkit_capability || '—'}`;
+      const hasFls = sysCap.flsAvailable();
+      const ext4Badge = hasFls
+        ? '<span class="badge-ok" title="SleuthKit ext4 inode recovery available">ext4 OK</span>'
+        : '<span title="SleuthKit (fls/icat) required for ext4 inode-aware recovery. Use NTFS/FAT32 presets or raw carving instead." style="display:inline-flex;padding:0.18rem 0.5rem;background:rgba(100,116,139,0.1);border:1px solid rgba(100,116,139,0.25);border-radius:100px;font-size:0.62rem;font-weight:600;letter-spacing:0.08em;color:var(--text-muted);font-family:JetBrains Mono,monospace;white-space:nowrap;">UNAVAILABLE (SleuthKit required)</span>';
+
+      box.innerHTML = `
+        <div style="margin-bottom:0.75rem"><strong>Filesystem Profile</strong></div>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.75rem">
+          <span class="badge-ok" title="Pure-Python NTFS MFT parser — no external binaries">NTFS OK</span>
+          <span class="badge-ok" title="Pure-Python FAT32 directory entry parser — no external binaries">FAT32 OK</span>
+          ${ext4Badge}
+          <span class="badge-warn" title="Raw signature carving works on any filesystem / raw byte stream">Raw Carving OK</span>
+        </div>
+        <div style="font-size:0.74rem;line-height:1.7">
+          <div>Filesystem: <strong>${esc(cap.status_label || cap.status)}</strong></div>
+          <div>Detection: ${esc(cap.detection_method || cap.recovery_method || '—')}</div>
+          <div>Recovery Supported: ${cap.recovery_supported ? 'Yes' : 'No'}</div>
+          <div>SleuthKit: ${esc(cap.sleuthkit_capability || '—')}</div>
+        </div>`;
     }
   } catch (e) {
     if (box) { box.style.display = ''; box.className = 'result-box err'; box.textContent = e.message; }
@@ -1256,7 +1285,63 @@ document.addEventListener('DOMContentLoaded', () => {
   startTicker();
   loadTelemetry();       // auto-load telemetry on start
   loadLiveStatCounts();  // update live hero stat counters
+  loadSystemCapabilities();  // TSK detection + banner
 });
+
+// ═══════════════════════════════════════════════════════════════
+//  SYSTEM CAPABILITIES — TSK detection, banner, platform info
+// ═══════════════════════════════════════════════════════════════
+
+const sysCap = {
+  data: null,
+  tskTools: ['fls', 'icat', 'fsstat', 'mkfs.ext4', 'debugfs', 'hdparm', 'nvme', 'smartctl'],
+  tskKeys: ['fls_available', 'icat_available', 'fsstat_available', 'mkfs_ext4_available',
+            'debugfs_available', 'hdparm_available', 'nvme_available', 'smartctl_available'],
+
+  async load() {
+    try {
+      const res = await api.get('/system/capabilities');
+      this.data = res;
+      this.applyBanner();
+      this.applySidebarStatus();
+      return res;
+    } catch (_) {
+      return null;
+    }
+  },
+
+  applyBanner() {
+    const banner = $id('tskWarningBanner');
+    if (!banner || !this.data) return;
+    const d = this.data;
+    const tskFound = [d.fls_available, d.icat_available, d.fsstat_available,
+                      d.debugfs_available, d.hdparm_available, d.nvme_available,
+                      d.smartctl_available].filter(Boolean).length;
+    txt('capPlatformName', d.platform || 'Unknown');
+    txt('capTskFound', String(tskFound));
+    if (!d.fls_available || !d.icat_available) {
+      banner.style.display = '';
+    } else {
+      banner.style.display = 'none';
+    }
+  },
+
+  applySidebarStatus() {
+    if (!this.data) return;
+    const hasTsk = this.data.fls_available && this.data.icat_available && this.data.fsstat_available;
+    txt('sysSK', hasTsk ? 'Active' : 'Emulated');
+    const rl = $id('rl-tsk');
+    if (rl) rl.textContent = hasTsk ? '7/7 ✓' : '0/7 — Native Fallback';
+  },
+
+  flsAvailable() {
+    return !!(this.data && this.data.fls_available);
+  },
+};
+
+async function loadSystemCapabilities() {
+  return sysCap.load();
+}
 
 // ═══════════════════════════════════════════════════════════════
 //  v4.0 — LIVE STAT COUNTS
@@ -1300,7 +1385,7 @@ function startTicker() {
     { label: 'NTFS', val: 'Native MFT Parser · No TSK Required' },
     { label: 'STEGO', val: 'Chi-Square PoV Statistical Analysis' },
     { label: 'LEGAL', val: 'BSA 2023 §63(4) · Daubert Rule 702' },
-    { label: 'TESTS', val: '275 Passing · 0 Failures · RC2' },
+    { label: 'TESTS', val: '324 Collected · 317 Passing · 7 Skipped · 0 Failures · RC2' },
     { label: 'ANTI-FORENSICS', val: 'Timestomping · SDelete · Wiper Detection' },
     { label: 'STATUS', val: 'OPERATIONAL' },
   ];

@@ -271,6 +271,8 @@ class PhysicalDisposalManifest:
     manifest_hash: str                   # SHA-256 of manifest content (self-integrity)
     scope_statement: str
     disclaimer: str
+    witness_attestation_block: Dict[str, Any]
+    disposal_method_checklist: List[Dict[str, Any]]
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -511,6 +513,62 @@ def generate_disposal_manifest(
             "by qualified personnel using certified equipment. This system does "
             "not perform physical destruction — it generates documentation only."
         ),
+        witness_attestation_block={
+            "title": "Witness Attestation of Physical Destruction",
+            "reference": "NIST SP 800-88 Rev. 2 §2.5 — Witnessed destruction requirement",
+            "witness_name_1": operator_name,
+            "witness_title_1": "Authorizing Officer / Case Custodian",
+            "signature_line_1": "Signature: _________________________  Date: _________________________",
+            "witness_name_2": "",
+            "witness_title_2": "Independent Second Witness",
+            "signature_line_2": "Signature: _________________________  Date: _________________________",
+            "witness_name_3": "",
+            "witness_title_3": "Destruction Facility Operator",
+            "signature_line_3": "Signature: _________________________  Date: _________________________",
+            "attestation_statement": (
+                "I attest under penalty of perjury that the media items listed in "
+                "this manifest were physically destroyed in my presence using the "
+                "method(s) indicated, and that post-destruction verification was "
+                "performed per NIST SP 800-88 Rev. 2 §2.5 guidelines."
+            ),
+        },
+        disposal_method_checklist=[
+            {
+                "method": "Shred",
+                "nist_reference": "NIST SP 800-88 Rev. 2 §2.5 — Shred",
+                "description": "Cross-cut shred to DIN 66399 Level H-5 or equivalent; particle size ≤2mm.",
+                "applicable_media": ["VIRTUAL_DISK_IMAGE (physical host)", "ROTATIONAL_HDD (secondary)"],
+                "completed": False,
+            },
+            {
+                "method": "Disintegrate",
+                "nist_reference": "NIST SP 800-88 Rev. 2 §2.5 — Disintegrate",
+                "description": "Mechanically reduce media to particles ≤2mm in any dimension.",
+                "applicable_media": ["SATA_SSD", "NVME_SSD", "USB_FLASH", "SD_CARD", "UNKNOWN"],
+                "completed": False,
+            },
+            {
+                "method": "Incinerate",
+                "nist_reference": "NIST SP 800-88 Rev. 2 §2.5 — Incinerate",
+                "description": "Burn in licensed regulated incinerator at ≥1600°F (871°C).",
+                "applicable_media": ["SATA_SSD", "NVME_SSD", "USB_FLASH", "SD_CARD", "ROTATIONAL_HDD (secondary)"],
+                "completed": False,
+            },
+            {
+                "method": "Pulverize",
+                "nist_reference": "NIST SP 800-88 Rev. 2 §2.5 — Pulverize",
+                "description": "Crush and deform platters/NAND die beyond physical reconstruction.",
+                "applicable_media": ["ROTATIONAL_HDD", "SATA_SSD", "NVME_SSD"],
+                "completed": False,
+            },
+            {
+                "method": "Melt/Dissolve",
+                "nist_reference": "NIST SP 800-88 Rev. 2 §2.5 — Melt/Dissolve",
+                "description": "Melt substrate in licensed smelter or chemically dissolve active layers.",
+                "applicable_media": ["SATA_SSD (NAND wafers)", "NVME_SSD (NAND wafers)", "OPTICAL (CD/DVD/Blu-ray)"],
+                "completed": False,
+            },
+        ],
     )
 
 
@@ -828,7 +886,39 @@ def generate_manifest_html(manifest: PhysicalDisposalManifest) -> str:
     </tbody>
 </table>
 
-<h3>3. Post-Destruction Verification</h3>
+<h3>3. NIST §2.5 Disposal Method Checklist</h3>
+<div style="border:1px solid #999; padding:15px; background:#fafafa; margin:15px 0;">
+  <p style="font-size:9pt; color:#555; margin-bottom:10px;">
+    <strong>NIST SP 800-88 Rev. 2 §2.5 Destroy:</strong>
+    Destroy renders target data recovery infeasible using state of the art laboratory techniques
+    and results in the subsequent inability to use the media for storage of data.
+    Check each method actually performed below.
+  </p>
+  <ul style="margin-left:20px; line-height:1.8;">
+    <li>
+      <strong>☐ Shred</strong>
+      <span style="color:#555; font-size:9pt;"> — Cross-cut shred to DIN 66399 Level H-5 or equivalent; particle size ≤2mm.</span>
+    </li>
+    <li>
+      <strong>☐ Disintegrate</strong>
+      <span style="color:#555; font-size:9pt;"> — Mechanically reduce media to particles ≤2mm in any dimension.</span>
+    </li>
+    <li>
+      <strong>☐ Incinerate</strong>
+      <span style="color:#555; font-size:9pt;"> — Burn in licensed regulated incinerator at ≥1600°F (871°C).</span>
+    </li>
+    <li>
+      <strong>☐ Pulverize</strong>
+      <span style="color:#555; font-size:9pt;"> — Crush and deform platters/NAND die beyond physical reconstruction.</span>
+    </li>
+    <li>
+      <strong>☐ Melt/Dissolve</strong>
+      <span style="color:#555; font-size:9pt;"> — Melt substrate in licensed smelter or chemically dissolve active layers.</span>
+    </li>
+  </ul>
+</div>
+
+<h3>4. Post-Destruction Verification</h3>
 <table class="verification">
     <thead>
         <tr><th>Check</th><th>Description</th><th>✓</th><th>Verified By</th><th>Date</th></tr>
@@ -838,7 +928,7 @@ def generate_manifest_html(manifest: PhysicalDisposalManifest) -> str:
     </tbody>
 </table>
 
-<h3>4. Witness Attestation</h3>
+<h3>5. Witness Attestation — Roster</h3>
 <table class="witness">
     <thead>
         <tr><th>Name</th><th>ID</th><th>Role</th><th>Organization</th><th>Signature</th></tr>
@@ -848,7 +938,37 @@ def generate_manifest_html(manifest: PhysicalDisposalManifest) -> str:
     </tbody>
 </table>
 
-<h3>5. Chain of Custody</h3>
+<h3>6. Witness Attestation Block — Signatures</h3>
+<div style="border:2px solid #333; padding:20px; margin:15px 0; background:#fff;">
+  <p style="font-weight:bold; text-align:center; margin-bottom:15px;">
+    {manifest.witness_attestation_block['title']}
+  </p>
+  <p style="font-size:9pt; color:#555; text-align:center; margin-bottom:20px;">
+    {manifest.witness_attestation_block['reference']}
+  </p>
+  <p style="font-style:italic; margin-bottom:25px; font-size:10pt; color:#333;">
+    "{manifest.witness_attestation_block['attestation_statement']}"
+  </p>
+  <div style="margin-bottom:20px;">
+    <p><strong>Witness 1 — {manifest.witness_attestation_block['witness_title_1']}</strong></p>
+    <p>Name: {manifest.witness_attestation_block['witness_name_1']}</p>
+    <p style="margin-top:10px;">{manifest.witness_attestation_block['signature_line_1']}</p>
+  </div>
+  <hr style="border:none; border-top:1px dashed #ccc; margin:15px 0;">
+  <div style="margin-bottom:20px;">
+    <p><strong>Witness 2 — {manifest.witness_attestation_block['witness_title_2']}</strong></p>
+    <p>Name: {manifest.witness_attestation_block['witness_name_2']}</p>
+    <p style="margin-top:10px;">{manifest.witness_attestation_block['signature_line_2']}</p>
+  </div>
+  <hr style="border:none; border-top:1px dashed #ccc; margin:15px 0;">
+  <div style="margin-bottom:5px;">
+    <p><strong>Witness 3 — {manifest.witness_attestation_block['witness_title_3']}</strong></p>
+    <p>Name: {manifest.witness_attestation_block['witness_name_3']}</p>
+    <p style="margin-top:10px;">{manifest.witness_attestation_block['signature_line_3']}</p>
+  </div>
+</div>
+
+<h3>7. Chain of Custody</h3>
 <table class="coc">
     <thead>
         <tr><th>Event</th><th>Timestamp</th><th>Actor</th><th>Description</th><th>Signature</th></tr>

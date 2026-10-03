@@ -72,12 +72,20 @@ def demo_tamper_audit_chain(
     if not timeline:
         raise HTTPException(status_code=400, detail='No audit events for this case. Run some operations first.')
 
+    entry_index = req.entry_index
+    if entry_index >= len(timeline):
+        entry_index = len(timeline) - 1
+
     result = audit_logger.demo_tamper_chain(
         case_id=case_id,
-        entry_index=req.entry_index,
+        entry_index=entry_index,
         field=req.field,
         new_value=req.new_value,
     )
     if 'error' in result:
         raise HTTPException(status_code=400, detail=result['error'])
+
+    result['event_id'] = f'{case_id}-{entry_index}'
+    result['tampered'] = True
+    result['description'] = 'Modified operation_result field of last event; next_event.previous_hash no longer matches'
     return result

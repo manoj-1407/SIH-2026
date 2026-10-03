@@ -23,9 +23,10 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 
 from app.api.health import router as health_router
+from app.api.system import router as system_router
 from app.api.cases import router as cases_router
 from app.api.forensics import router as forensics_router
-from app.api.sanitization import router as sanitization_router
+from app.api.sanitization import router as sanitization_router, router_profile as sanitization_profile_router
 from app.api.evidence import router as evidence_router
 from app.api.carving import router as carving_router
 from app.api.eraser import router as eraser_router
@@ -106,13 +107,15 @@ async def rate_limit_middleware(request: Request, call_next):
 
 _auth = [Depends(require_api_key)]
 
-# ── Always-public health ────────────────────────────────────────────────────────
+# ── Always-public health & system capabilities ─────────────────────────────────
 app.include_router(health_router)
+app.include_router(system_router)
 
 # ── Core routers (no /api prefix — original routes) ───────────────────────────
 app.include_router(cases_router, dependencies=_auth)
 app.include_router(forensics_router, dependencies=_auth)
 app.include_router(sanitization_router, dependencies=_auth)
+app.include_router(sanitization_profile_router, dependencies=_auth)
 
 # Mount the literal certificate routes before the catch-all evidence route so
 # /evidence/reliability-statement is not swallowed by /evidence/{evidence_id}.
@@ -132,9 +135,11 @@ from fastapi import FastAPI as _FastAPI
 _api_sub = _FastAPI()
 # Same auth dependency as top-level mounts — /api/* must not bypass API-key checks.
 _api_sub.include_router(health_router)
+_api_sub.include_router(system_router)
 _api_sub.include_router(cases_router, dependencies=_auth)
 _api_sub.include_router(forensics_router, dependencies=_auth)
 _api_sub.include_router(sanitization_router, dependencies=_auth)
+_api_sub.include_router(sanitization_profile_router, dependencies=_auth)
 _api_sub.include_router(cert_router, dependencies=_auth)
 _api_sub.include_router(evidence_router, dependencies=_auth)
 _api_sub.include_router(carving_router, dependencies=_auth)

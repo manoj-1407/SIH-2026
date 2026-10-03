@@ -3,7 +3,7 @@ import os
 import threading
 import time
 from pathlib import Path
-from app.cases.store import CaseStore
+from app.cases.store import CaseStore, CaseDemoSnapshot
 from app.cases.audit import AuditLogger
 from app.core.trust import TrustRegistry, KeyRecord, KeyStatus, KeyNotFoundError
 from app.core.persistence import EvidenceStore
@@ -23,11 +23,13 @@ AUDIT_DIR = DATA_DIR / 'audit'
 EVIDENCE_DIR = DATA_DIR / 'evidence'
 KEYS_DIR = DATA_DIR / 'keys'
 UPLOADS_DIR = DATA_DIR / 'uploads'
+BACKUP_DIR = DATA_DIR / 'demo_backup'
 
 case_store = CaseStore(CASES_DIR)
 audit_logger = AuditLogger(AUDIT_DIR)
 evidence_store = EvidenceStore(EVIDENCE_DIR)
 trust_registry = TrustRegistry(KEYS_DIR / 'trust_registry.json')
+demo_snapshot = CaseDemoSnapshot(CASES_DIR, EVIDENCE_DIR, AUDIT_DIR, BACKUP_DIR)
 
 SIGNER_KEY_ID = 'KEY-EXAMINER-NTRO-PRIMARY'
 SIGNER_KEY_FILE = KEYS_DIR / 'primary_examiner.priv'

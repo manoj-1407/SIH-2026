@@ -105,7 +105,7 @@
         </span>
         <span class="theme-toggle-label">Dark</span>
       </button>
-      <div class="team-aitka">Team AITKA</div>
+      <div class="team-aitka">Team Aikta</div>
     </div>
   </header>
 
@@ -212,9 +212,9 @@
 
         <div class="hero-stats">
           <div class="stat-card">
-            <div class="stat-num" id="statTests">275</div>
-            <div class="stat-label">Tests Passing</div>
-            <div class="stat-tag">RC2 Certified</div>
+            <div class="stat-num" id="statTests">324</div>
+            <div class="stat-label">Tests Collected</div>
+            <div class="stat-tag">RC2 · 0 Failures</div>
           </div>
           <div class="stat-card">
             <div class="stat-num" id="statCases">—</div>
@@ -435,6 +435,13 @@
         No active case. <a onclick="switchTab('cases', document.querySelector('[data-tab=cases]'))">Select or create a case →</a>
       </div>
 
+      <div class="warning-box" id="tskWarningBanner" style="display:none">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <div style="flex:1;line-height:1.65">
+          <strong>⚠️ SleuthKit binaries not detected on this machine.</strong> ext4 filesystem-aware inode recovery requires Linux + SleuthKit installed. This machine is running <span id="capPlatformName"></span> with <span id="capTskFound"></span>/7 TSK binaries found. Pure-Python engines available: <strong>NTFS MFT parser ✓, FAT32 directory-entry parser ✓, raw signature carving ✓</strong>. Upload an NTFS or FAT32 image for full filesystem-aware recovery, or any image for raw carving.
+        </div>
+      </div>
+
       <div class="steps-container">
         <!-- Step 1: Upload -->
         <div class="step-card" id="stepUpload">
@@ -442,11 +449,17 @@
           <div class="step-body">
             <h3>Upload or Seed Evidence Image</h3>
             <p>Upload a forensic disk image (.img, .raw, .dd) or seed a built-in synthetic evidence disk with embedded JPEG, PNG, and PDF artifacts.</p>
-            <div style="display:flex;gap:0.6rem;flex-wrap:wrap;margin-bottom:1rem">
+            <div style="display:flex;gap:0.6rem;flex-wrap:wrap;margin-bottom:1rem;align-items:stretch">
               <button class="btn-secondary" onclick="document.getElementById('imageFileInput').click()">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0018 9h-1.26A8 8 0 103 16.3"/></svg>
                 Upload Image
               </button>
+              <select class="form-input" id="seededDemoPreset" style="width:auto;min-width:180px;flex-shrink:0" onchange="applySeededDemoPresetFilter()">
+                <optgroup label="Seeded Presets (Windows-compatible)">
+                  <option value="NTFS" selected>NTFS — 20MB (6 files: resident + non-resident)</option>
+                  <option value="FAT32">FAT32 — 16MB (JPEG + PNG + PDF)</option>
+                </optgroup>
+              </select>
               <button class="btn-secondary" onclick="seedSyntheticEvidence()">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
                 Seed Synthetic Evidence

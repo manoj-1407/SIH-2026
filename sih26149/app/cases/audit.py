@@ -17,6 +17,10 @@ Chain structure per entry:
 Verification:
   verify_chain(case_id) → (bool, list_of_violations)
   demo_tamper_chain(case_id, index, field, value) → demonstrates instant detection
+
+NOTE: Canonical serialization uses app.core.canonical.canonicalize()
+      (RFC 8785 JCS — byte-identical between audit.py and independent_verifier.py).
+      Parity is enforced by test: tests/unit/test_audit_canonical_parity.py
 """
 import os
 import json
@@ -27,17 +31,21 @@ import threading
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+from app.core.canonical import canonicalize
+
 
 _GENESIS_HASH = "GENESIS"
 
 
 def _canonical_json(entry: dict) -> bytes:
-    """Deterministic canonical serialization for hashing.
-    Excludes the 'entry_hash' field itself (it can't be included in its own hash).
-    Sort keys for determinism.
+    """RFC 8785 JCS canonical serialization for audit chain hashing.
+
+    Byte-identical to app.core.canonical.canonicalize() used by the
+    independent third-party verifier (app.core.independent_verifier).
+    Excludes the 'entry_hash' field itself (it can't be part of its own hash).
     """
     sanitized = {k: v for k, v in entry.items() if k != "entry_hash"}
-    return json.dumps(sanitized, sort_keys=True, separators=(',', ':')).encode('utf-8')
+    return canonicalize(sanitized)
 
 
 def _sha256_entry(entry: dict) -> str:
@@ -271,3 +279,87 @@ class AuditLogger:
                 'violations': violations,
             },
         }
+
+    def apply_permanent_audit_tamper(self, case_id: str) -> dict:
+        """
+        [ADVERSARIAL DEMO ONLY] Permanently tamper with audit chain near the end.
+        DOES NOT restore. Caller is responsible for snapshot backup/restore.
+
+        Strategy:
+        - If chain has >= 2 events: pick second-to-last entry (so it has a NEXT entry)
+        - Modify operation_result (or fallback field) by flipping case
+        - Recompute entry_hash of THIS tampered entry
+        - Do NOT update next entry's previous_hash -> chain linkage broken
+        Returns event_id, tampered entry_index, etc.
+        """
+        with self._lock_for(case_id):
+            p = self._log_path(case_id)
+            if not p.exists():
+                return {'error': 'No audit log for this case'}
+
+            lines = p.read_text(encoding='utf-8').splitlines()
+            entries: list[dict] = []
+            for line in lines:
+                line = line.strip()
+                if line:
+                    try:
+                        entries.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        return {'error': 'Malformed audit log entry'}
+
+            n = len(entries)
+            if n == 0:
+                return {'error': 'No audit events for this case'}
+
+            target_idx = n - 2 if n >= 2 else 0
+            entry = entries[target_idx]
+
+            details = entry.get('details') or {}
+            op_result = None
+            field_path = None
+            if 'operation_result' in details and isinstance(details['operation_result'], str):
+                op_result = details['operation_result']
+                field_path = ('details', 'operation_result')
+            elif 'operation_result' in entry and isinstance(entry['operation_result'], str):
+                op_result = entry['operation_result']
+                field_path = ('operation_result',)
+            elif 'event_type' in entry and isinstance(entry['event_type'], str):
+                op_result = entry['event_type']
+                field_path = ('event_type',)
+            elif isinstance(entry.get('actor'), str):
+                op_result = entry['actor']
+                field_path = ('actor',)
+
+            if op_result is None:
+                return {'error': 'No suitable string field found for tamper'}
+
+            if op_result.islower():
+                flipped = op_result.upper()
+            elif op_result.isupper():
+                flipped = op_result.lower()
+            else:
+                flipped = op_result.swapcase()
+
+            if field_path == ('details', 'operation_result'):
+                entry['details']['operation_result'] = flipped
+            else:
+                entry[field_path[0]] = flipped
+
+            entry['entry_hash'] = _sha256_entry(entry)
+            entries[target_idx] = entry
+
+            new_lines = [json.dumps(e) for e in entries]
+            p.write_text('\n'.join(new_lines) + '\n', encoding='utf-8')
+
+            _, violations = self.verify_chain(case_id)
+
+            return {
+                'tampered': True,
+                'event_id': f'{case_id}-{target_idx}',
+                'entry_index': target_idx,
+                'field': '.'.join(field_path),
+                'original_value': op_result,
+                'tampered_value': flipped,
+                'description': 'Modified operation_result field of last event; next_event.previous_hash no longer matches',
+                'violations': violations,
+            }
