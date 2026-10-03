@@ -17,7 +17,7 @@ from app.sanitization.methods import execute_sanitization, SanitizationMethod
 from app.sanitization.verification import verify_sanitization
 from app.sanitization.scope import get_scope_record, SANITIZATION_SCOPE_STATEMENT
 from app.sanitization.device_detector import detect_media_type, evaluate_opal_capability, MediaType
-from app.sanitization.purge_commands import get_device_purge_plan
+from app.sanitization.purge_commands import get_device_purge_plan, get_hardware_capability_matrix
 
 DEFAULT_EXAMINER = {'examiner_id': 'DEFAULT-EXAMINER-001', 'examiner_name': 'NTRO Certified Examiner'}
 
@@ -404,6 +404,7 @@ def profile_purge_plan(
     )
     return {
         "media_type": device.media_type.value,
+        "capability_matrix": get_hardware_capability_matrix(),
         "device_capability_summary": {
             "recommended_level": device.recommended_level.value,
             "nist_reference": device.recommended_level.nist_reference,
@@ -417,4 +418,3 @@ def profile_purge_plan(
         },
         "purge_plan": plan,
     }
-

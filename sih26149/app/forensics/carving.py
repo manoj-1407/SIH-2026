@@ -16,6 +16,7 @@ Design principles:
 import struct
 import hashlib
 import zlib
+import math
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
@@ -56,6 +57,12 @@ class CarvedFile:
     fragment_gap_bytes: Optional[int] = None
     reconstruction_strategy: str = "CONTIGUOUS"  # CONTIGUOUS | GAP_RECONSTRUCTED | PARTIAL_ONLY
     hex_preview: Optional[str] = None
+    recovered_bytes: Optional[bytes] = field(default=None, repr=False)
+    source_extents: Optional[list] = None
+    mime_type: Optional[str] = None
+    structure_validation: Optional[str] = None
+    entropy_bits_per_byte: Optional[float] = None
+    entropy_sample_bytes: int = 0
 
     @property
     def is_intact(self) -> bool:
@@ -80,6 +87,13 @@ class CarvedFile:
             "reconstruction_strategy": self.reconstruction_strategy,
             "is_intact": self.is_intact,
             "hex_preview": self.hex_preview or "",
+            "mime_type": self.mime_type,
+            "structure_validation": self.structure_validation,
+            "entropy_bits_per_byte": self.entropy_bits_per_byte,
+            "entropy_sample_bytes": self.entropy_sample_bytes,
+            "fragment_count": len(self.source_extents or [{"offset": self.offset, "length": self.size}]),
+            "source_extents": self.source_extents or [{"offset": self.offset, "length": self.size}],
+            "provenance": "RAW_SIGNATURE_AND_STRUCTURE_SCAN",
         }
 
 
@@ -106,6 +120,58 @@ def format_hex_dump(data: bytes, max_bytes: int = 256) -> str:
 
 def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def _sample_entropy(data: bytes, sample_limit: int = 65536) -> tuple[float, int]:
+    sample = data[:sample_limit]
+    if not sample:
+        return 0.0, 0
+    counts = [0] * 256
+    for value in sample:
+        counts[value] += 1
+    entropy = -sum(
+        (count / len(sample)) * math.log2(count / len(sample))
+        for count in counts
+        if count
+    )
+    return round(entropy, 4), len(sample)
+
+
+def _mime_type(file_type: str) -> str:
+    return {
+        "JPEG": "image/jpeg",
+        "PNG": "image/png",
+        "PDF": "application/pdf",
+        "ZIP": "application/zip",
+        "DOCX": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "XLSX": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "MP4": "video/mp4",
+        "MOV": "video/quicktime",
+        "BMP": "image/bmp",
+        "GIF": "image/gif",
+        "TIFF": "image/tiff",
+        "AVI": "video/x-msvideo",
+        "MP3": "audio/mpeg",
+        "OLE": "application/x-ole-storage",
+        "EML": "message/rfc822",
+    }.get(file_type, "application/octet-stream")
+
+
+def _enrich_carved_result(carved: CarvedFile, data: bytes) -> None:
+    content = carved.recovered_bytes
+    if content is None:
+        content = data[carved.offset:carved.offset + carved.size]
+    entropy, sampled = _sample_entropy(content)
+    carved.mime_type = _mime_type(carved.file_type)
+    carved.structure_validation = (
+        "STRUCTURE_MARKERS_VALIDATED"
+        if carved.confidence in (CarvingConfidence.INTACT, CarvingConfidence.HIGH)
+        else "BOUNDED_RECONSTRUCTION_MARKERS_VALIDATED"
+        if carved.confidence == CarvingConfidence.BIFRAGMENTED
+        else "PARTIAL_OR_HEADER_ONLY"
+    )
+    carved.entropy_bits_per_byte = entropy
+    carved.entropy_sample_bytes = sampled
 
 
 def _read_u16be(data: bytes, off: int) -> int:
@@ -245,16 +311,24 @@ def _carve_jpeg(data: bytes, offset: int, max_fragment_scan=None, deep_bifragmen
         if eoi_pos != -1:
             gap_bytes = eoi_pos - last_valid_pos
             end = eoi_pos + 2
-            raw = data[offset:end]
-            factors.append(f"Bifragment EOI located in gap-scan at +{gap_bytes:,} bytes (bounded {MAX_FRAGMENT_SCAN // 1024} KB scan)")
+            reconstructed = data[offset:last_valid_pos] + data[eoi_pos:end]
+            factors.append(
+                f"JPEG split across 2 ordered extents; {gap_bytes:,} intervening bytes excluded "
+                f"(bounded {MAX_FRAGMENT_SCAN // 1024} KB continuation scan)"
+            )
             return CarvedFile(
-                offset=offset, size=end - offset,
+                offset=offset, size=len(reconstructed),
                 file_type="JPEG", confidence=CarvingConfidence.BIFRAGMENTED,
                 confidence_score=CarvingConfidence.BIFRAGMENTED.score,
-                sha256=_sha256(raw), evidence_factors=factors,
+                sha256=_sha256(reconstructed), evidence_factors=factors,
                 is_bifragmented=True,
                 fragment_gap_bytes=gap_bytes,
                 reconstruction_strategy="GAP_RECONSTRUCTED",
+                recovered_bytes=reconstructed,
+                source_extents=[
+                    {"offset": offset, "length": last_valid_pos - offset},
+                    {"offset": eoi_pos, "length": end - eoi_pos},
+                ],
             )
 
     # Could not reconstruct — truncated/partial is NOT the same as bifragmented
@@ -1278,6 +1352,7 @@ def carve_bytes(
             break
 
     for r in results:
+        _enrich_carved_result(r, data)
         if not r.hex_preview:
             r.hex_preview = format_hex_dump(data[r.offset : r.offset + min(r.size, 256)])
 
@@ -1336,4 +1411,3 @@ def carve_image_summary(image_input, **kwargs) -> dict:
         "carved_artifacts": carved_dicts,
         "hash_filter_results": hash_triage,
     }
-

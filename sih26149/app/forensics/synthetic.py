@@ -153,3 +153,11 @@ def get_synthetic_ground_truth() -> List[Dict[str, Any]]:
     """Returns independent ground-truth metadata for all artifacts embedded in generate_synthetic_disk_stream()."""
     _, truth = _layout()
     return truth
+
+
+def generate_fragmented_jpeg_case(gap_size: int = 4096) -> Tuple[bytes, bytes]:
+    """Return a controlled two-extent JPEG fixture and its expected reconstructed bytes."""
+    if gap_size < 512:
+        raise ValueError("gap_size must be at least 512 bytes to model a detectable extent gap")
+    stream = _JPEG_BYTES[:-2] + (b"\xA5" * gap_size) + _JPEG_BYTES[-2:]
+    return stream, _JPEG_BYTES

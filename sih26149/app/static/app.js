@@ -605,8 +605,8 @@ async function detectFilesystem() {
     const cap = await api.get(`/cases/${state.activeCaseId}/filesystem`);
     if (box) {
       box.className = `result-box ${statusClass(cap.status || cap.status_label)}`;
-      const hasFls = sysCap.flsAvailable();
-      const ext4Badge = hasFls
+      const hasExt4Recovery = !!(sysCap.data && sysCap.data.fls_available && sysCap.data.icat_available);
+      const ext4Badge = hasExt4Recovery
         ? '<span class="badge-ok" title="SleuthKit ext4 inode recovery available">ext4 OK</span>'
         : '<span title="SleuthKit (fls/icat) required for ext4 inode-aware recovery. Use NTFS/FAT32 presets or raw carving instead." style="display:inline-flex;padding:0.18rem 0.5rem;background:rgba(100,116,139,0.1);border:1px solid rgba(100,116,139,0.25);border-radius:100px;font-size:0.62rem;font-weight:600;letter-spacing:0.08em;color:var(--text-muted);font-family:JetBrains Mono,monospace;white-space:nowrap;">UNAVAILABLE (SleuthKit required)</span>';
 
@@ -764,6 +764,12 @@ async function runCarving() {
                 <span style="font-size:0.72rem;color:var(--cyan);font-weight:600">HEADER HEX DUMP (FIRST 256 BYTES)</span>
                 <span style="font-size:0.7rem;color:var(--text-muted)">Offset 0x${offset.toString(16).toUpperCase().padStart(8, '0')}</span>
               </div>
+              <div style="font-size:0.7rem;line-height:1.65;color:var(--text-muted);margin-bottom:0.45rem">
+                MIME: ${esc(a.mime_type || 'unknown')} · Structure: ${esc(a.structure_validation || 'not classified')}
+                · Entropy: ${Number.isFinite(a.entropy_bits_per_byte) ? a.entropy_bits_per_byte.toFixed(4) : 'n/a'} bits/byte
+                · Fragments: ${Number.isInteger(a.fragment_count) ? a.fragment_count : 1}
+                · Provenance: ${esc(a.provenance || 'raw carving')}
+              </div>
               <pre class="code-block" style="font-size:0.73rem;line-height:1.4;margin:0;max-height:180px;overflow:auto;user-select:text">${esc(a.hex_preview || 'No hex preview available')}</pre>
             </div>
           </td>
@@ -794,36 +800,45 @@ async function getDecisionProfile() {
   const bus = val('busType');
   const isBoot = $id('isBoot')?.checked;
   const box = $id('profileResult');
-  if (box) { box.style.display = ''; box.className = 'result-box'; box.textContent = 'Querying NIST 800-88 decision tree…'; }
-  // Use local fallback — no dedicated /nist-profile endpoint; use /cases/{id}/decision-profile if case active
-  const caseId = state.activeCaseId || 'CASE-DEMO-2026';
+  if (box) { box.style.display = ''; box.className = 'result-box'; box.textContent = 'Checking host prerequisites and device-method scope…'; }
+  const mediaTypes = {
+    HDD: 'ROTATIONAL_HDD',
+    SSD: 'SATA_SSD',
+    NVMe: 'NVME_SSD',
+    USB: 'USB_FLASH',
+    SD: 'SD_CARD',
+    VIRTUAL: 'VIRTUAL_DISK_IMAGE',
+  };
   try {
-    const res = await api.post(`/cases/${caseId}/decision-profile`, {
-      media_type: media,
-      bus_type: bus,
-      is_boot: isBoot,
+    const query = new URLSearchParams({
+      media_type: mediaTypes[media] || 'UNKNOWN',
+      bus,
+      boot: String(!!isBoot),
     });
+    const res = await api.get(`/sanitization/purge_profile?${query.toString()}`);
+    const plan = res.purge_plan || {};
+    const matrix = res.capability_matrix || {};
+    const row = (matrix.rows || []).find(item => item.media_type === res.media_type) || {};
+    const risks = (plan.risks || []).map(item => `- ${item}`).join('\n');
     if (box) {
-      box.className = 'result-box ok';
-      box.textContent = `Method: ${res.recommended_method || 'PURGE'}\n${res.reasoning || res.reason || 'NIST SP 800-88 Rev.2 recommended method.'}`;
+      box.className = 'result-box warn';
+      box.textContent = [
+        `Media: ${res.media_type || mediaTypes[media] || 'UNKNOWN'}`,
+        `Method family: ${plan.method_family || 'NONE'}`,
+        `Target capability: ${row.target_capability_status || 'UNKNOWN'}`,
+        `Host prerequisites: ${row.host_prerequisite_status || 'UNKNOWN'}`,
+        `Execution: ${row.execution_status || 'NOT_EXECUTED'}`,
+        `Scope: ${res.device_capability_summary?.scope_statement || 'Not established'}`,
+        plan.gating_reason_if_unsatisfied || 'Target-device support has not been probed.',
+        '',
+        'Command preview only — this workstation does not execute hardware Purge commands.',
+        plan.command_template || 'No command available.',
+        risks ? `\nRisks:\n${risks}` : '',
+      ].filter(Boolean).join('\n');
     }
-  } catch {
-    // Fallback local logic
-    let method, reason;
-    if (bus === 'NVMe' || media === 'NVMe' || media === 'SSD') {
-      method = 'PURGE';
-      reason = 'Flash/NVMe: firmware-level cryptographic purge or ATA Enhanced Secure Erase per NIST SP 800-88 Rev.2 §2.4. Physical NAND erasure not guaranteed by software.';
-    } else if (media === 'HDD') {
-      method = 'CLEAR';
-      reason = 'Magnetic HDD: Single-pass logical overwrite (CLEAR) sufficient per NIST SP 800-88 Rev.2 §2.3. Multi-pass overwrite optional.';
-    } else {
-      method = 'PURGE';
-      reason = 'Flash media: PURGE recommended. ATA Enhanced Secure Erase or vendor cryptographic erasure per NIST SP 800-88 Rev.2.';
-    }
-    if (box) {
-      box.className = 'result-box ok';
-      box.textContent = `Method: ${method}\n${reason}`;
-    }
+  } catch (e) {
+    if (box) { box.className = 'result-box err'; box.textContent = e.message; }
+    Toast.error('Device Profile Failed', e.message);
   }
 }
 
@@ -1059,6 +1074,7 @@ async function runProofLoop() {
     const assurance = pr.assurance || {};
     const verification = assurance.verification || {};
     const validation = assurance.validation || {};
+    const erasurePct = pr.differential?.erasure_percentage;
     if (box) {
       box.className = `result-box ${pr.proof_loop_status === 'SUCCESS' ? 'ok' : 'warn'}`;
       box.textContent = [
@@ -1071,17 +1087,25 @@ async function runProofLoop() {
         ``,
         `── Post-Sanitization Probe ──`,
         `  Artifacts Recovered: ${pr.post_sanitization_probe?.artifacts_recovered || 0}`,
-        `  Erasure: ${pr.differential?.erasure_percentage || 0}%`,
+        `  Erasure: ${Number.isFinite(erasurePct) ? `${erasurePct}%` : 'N/A (no pre-sanitize baseline)'}`,
         ``,
         `── Assurance ──`,
         `  Verification: ${verification.passed ? '✓ PASSED' : '✗ FAILED'} — ${verification.detail || ''}`,
         `  Validation: ${validation.passed ? '✓ PASSED' : '✗ FAILED'} — ${validation.status || ''}`,
+        `  Scope: ${assurance.operation_scope || 'IN_MEMORY_VALIDATION_PROBE_ONLY'}`,
+        `  Physical device operation: ${assurance.physical_device_operation_performed ? 'performed' : 'not performed'}`,
         ``,
         `Evidence ID: ${res.evidence_id || '—'}`,
         `Operation ID: ${res.operation_id || '—'}`,
       ].join('\n');
     }
-    Toast.success('Proof Loop Complete', `Evidence: ${res.evidence_id}`);
+    const probePassed = pr.proof_loop_status === 'SUCCESS'
+      && verification.passed === true
+      && validation.passed === true;
+    Toast[probePassed ? 'success' : 'warning'](
+      probePassed ? 'Proof Loop Complete' : 'Proof Loop Requires Review',
+      probePassed ? `In-memory probe evidence: ${res.evidence_id || 'created'}` : (validation.detail || pr.error || 'Probe did not validate.')
+    );
   } catch (e) {
     if (box) { box.style.display = ''; box.className = 'result-box err'; box.textContent = e.message; }
     Toast.error('Proof Loop Failed', e.message);

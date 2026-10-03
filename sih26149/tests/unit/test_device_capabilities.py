@@ -233,6 +233,7 @@ def _check(api_client, params, expected_status=200, method_family=None, ieee_ref
         return None
     body = r.json()
     assert "media_type" in body and "device_capability_summary" in body and "purge_plan" in body
+    assert body["capability_matrix"]["execution_policy"] == "PREVIEW_ONLY_NO_DESTRUCTIVE_DEVICE_COMMANDS"
     summary = body["device_capability_summary"]
     for key in ("ieee_2883_reference", "hpa_checked", "hpa_detected",
                 "dco_checked", "dco_detected"):
@@ -297,3 +298,14 @@ def test_api_hpa_dco_summary_fields_populated(api_client):
     assert isinstance(s["dco_checked"], bool)
     assert s["hpa_detected"] is None or isinstance(s["hpa_detected"], bool)
     assert s["dco_detected"] is None or isinstance(s["dco_detected"], bool)
+
+
+def test_system_capabilities_reports_hardware_matrix_without_claiming_device_support(api_client):
+    response = api_client.get("/api/system/capabilities")
+    assert response.status_code == 200
+    matrix = response.json()["sanitization_capability_matrix"]
+    assert matrix["execution_policy"] == "PREVIEW_ONLY_NO_DESTRUCTIVE_DEVICE_COMMANDS"
+    by_type = {row["media_type"]: row for row in matrix["rows"]}
+    assert by_type["NVME_SSD"]["target_capability_status"] == "UNVERIFIED_NOT_PROBED"
+    assert by_type["NVME_SSD"]["execution_status"] == "NOT_EXECUTED"
+    assert by_type["USB_FLASH"]["purge_status"] == "NOT_SUPPORTED"

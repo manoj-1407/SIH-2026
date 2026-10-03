@@ -58,7 +58,9 @@ def execute_forensic_proof_loop(
 
         # 3. SANITIZATION EXECUTION (STAGE 2) — in-memory validation probe only
         t_san_start = time.time()
-        san_method = method.upper() if isinstance(method, str) and method.upper() in ["CLEAR", "PURGE", "DESTROY"] else "CLEAR"
+        if not isinstance(method, str) or method.upper() not in {"CLEAR", "PURGE", "DESTROY"}:
+            raise ValueError(f"Unsupported proof-loop method: {method!r}; expected CLEAR, PURGE, or DESTROY")
+        san_method = method.upper()
 
         if san_method == "PURGE" or san_method == "DESTROY":
             import secrets
@@ -78,10 +80,23 @@ def execute_forensic_proof_loop(
         post_carve_summary = carve_image_summary(sanitized_bytes, target_types=None, max_results=100)
         post_carve_time_ms = round((time.time() - t_post_start) * 1000, 2)
         post_artifacts_found = post_carve_summary.get("total_carved", 0)
+        residual_artifacts = [
+            {
+                "file_type": artifact.get("file_type"),
+                "sha256": artifact.get("sha256"),
+                "confidence": artifact.get("confidence"),
+                "structure_validation": artifact.get("structure_validation"),
+                "reconstruction_strategy": artifact.get("reconstruction_strategy"),
+            }
+            for artifact in post_carve_summary.get("carved_artifacts", [])
+        ]
 
         # 5. BEFORE / AFTER COMPARISON & DIFFERENTIAL ANALYSIS
         eliminated_artifacts = max(0, pre_artifacts_found - post_artifacts_found)
-        erasure_rate = 1.0 if pre_artifacts_found == 0 else (eliminated_artifacts / pre_artifacts_found)
+        erasure_rate = (
+            eliminated_artifacts / pre_artifacts_found
+            if pre_artifacts_found > 0 else None
+        )
 
         # 6. VERIFICATION vs VALIDATION DISTINCTION
         verification_passed = (initial_hash != post_hash) or (media_size == 0)
@@ -91,12 +106,18 @@ def execute_forensic_proof_loop(
             "Verification failed: post-sanitization hash identical to pre-sanitization."
         )
 
-        validation_passed = (post_artifacts_found == 0)
+        validation_passed = pre_artifacts_found > 0 and post_artifacts_found == 0
         if validation_passed:
             validation_status = "VALIDATED_ZERO_RECOVERABLE"
             validation_notes = (
                 f"Validation Probe Confirmed: 0 / {pre_artifacts_found} pre-existing artifacts recoverable "
                 f"under {method_applied} ({execution_mode}) for {data_sensitivity} sensitivity."
+            )
+        elif pre_artifacts_found == 0 and post_artifacts_found == 0:
+            validation_status = "NO_BASELINE_ARTIFACTS"
+            validation_notes = (
+                "No artifacts were recoverable before the probe; sanitization effectiveness and an "
+                "erasure percentage cannot be measured from this input."
             )
         else:
             validation_status = "VALIDATION_FAILED_RESIDUAL_ARTIFACTS"
@@ -122,6 +143,16 @@ def execute_forensic_proof_loop(
                 "sha256": initial_hash,
                 "artifacts_found": pre_artifacts_found,
                 "by_type": pre_carve_summary.get("by_type", {}),
+                "artifacts": [
+                    {
+                        "file_type": artifact.get("file_type"),
+                        "sha256": artifact.get("sha256"),
+                        "confidence": artifact.get("confidence"),
+                        "structure_validation": artifact.get("structure_validation"),
+                        "reconstruction_strategy": artifact.get("reconstruction_strategy"),
+                    }
+                    for artifact in pre_carve_summary.get("carved_artifacts", [])
+                ],
                 "scan_time_ms": pre_carve_time_ms,
             },
             "sanitization_execution": {
@@ -142,10 +173,11 @@ def execute_forensic_proof_loop(
                 "artifacts_recovered": post_artifacts_found,
                 "probe_time_ms": post_carve_time_ms,
                 "by_type": post_carve_summary.get("by_type", {}),
+                "residual_artifacts": residual_artifacts,
             },
             "differential": {
                 "artifacts_eliminated": eliminated_artifacts,
-                "erasure_percentage": round(erasure_rate * 100, 1),
+                "erasure_percentage": round(erasure_rate * 100, 1) if erasure_rate is not None else None,
             },
             "assurance": {
                 "verification": {
@@ -158,6 +190,8 @@ def execute_forensic_proof_loop(
                     "detail": validation_notes,
                 },
                 "decision_logic_reference": "Decision logic informed by NIST SP 800-88 Rev. 2 and IEEE 2883-2022 standards.",
+                "operation_scope": "IN_MEMORY_VALIDATION_PROBE_ONLY",
+                "physical_device_operation_performed": False,
             },
             "execution_duration_total_ms": total_duration_ms,
         }
@@ -204,7 +238,7 @@ def execute_forensic_proof_loop(
             evidence_id=ev_id,
             details={
                 'validation_status': validation_status,
-                'erasure_percentage': round(erasure_rate * 100, 1),
+                'erasure_percentage': round(erasure_rate * 100, 1) if erasure_rate is not None else None,
                 'method_applied': method_applied,
             },
             hash_ref=signed_pkg.get('evidence_hash'),
@@ -243,5 +277,3 @@ def execute_forensic_proof_loop(
         except Exception:
             pass
         return err_payload
-
-

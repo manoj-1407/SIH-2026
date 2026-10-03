@@ -23,6 +23,7 @@ Design contract:
 import os
 import shutil
 import platform
+import shlex
 from typing import Dict, Any, Optional
 
 from app.sanitization.device_detector import (
@@ -64,6 +65,66 @@ def _current_env_flag(binary_names: list, require_root: bool = True) -> Dict[str
         "binary_found": found_bin,
         "available": satisfied,
         "missing": missing,
+    }
+
+
+def get_hardware_capability_matrix() -> Dict[str, Any]:
+    """Report host prerequisites separately from unprobed target-device support."""
+    is_posix = os.name == "posix"
+    is_root = bool(is_posix and hasattr(os, "geteuid") and os.geteuid() == 0)
+    definitions = [
+        (MediaType.ROTATIONAL_HDD, "ATA Secure Erase / ATA Sanitize", ["hdparm"]),
+        (MediaType.SATA_SSD, "ATA Sanitize / Enhanced Secure Erase", ["hdparm"]),
+        (MediaType.NVME_SSD, "NVMe Sanitize", ["nvme"]),
+        (MediaType.USB_FLASH, "No standard USB mass-storage Purge primitive", []),
+        (MediaType.SD_CARD, "No standard SD host Purge primitive", []),
+        (MediaType.VIRTUAL_DISK_IMAGE, "Image-level logical Clear only", []),
+        (MediaType.UNKNOWN, "No method assigned until media is identified", []),
+    ]
+    rows = []
+    for media_type, method, binaries in definitions:
+        binary_path = None
+        for name in binaries:
+            binary_path = shutil.which(name)
+            if binary_path:
+                break
+        if media_type in (MediaType.ROTATIONAL_HDD, MediaType.SATA_SSD, MediaType.NVME_SSD):
+            target_status = "UNVERIFIED_NOT_PROBED"
+            host_status = "AVAILABLE" if binary_path and is_posix and is_root else "PREREQUISITES_UNAVAILABLE"
+            purge_status = "UNVERIFIED"
+            note = "Target controller capability has not been queried; a host utility alone does not prove device support."
+        elif media_type in (MediaType.USB_FLASH, MediaType.SD_CARD):
+            target_status = "NOT_SUPPORTED_BY_STANDARD_HOST_PROTOCOL"
+            host_status = "NOT_APPLICABLE"
+            purge_status = "NOT_SUPPORTED"
+            note = "Only logical Clear or physical Destroy paths are represented; no successful Purge is claimed."
+        elif media_type == MediaType.VIRTUAL_DISK_IMAGE:
+            target_status = "NOT_APPLICABLE"
+            host_status = "NOT_APPLICABLE"
+            purge_status = "NOT_APPLICABLE"
+            note = "A disk image is not the physical device hosting the image."
+        else:
+            target_status = "UNKNOWN"
+            host_status = "NOT_APPLICABLE"
+            purge_status = "UNKNOWN"
+            note = "Identify and verify the media before selecting a sanitization method."
+
+        rows.append({
+            "media_type": media_type.value,
+            "method": method,
+            "target_capability_status": target_status,
+            "host_prerequisite_status": host_status,
+            "host_binary": binary_path,
+            "purge_status": purge_status,
+            "execution_status": "NOT_EXECUTED",
+            "note": note,
+        })
+
+    return {
+        "platform": platform.system(),
+        "is_admin": is_root,
+        "execution_policy": "PREVIEW_ONLY_NO_DESTRUCTIVE_DEVICE_COMMANDS",
+        "rows": rows,
     }
 
 
@@ -138,8 +199,8 @@ def get_device_purge_plan(
     ref_nist = SanitizationLevel.PURGE.nist_reference
     ref_ieee = device.ieee_2883_reference
 
-    sdx = device_path or "/dev/sdX"
-    nvme_dev = device_path or "/dev/nvme0n1"
+    sdx = shlex.quote(device_path or "/dev/sdX")
+    nvme_dev = shlex.quote(device_path or "/dev/nvme0n1")
 
     # ── TCG Opal PSID revert takes priority for any SED-capable media ──────
     if opal and not boot_drive:

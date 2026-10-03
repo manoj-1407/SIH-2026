@@ -3,6 +3,7 @@ import os
 import shutil
 import platform
 from fastapi import APIRouter
+from app.sanitization.purge_commands import get_hardware_capability_matrix
 
 router = APIRouter(tags=['System'])
 
@@ -44,4 +45,5 @@ def get_system_capabilities():
         'smartctl_available': smartctl_available,
         'platform': platform_name,
         'is_admin': is_admin,
+        'sanitization_capability_matrix': get_hardware_capability_matrix(),
     }

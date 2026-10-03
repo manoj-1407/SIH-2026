@@ -9,6 +9,7 @@ Distinguishes detected filesystems and their supported recovery backends:
          Capability: recovery_supported=False (raw carving fallback available)
   FAT32: Directory-entry based deleted file recovery via pure-Python parser.
          Capability: recovery_supported=True (directory-entry + carving combined)
+  exFAT: Detection + raw carving fallback; metadata-aware recovery is not implemented.
 
 IMPORTANT: The distinction between "metadata recovery" and "raw carving fallback"
 is explicitly surfaced in the API so the UI can present it honestly to judges.
@@ -73,23 +74,50 @@ def detect_filesystem(image_path: str) -> FilesystemCapability:
         )
         output = res.stdout.strip().lower()
 
-        # ext4 — full Sleuth Kit inode-metadata recovery
+        # exFAT is distinct from FAT32; do not route it through the FAT32 parser.
+        if 'exfat' in output:
+            return FilesystemCapability(
+                filesystem='exfat',
+                detected=True,
+                recovery_supported=False,
+                carving_fallback=True,
+                sanitization_supported=False,
+                status_label='EXFAT_CARVE_FALLBACK',
+                details={
+                    'raw_type': 'exFAT',
+                    'recovery_note': (
+                        'exFAT detected. Metadata-aware deleted-entry recovery is not implemented; '
+                        'raw signature carving is available.'
+                    ),
+                },
+                recovery_method='RAW_CARVING_FALLBACK',
+            )
+
+        # ext4 — inode metadata recovery requires both Sleuth Kit commands.
         if 'ext4' in output or 'ext3' in output or 'ext2' in output:
             fsstat_details = _inspect_with_fsstat(image_path)
             fsstat_details['raw_type'] = 'Linux ext4'
+            fls_available = shutil.which('fls') is not None
+            icat_available = shutil.which('icat') is not None
+            recovery_supported = fls_available and icat_available
+            fsstat_details['sleuthkit_commands'] = {
+                'fls_available': fls_available,
+                'icat_available': icat_available,
+            }
             fsstat_details['recovery_note'] = (
-                'Deleted inode recovery via SleuthKit icat. '
-                'FAT/NTFS fallback not required for this filesystem.'
+                'Deleted inode recovery via SleuthKit fls/icat is available.'
+                if recovery_supported else
+                'ext filesystem detected, but inode recovery is unavailable because fls and/or icat is missing; raw carving remains available.'
             )
             return FilesystemCapability(
                 filesystem='ext4',
                 detected=True,
-                recovery_supported=True,
+                recovery_supported=recovery_supported,
                 carving_fallback=True,
                 sanitization_supported=True,
-                status_label='EXT4_FULL_RECOVERY',
+                status_label='EXT4_FULL_RECOVERY' if recovery_supported else 'EXT4_CARVE_FALLBACK',
                 details=fsstat_details,
-                recovery_method='INODE_METADATA',
+                recovery_method='INODE_METADATA' if recovery_supported else 'RAW_CARVING_FALLBACK',
             )
 
         # NTFS — native MFT record parser recovery

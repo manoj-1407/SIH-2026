@@ -9,9 +9,10 @@ Runs actual live evaluation runs on synthetic test sets to compute real metrics:
   - Execution Latency Benchmark
 """
 import time
+import hashlib
 from typing import Dict, Any
 from app.forensics.carving import carve_bytes
-from app.forensics.synthetic import generate_synthetic_disk_stream
+from app.forensics.synthetic import generate_synthetic_disk_stream, generate_fragmented_jpeg_case
 from app.forensics.proof_loop import execute_forensic_proof_loop
 
 
@@ -38,6 +39,9 @@ def run_live_forensic_benchmark(num_synthetic_runs: int = 3) -> Dict[str, Any]:
 
     total_pre_san_artifacts = 0
     total_post_san_recovered = 0
+    total_carve_bytes = 0
+    total_carve_ms = 0.0
+    fragmented_fixture_results = []
 
     for i in range(num_synthetic_runs):
         # Generate synthetic disk stream containing known JPEG, PNG, PDF artifacts
@@ -51,6 +55,8 @@ def run_live_forensic_benchmark(num_synthetic_runs: int = 3) -> Dict[str, Any]:
         t_carve = time.time()
         carved = carve_bytes(disk_bytes, target_types=["JPEG", "PNG", "PDF"])
         carve_ms = round((time.time() - t_carve) * 1000, 2)
+        total_carve_bytes += len(disk_bytes)
+        total_carve_ms += carve_ms
 
         recovered_count = len(carved)
         total_recovered_files += recovered_count
@@ -78,10 +84,29 @@ def run_live_forensic_benchmark(num_synthetic_runs: int = 3) -> Dict[str, Any]:
                 false_positives += 1
                 actual_outcomes.append(0.0)
 
-            if artifact.is_bifragmented or "GAP_RECONSTRUCTED" in status:
-                fragmented_cases_tested += 1
-                if status == "GAP_RECONSTRUCTED":
-                    fragmented_reconstructed += 1
+        fragmented_stream, expected_fragment = generate_fragmented_jpeg_case()
+        t_fragment = time.time()
+        fragment_carved = carve_bytes(fragmented_stream, target_types=["JPEG"])
+        fragment_ms = round((time.time() - t_fragment) * 1000, 2)
+        total_carve_bytes += len(fragmented_stream)
+        total_carve_ms += fragment_ms
+        fragmented_cases_tested += 1
+        fragment_result = next((a for a in fragment_carved if a.is_bifragmented), None)
+        fragment_matched = bool(
+            fragment_result
+            and fragment_result.reconstruction_strategy == "GAP_RECONSTRUCTED"
+            and fragment_result.sha256 == hashlib.sha256(expected_fragment).hexdigest()
+        )
+        if fragment_matched:
+            fragmented_reconstructed += 1
+        fragmented_fixture_results.append({
+            "expected_bytes": len(expected_fragment),
+            "reconstructed": fragment_matched,
+            "confidence": fragment_result.confidence.value if fragment_result else None,
+            "reconstruction_strategy": fragment_result.reconstruction_strategy if fragment_result else None,
+            "sha256_matches_ground_truth": fragment_matched,
+            "scan_time_ms": fragment_ms,
+        })
 
         # Run Proof Loop benchmark run
         proof_res = execute_forensic_proof_loop(disk_bytes, method="CLEAR", case_id=f"BENCH-CASE-{i+1}")
@@ -98,16 +123,13 @@ def run_live_forensic_benchmark(num_synthetic_runs: int = 3) -> Dict[str, Any]:
     recall = (true_positives / total_known_files) if total_known_files > 0 else 1.0
     f1_score = (2 * precision * recall / (precision + recall)) if (precision + recall) > 0 else 0.0
 
-    reconstruction_accuracy = (
-        (fragmented_reconstructed / fragmented_cases_tested)
-        if fragmented_cases_tested > 0 else 1.0
-    )
+    reconstruction_accuracy = fragmented_reconstructed / fragmented_cases_tested
 
     # Compute actual erasure rate from live proof loop probe outcomes
     if total_pre_san_artifacts > 0:
         erasure_rate = ((total_pre_san_artifacts - total_post_san_recovered) / total_pre_san_artifacts) * 100.0
     else:
-        erasure_rate = 100.0 if total_post_san_recovered == 0 else 0.0
+        erasure_rate = None
 
     # Compute mean confidence calibration error
     if confidence_scores and len(confidence_scores) == len(actual_outcomes):
@@ -132,13 +154,21 @@ def run_live_forensic_benchmark(num_synthetic_runs: int = 3) -> Dict[str, Any]:
             "recovery_recall": round(recall, 4),
             "f1_score": round(f1_score, 3),
             "fragment_reconstruction_accuracy_percentage": round(reconstruction_accuracy * 100, 1),
+            "fragmented_fixtures_tested": fragmented_cases_tested,
+            "fragmented_fixtures_reconstructed": fragmented_reconstructed,
             "confidence_calibration_mae": round(calib_error, 4),
-            "sanitization_post_probe_erasure_rate_percentage": round(erasure_rate, 1),
+            "sanitization_post_probe_erasure_rate_percentage": round(erasure_rate, 1) if erasure_rate is not None else None,
         },
         "performance": {
             "total_benchmark_duration_ms": benchmark_duration_ms,
             "avg_scan_latency_ms": round(benchmark_duration_ms / num_synthetic_runs, 2),
+            "carving_scan_bytes": total_carve_bytes,
+            "carving_scan_duration_ms": round(total_carve_ms, 2),
+            "carving_throughput_mib_s": round(
+                (total_carve_bytes / (1024 * 1024)) / (total_carve_ms / 1000), 3
+            ) if total_carve_ms > 0 else 0.0,
         },
+        "fragmented_fixture_results": fragmented_fixture_results,
         "proof_loop_evaluations_sample": proof_loop_results[:2],
         "standards_reference": "Evaluation logic informed by NIST SP 800-88 Rev. 2 & IEEE 2883 validation probes.",
     }
