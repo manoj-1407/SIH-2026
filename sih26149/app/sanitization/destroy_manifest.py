@@ -4,7 +4,7 @@ NIST SP 800-88 Rev. 2 DESTROY Branch — Physical Disposal Manifest Generator.
 When the device capability detector recommends DESTROY (i.e., media cannot
 be cleared or purged through software — flash with inaccessible spare areas,
 optical media, damaged platters, etc.), this module generates a structured,
-court-admissible physical disposal manifest.
+physical disposal handoff record.
 
 The manifest documents:
   1. Device identification and classification
@@ -14,8 +14,8 @@ The manifest documents:
   5. Chain-of-custody handoff record
   6. Witness/operator attestation blocks
 
-This is NOT a physical destruction tool — it is a documentation generator
-that ensures NIST-compliant paperwork accompanies the physical act.
+This is NOT a physical destruction tool — it is a documentation generator.
+It does not establish NIST conformance or legal sufficiency.
 
 Reference: NIST SP 800-88 Rev. 2 §2.5 Destroy
   "Destroy renders target data recovery infeasible using state of the art
@@ -453,13 +453,12 @@ def generate_disposal_manifest(
         for v in matrix["verification"]
     ]
 
-    # Legal citations (verified, real citations only)
+    # Standards and legal references only; this manifest makes no compliance finding.
     legal_citations = [
         "NIST SP 800-88 Rev. 2 — Guidelines for Media Sanitization (September 2025)",
         "NIST SP 800-88 Rev. 2 §2.5 — Destroy: Physical destruction methods",
         "IEEE 2883-2022 — Standard for Sanitizing Storage",
-        "Bharatiya Sakshya Adhiniyam 2023 §63(4) — Admissibility of electronic evidence",
-        "IT Act 2000 §65B — Admissibility of electronic records",
+        "Bharatiya Sakshya Adhiniyam 2023 §63(4) — certificate requirements reference; applicability and compliance not assessed",
     ]
 
     # Build manifest (without hash first, then compute)
@@ -1009,7 +1008,7 @@ def generate_manifest_html(manifest: PhysicalDisposalManifest) -> str:
 
 <div class="footer">
     <p>SIH26149 — Forensic Evidence Workstation | Physical Disposal Manifest v1.0</p>
-    <p>This document must be retained as part of the case file per BSA 2023 §63(4).</p>
+    <p>Technical handoff record only; legal requirements and standards conformance are not assessed.</p>
 </div>
 
 </body>

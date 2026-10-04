@@ -85,15 +85,14 @@ def get_certificate_pdf(evidence_id: str):
 @router.get("/reliability-statement")
 def get_reliability_statement(format: Optional[str] = None, case_id: Optional[str] = None, examiner_name: Optional[str] = None):
     """
-    Generate and export the Legal Forensic Reliability Affidavit (BSA 2023 §63(4) / Daubert Rule 702).
+    Generate a technical reliability summary. It is not a legal affidavit or certificate.
     Returns JSON by default or formatted HTML when format=html.
     """
     from app.core.legal_reliability import generate_reliability_statement, generate_reliability_statement_html
     stmt = generate_reliability_statement(
-        examiner_name=examiner_name or "Senior Forensic Examiner",
+        examiner_name=examiner_name or "Not specified",
         case_id=case_id
     )
     if format == "html":
         return HTMLResponse(content=generate_reliability_statement_html(stmt), media_type="text/html")
     return stmt
-

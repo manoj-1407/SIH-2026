@@ -19,7 +19,7 @@ from app.sanitization.scope import get_scope_record, SANITIZATION_SCOPE_STATEMEN
 from app.sanitization.device_detector import detect_media_type, evaluate_opal_capability, MediaType
 from app.sanitization.purge_commands import get_device_purge_plan, get_hardware_capability_matrix
 
-DEFAULT_EXAMINER = {'examiner_id': 'DEFAULT-EXAMINER-001', 'examiner_name': 'NTRO Certified Examiner'}
+DEFAULT_EXAMINER = {'examiner_id': 'NOT-SPECIFIED', 'examiner_name': 'Not specified'}
 
 router = APIRouter(prefix='/cases/{case_id}', tags=['Sanitization'])
 router_profile = APIRouter(prefix='/sanitization', tags=['Sanitization'])
@@ -156,26 +156,22 @@ def run_sanitization(case_id: str, req: SanitizationRequest):
         case_dict = {'case_id': case_id, 'title': ''}
     case_dict.setdefault('case_id', case_id)
 
-    ieee_2883_reference = None
-    if case.source_path and os.path.exists(case.source_path):
-        try:
-            ieee_2883_reference = detect_media_type(case.source_path).to_dict().get('ieee_2883_reference')
-        except Exception:
-            ieee_2883_reference = None
+    media_capability = op_res.media_capability or {}
 
     san_result_dict = {
         'method': method.value,
-        'erasure_percentage': 100 if verify_res.classification.value == 'VERIFIED_WITHIN_SCOPE' else 0,
-        'post_artifacts_count': 0,
-        'source_sha256': case.input_sha256,
-        'ieee_2883_reference': ieee_2883_reference,
+        'execution_status': verify_res.classification.value,
+        'bytes_written': op_res.bytes_written,
+        'verification_details': verify_res.details,
+        'pre_operation_sha256': case.input_sha256,
+        'nist_sp800_88_section': 'NIST SP 800-88 Rev. 2 §2.3 Clear (logical overwrite)',
+        'ieee_2883_reference': media_capability.get('ieee_2883_reference'),
         'classification': verify_res.classification.value,
     }
 
-    try:
-        legal_reliability_text = generate_sanitization_admissibility_paragraph(san_result_dict, case_dict, DEFAULT_EXAMINER)
-    except Exception:
-        legal_reliability_text = ''
+    legal_reliability_text = generate_sanitization_admissibility_paragraph(
+        san_result_dict, case_dict, DEFAULT_EXAMINER,
+    )
 
     return {
         'operation_id': op_id,
@@ -289,7 +285,7 @@ def generate_destroy_manifest_endpoint(case_id: str, req: DestroyManifestRequest
     Generate a NIST SP 800-88 Rev. 2 DESTROY-branch physical disposal manifest.
 
     When Clear/Purge is insufficient (flash spare areas, damaged platters, etc.),
-    this generates a court-admissible document for physical destruction handoff.
+    this generates a technical handoff record; it does not determine legal admissibility.
     """
     validate_case_id(case_id)
     try:

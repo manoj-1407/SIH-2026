@@ -134,3 +134,7 @@ def test_html_certificate():
     assert "Forensic Evidence Certificate" in html
     assert "EV-TEST-1234" in html
     assert "VERIFIED" in html
+    assert "not a statutory certificate" in html
+    assert "legal compliance and admissibility are not assessed" in html
+    assert "Compliant with Bharatiya Sakshya Adhiniyam" not in html
+    assert "IT Act 2000 §65B" not in html

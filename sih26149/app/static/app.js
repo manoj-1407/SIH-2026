@@ -668,7 +668,7 @@ async function recoverArtifact() {
     });
     if (box) {
       box.className = `result-box ${statusClass(res.classification)}`;
-      box.textContent = `Status: ${res.classification}\n${res.explanation}\nRecovered SHA-256: ${res.recovered_sha256 || '—'}\nEvidence ID: ${res.evidence_id || '—'}`;
+      box.textContent = `Status: ${res.classification}\n${res.explanation}\nRecovered SHA-256: ${res.recovered_sha256 || '—'}\nEvidence ID: ${res.evidence_id || '—'}${res.legal_reliability_text ? `\n\nTechnical record note:\n${res.legal_reliability_text}` : ''}`;
     }
     Toast.success('Recovery', `Evidence: ${res.evidence_id}`);
   } catch (e) {
@@ -771,6 +771,7 @@ async function runCarving() {
                 · Provenance: ${esc(a.provenance || 'raw carving')}
               </div>
               <pre class="code-block" style="font-size:0.73rem;line-height:1.4;margin:0;max-height:180px;overflow:auto;user-select:text">${esc(a.hex_preview || 'No hex preview available')}</pre>
+              ${a.legal_reliability_text ? `<details style="margin-top:0.6rem"><summary>Technical record note (not a legal opinion)</summary><p style="white-space:pre-wrap;font-size:0.72rem;line-height:1.5">${esc(a.legal_reliability_text)}</p></details>` : ''}
             </div>
           </td>
         </tr>`;
@@ -864,7 +865,7 @@ async function sanitize() {
     });
     if (box) {
       box.className = `result-box ${statusClass(res.classification || 'ok')}`;
-      box.textContent = `Status: ${res.classification || 'VERIFIED_WITHIN_SCOPE'}\nExplanation: ${res.explanation || 'Logical erasure verified within scope'}\nEvidence ID: ${res.evidence_id || '—'}\nOperation: ${res.operation_id || '—'}`;
+      box.textContent = `Status: ${res.classification || 'VERIFIED_WITHIN_SCOPE'}\nExplanation: ${res.explanation || 'Logical erasure verified within scope'}\nEvidence ID: ${res.evidence_id || '—'}\nOperation: ${res.operation_id || '—'}${res.legal_reliability_text ? `\n\nTechnical record note:\n${res.legal_reliability_text}` : ''}`;
     }
     Toast.success('Sanitization', `Completed — ${res.evidence_id || 'signed'}`);
   } catch (e) {
@@ -1014,7 +1015,7 @@ async function loadEvidence() {
       return;
     }
     html('evidenceList', list.map(ev => `
-      <div class="evidence-card" onclick="setVal('tamperEvidenceId','${esc(ev.evidence_id)}');setVal('verifyEvidenceId','${esc(ev.evidence_id)}')">
+      <div class="evidence-card" onclick="setVal('tamperEvidenceId','${esc(ev.evidence_id)}');setVal('verifyEvidenceId','${esc(ev.evidence_id)}');setVal('tamperCaseId','${esc(ev.case_id || '')}')">
         <div class="evidence-card-header">
           <div class="evidence-card-id">${esc(ev.evidence_id)}</div>
           <button class="btn-icon" onclick="event.stopPropagation();downloadCertificate('${esc(ev.evidence_id)}')" title="Download Certificate">
@@ -1022,10 +1023,31 @@ async function loadEvidence() {
           </button>
         </div>
         <div class="evidence-card-meta">${esc(ev.classification || ev.evidence_type || 'FORENSIC')} · ${formatTime(ev.created_at || ev.timestamp)}</div>
+        <button class="btn-ghost small" onclick="event.stopPropagation();downloadEvidenceZip('${esc(ev.evidence_id)}')">Download Evidence ZIP</button>
       </div>
     `).join(''));
   } catch (e) {
     html('evidenceList', `<div class="empty-state"><p style="color:var(--red)">${esc(e.message)}</p></div>`);
+  }
+}
+
+async function downloadEvidenceZip(evidenceId) {
+  try {
+    const response = await apiFetch(`${cfg.base}/evidence/${encodeURIComponent(evidenceId)}/download`);
+    const blob = await response.blob();
+    const disposition = response.headers.get('Content-Disposition') || '';
+    const match = disposition.match(/filename="?([^";]+)"?/i);
+    const filename = (match?.[1] || `evidence_${evidenceId}.zip`).replace(/[^A-Za-z0-9._-]/g, '_');
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    Toast.error('Evidence Download Failed', e.message);
   }
 }
 
@@ -1048,6 +1070,69 @@ async function runTamperDemo() {
       box.textContent = tampered
         ? `✓ TAMPER DETECTED — System correctly identified modification\nClassification: INVALID\nField Tampered: ${res.tampered_field || 'result.classification'}\nDescription: ${res.tamper_description || 'Payload modified after signing'}\nSignature: REJECTED by Ed25519 verifier`
         : `No tamper detected in demo — check evidence ID`;
+    }
+
+    async function runAdversarialDemo(attack) {
+      const caseId = val('tamperCaseId') || state.activeCaseId;
+      const evidenceId = val('tamperEvidenceId');
+      const box = $id('tamperResult');
+      if (!caseId) { Toast.warning('No Case', 'Select or enter a case ID first'); return; }
+      if (attack === 'artifact' && !evidenceId) { Toast.warning('No Evidence', 'Select an evidence package first'); return; }
+      if (box) { box.style.display = ''; box.className = 'result-box'; box.textContent = 'Applying controlled demo attack and verifying…'; }
+
+      try {
+        const casePath = `/cases/${encodeURIComponent(caseId)}/verifier-demo`;
+        let attackResult;
+        let verification;
+        if (attack === 'audit') {
+          attackResult = await api.post(`${casePath}/tamper-audit-chain`, {});
+          verification = await api.get(`/cases/${encodeURIComponent(caseId)}/timeline/verify`);
+          verification.detected = !verification.chain_valid;
+          verification.verification_result = verification.chain_valid ? 'VERIFIED' : 'INVALID';
+        } else if (attack === 'artifact') {
+          attackResult = await api.post(`${casePath}/tamper-artifact`, {
+            evidence_id: evidenceId,
+            artifact_id: 'DEMO-ARTIFACT',
+            byte_offset: 42,
+          });
+          verification = await api.post(`/evidence/${encodeURIComponent(evidenceId)}/verify`, {});
+          verification.detected = verification.verification_result !== 'VERIFIED';
+        } else if (attack === 'key') {
+          attackResult = await api.post(`${casePath}/key-substitution`, {});
+          verification = await api.post(`/evidence/${encodeURIComponent(attackResult.evidence_id)}/verify`, {});
+          verification.detected = verification.verification_result !== 'VERIFIED';
+        } else {
+          throw new Error(`Unknown demo attack: ${attack}`);
+        }
+
+        const detected = Boolean(verification.detected);
+        if (box) {
+          box.className = `result-box ${detected ? 'ok' : 'err'}`;
+          box.textContent = `${detected ? 'TAMPER DETECTED' : 'ATTACK NOT DETECTED'}\nAttack: ${attack}\n${attackResult.description || JSON.stringify(attackResult)}\nVerifier: ${verification.verification_result || 'UNKNOWN'}\n${verification.explanation || JSON.stringify(verification.violations || verification.details || {})}`;
+        }
+        Toast[detected ? 'success' : 'error']('Adversarial Demo', detected ? 'Tampering was rejected' : 'Verifier did not reject the demo attack');
+      } catch (e) {
+        if (box) { box.className = 'result-box err'; box.textContent = `Demo failed: ${e.message}`; }
+        Toast.error('Adversarial Demo Failed', e.message);
+      }
+    }
+
+    async function resetAdversarialDemo() {
+      const caseId = val('tamperCaseId') || state.activeCaseId;
+      const box = $id('tamperResult');
+      if (!caseId) { Toast.warning('No Case', 'Select or enter a case ID first'); return; }
+      try {
+        const result = await api.post(`/cases/${encodeURIComponent(caseId)}/verifier-demo/reset`, {});
+        if (box) {
+          box.style.display = '';
+          box.className = `result-box ${result.restored ? 'ok' : 'warn'}`;
+          box.textContent = result.description;
+        }
+        Toast[result.restored ? 'success' : 'warning']('Demo Reset', result.description);
+      } catch (e) {
+        if (box) { box.style.display = ''; box.className = 'result-box err'; box.textContent = e.message; }
+        Toast.error('Demo Reset Failed', e.message);
+      }
     }
     Toast[tampered ? 'success' : 'warning']('Tamper Demo', tampered ? 'Tamper detection working correctly' : 'Demo result unexpected');
   } catch (e) {
@@ -1408,7 +1493,7 @@ function startTicker() {
     { label: 'CARVER', val: 'JPEG · PNG · PDF · ZIP · MP4 · DOCX' },
     { label: 'NTFS', val: 'Native MFT Parser · No TSK Required' },
     { label: 'STEGO', val: 'Chi-Square PoV Statistical Analysis' },
-    { label: 'LEGAL', val: 'BSA 2023 §63(4) · Daubert Rule 702' },
+    { label: 'LEGAL', val: 'References only · no legal finding' },
     { label: 'TESTS', val: '324 Collected · 317 Passing · 7 Skipped · 0 Failures · RC2' },
     { label: 'ANTI-FORENSICS', val: 'Timestomping · SDelete · Wiper Detection' },
     { label: 'STATUS', val: 'OPERATIONAL' },
@@ -1887,23 +1972,23 @@ function updateRadarLegend(data) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  v4.0 — LEGAL AFFIDAVIT GENERATOR
+//  Technical Reliability Summary
 // ═══════════════════════════════════════════════════════════════
 
-async function generateAffidavit() {
+async function generateReliabilitySummary() {
   const btn = document.getElementById('affidavitBtn');
   if (btn) { btn.disabled = true; btn.textContent = 'Generating…'; }
 
   try {
     const caseParam = state.activeCaseId ? `&case_id=${encodeURIComponent(state.activeCaseId)}` : '';
     const url = `${cfg.base}/evidence/reliability-statement?format=html${caseParam}`;
-    // Open in new tab — content is HTML affidavit document
+    // Open the technical summary; it is not a legal certificate.
     window.open(url, '_blank', 'noopener');
-    showToast('Affidavit opened in new tab. Use browser Print → Save as PDF.', 'ok');
+    showToast('Technical summary opened. Use browser Print → Save as PDF.', 'ok');
   } catch (err) {
-    showToast('Affidavit generation failed: ' + err.message, 'error');
+    showToast('Technical summary generation failed: ' + err.message, 'error');
   } finally {
-    if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> Generate Affidavit'; }
+    if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> Generate Technical Summary'; }
   }
 }
 

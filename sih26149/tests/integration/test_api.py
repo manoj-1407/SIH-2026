@@ -231,7 +231,7 @@ def test_reliability_statement_route_is_reachable():
     res = client.get("/evidence/reliability-statement")
     assert res.status_code == 200
     data = res.json()
-    assert "affidavit_id" in data
+    assert "report_id" in data
     assert "empirical_reliability_metrics" in data
 
 
@@ -258,5 +258,4 @@ def test_entropy_heatmap_uses_case_source_path(tmp_path):
     data = res.json()
     assert "sectors" in data
     assert len(data["sectors"]) > 0
-
 

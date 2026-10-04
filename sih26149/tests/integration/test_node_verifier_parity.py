@@ -61,6 +61,7 @@ def _run_node(manifest_path: Path, trusted_public_key: Path | None = None) -> tu
 
 
 def _build_package(work_dir: Path, artifact_bytes: bytes) -> tuple[Path, Path]:
+    work_dir.mkdir(parents=True, exist_ok=True)
     case_id = "CASE-H08-PARITY"
     priv_pem, pub_raw = generate_keypair()
     from cryptography.hazmat.primitives import serialization
@@ -226,3 +227,20 @@ def test_node_verifier_rejects_embedded_key_without_trust_anchor(tmp_path):
     assert exit_code == 2
     assert "UNTRUSTED" in stdout
     assert "CRYPTOGRAPHICALLY VERIFIED" not in stdout
+
+
+def test_node_and_python_reject_attacker_package_key_against_original_trust(tmp_path):
+    _, trusted_original_key = _build_package(tmp_path / "original", generate_valid_png())
+    attacker_pkg, _ = _build_package(tmp_path / "attacker", generate_valid_png())
+    manifest = attacker_pkg / "manifest.json"
+
+    ok_py, result_py = verify_evidence_package(
+        attacker_pkg,
+        public_key_pem=trusted_original_key.read_bytes(),
+    )
+    assert ok_py is False
+    assert result_py.classification == EvidenceClassification.INVALID
+
+    exit_code, stdout = _run_node(manifest, trusted_original_key)
+    assert exit_code != 0
+    assert "INVALID" in stdout.upper() or "UNTRUSTED" in stdout.upper() or "FAILED" in stdout.upper()

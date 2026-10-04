@@ -27,7 +27,7 @@ from app.api.system import router as system_router
 from app.api.cases import router as cases_router
 from app.api.forensics import router as forensics_router
 from app.api.sanitization import router as sanitization_router, router_profile as sanitization_profile_router
-from app.api.evidence import router as evidence_router
+from app.api.evidence import router as evidence_router, verifier_demo_router
 from app.api.carving import router as carving_router
 from app.api.eraser import router as eraser_router
 from app.api.audit_chain import router as audit_chain_router
@@ -121,6 +121,7 @@ app.include_router(sanitization_profile_router, dependencies=_auth)
 # /evidence/reliability-statement is not swallowed by /evidence/{evidence_id}.
 app.include_router(cert_router, dependencies=_auth)
 app.include_router(evidence_router, dependencies=_auth)
+app.include_router(verifier_demo_router, dependencies=_auth)
 
 # ── New v2 feature routers ─────────────────────────────────────────────────────
 app.include_router(carving_router, dependencies=_auth)
@@ -142,6 +143,7 @@ _api_sub.include_router(sanitization_router, dependencies=_auth)
 _api_sub.include_router(sanitization_profile_router, dependencies=_auth)
 _api_sub.include_router(cert_router, dependencies=_auth)
 _api_sub.include_router(evidence_router, dependencies=_auth)
+_api_sub.include_router(verifier_demo_router, dependencies=_auth)
 _api_sub.include_router(carving_router, dependencies=_auth)
 _api_sub.include_router(eraser_router, dependencies=_auth)
 _api_sub.include_router(audit_chain_router, dependencies=_auth)

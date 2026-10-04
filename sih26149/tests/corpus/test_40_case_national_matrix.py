@@ -655,8 +655,8 @@ def build_valid_ole_doc(size_sectors: int = 8) -> bytes:
     total_size = sector_size * (size_sectors + 1)
     buf = bytearray(b"\x00" * total_size)
     buf[0:8] = _OLE_MAGIC
-    struct.pack_into(">H", buf, 0x1E, 9)
-    struct.pack_into(">H", buf, 0x20, 6)
+    struct.pack_into("<H", buf, 0x1E, 9)
+    struct.pack_into("<H", buf, 0x20, 6)
     struct.pack_into("<I", buf, 0x28, 1)
     first_sector = 512
     ws = first_sector + 0x1FE
@@ -669,8 +669,8 @@ def build_valid_ole_xls(size_sectors: int = 8) -> bytes:
     total_size = sector_size * (size_sectors + 1)
     buf = bytearray(b"\x00" * total_size)
     buf[0:8] = _OLE_MAGIC
-    struct.pack_into(">H", buf, 0x1E, 9)
-    struct.pack_into(">H", buf, 0x20, 6)
+    struct.pack_into("<H", buf, 0x1E, 9)
+    struct.pack_into("<H", buf, 0x20, 6)
     struct.pack_into("<I", buf, 0x28, 1)
     first_sector = 512
     biff_magic_off = first_sector + 0

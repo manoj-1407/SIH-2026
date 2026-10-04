@@ -22,7 +22,7 @@ from app.forensics.discovery import discover_deleted_artifacts
 from app.forensics.recovery import recover_artifact
 from app.forensics.verification import verify_recovery
 
-DEFAULT_EXAMINER = {'examiner_id': 'DEFAULT-EXAMINER-001', 'examiner_name': 'NTRO Certified Examiner'}
+DEFAULT_EXAMINER = {'examiner_id': 'NOT-SPECIFIED', 'examiner_name': 'Not specified'}
 
 router = APIRouter(prefix='/cases/{case_id}', tags=['Forensics'])
 
@@ -312,10 +312,9 @@ def get_deleted_artifacts(case_id: str):
         case_obj = {'case_id': case_id, 'title': ''}
     case_obj.setdefault('case_id', case_id)
     for ad in art_dicts:
-        try:
-            ad['legal_reliability_text'] = generate_artifact_admissibility_paragraph(ad, case_obj, DEFAULT_EXAMINER)
-        except Exception:
-            ad['legal_reliability_text'] = ''
+        ad['legal_reliability_text'] = generate_artifact_admissibility_paragraph(
+            ad, case_obj, DEFAULT_EXAMINER,
+        )
 
     case.discovered_artifacts = art_dicts
     case_store.save(case)
@@ -417,10 +416,9 @@ def run_forensic_recovery(case_id: str, req: ForensicRecoveryRequest):
             except Exception:
                 case_obj = {'case_id': case_id, 'title': ''}
             case_obj.setdefault('case_id', case_id)
-            try:
-                lr_text = generate_artifact_admissibility_paragraph(artifact_dict, case_obj, DEFAULT_EXAMINER)
-            except Exception:
-                lr_text = ''
+            lr_text = generate_artifact_admissibility_paragraph(
+                artifact_dict, case_obj, DEFAULT_EXAMINER,
+            )
             res = {
                 'operation_id': op_id,
                 'evidence_id': evid_id,
@@ -561,6 +559,17 @@ def run_forensic_recovery(case_id: str, req: ForensicRecoveryRequest):
         'match': req.reference_sha256 is not None and rec.sha256.lower() == req.reference_sha256.lower(),
         'size_bytes': rec.size_bytes,
         'signed_evidence': signed_pkg,
+        'legal_reliability_text': generate_artifact_admissibility_paragraph(
+            {
+                'name': req.artifact_name or f'inode_{req.inode}',
+                'sha256': rec.sha256,
+                'size_bytes': rec.size_bytes,
+                'recovery_method': 'ICAT',
+                'confidence': classified.classification.value,
+            },
+            case.to_dict() if hasattr(case, 'to_dict') else {'case_id': case_id},
+            DEFAULT_EXAMINER,
+        ),
     }
 
 

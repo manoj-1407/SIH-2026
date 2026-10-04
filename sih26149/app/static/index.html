@@ -273,7 +273,7 @@
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
             </div>
             <h3>Raw File Carving</h3>
-            <p>Pure-Python signature-based carving of JPEG, PNG, PDF, ZIP, MP4 with confidence scoring.</p>
+            <p>Pure-Python signature carving with structure-based confidence scoring, including common legacy Office and email formats.</p>
             <div class="feature-arrow">→</div>
           </div>
           <div class="feature-card" onclick="switchTab('sanitization', null)">
@@ -342,12 +342,12 @@
           <table class="threat-table">
             <thead><tr><th>Standard / Statute</th><th>Scope</th><th>Status</th></tr></thead>
             <tbody>
-              <tr><td>BSA 2023 §63(4)</td><td>Bharatiya Sakshya Adhiniyam — Electronic evidence admissibility & dual-party attestation</td><td><span class="badge-ok">COMPLIANT</span></td></tr>
-              <tr><td>NIST SP 800-88 Rev. 2</td><td>Media sanitization — Clear, Purge, Destroy with device-aware scope</td><td><span class="badge-ok">COMPLIANT</span></td></tr>
-              <tr><td>IEEE 2883-2022</td><td>Storage device sanitization standard — extends NIST to NVMe/SSD</td><td><span class="badge-ok">COMPLIANT</span></td></tr>
+              <tr><td>BSA 2023 §63(4)</td><td>Electronic-record certificate reference; legal sufficiency requires case-specific review</td><td><span class="badge-warn">REFERENCE ONLY</span></td></tr>
+              <tr><td>NIST SP 800-88 Rev. 2</td><td>Media sanitization reference — device-aware scope; physical execution not validated</td><td><span class="badge-warn">SCOPE DOCUMENTED</span></td></tr>
+              <tr><td>IEEE 2883-2022</td><td>Storage sanitization reference; standards conformance is not asserted</td><td><span class="badge-warn">REFERENCE ONLY</span></td></tr>
               <tr><td>RFC 8785 (JCS)</td><td>JSON Canonicalization Scheme — deterministic serialization before signing</td><td><span class="badge-ok">IMPLEMENTED</span></td></tr>
               <tr><td>RFC 8032</td><td>Edwards-Curve Digital Signature Algorithm (Ed25519)</td><td><span class="badge-ok">IMPLEMENTED</span></td></tr>
-              <tr><td>IT Act 2000 §65B</td><td>Information Technology Act — electronic records as evidence</td><td><span class="badge-ok">REFERENCED</span></td></tr>
+              <tr><td>Former Indian Evidence Act 1872 §65B</td><td>Historical electronic-record provision; not a section of the Information Technology Act</td><td><span class="badge-warn">TRANSITIONAL REVIEW</span></td></tr>
             </tbody>
           </table>
         </div>
@@ -791,7 +791,7 @@
           <span class="panel-badge danger">NIST DESTROY</span>
         </div>
         <div class="panel-body">
-          <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem;">NIST SP 800-88 Rev. 2 §2.5 DESTROY branch — generates a court-admissible physical disposal manifest for media that cannot be cleared or purged via software. Includes chain-of-custody handoff, witness attestation blocks, and verification checklists.</p>
+          <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem;">NIST SP 800-88 Rev. 2 §2.5 DESTROY branch — generates a physical-disposal record for media that cannot be cleared or purged via software. It documents handoff and witness fields but does not determine legal admissibility.</p>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
             <div class="form-group">
               <label class="form-label">Serial Number</label>
@@ -879,12 +879,12 @@
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
         </div>
         <div class="affidavit-text">
-          <h4>Legal Reliability Affidavit</h4>
-          <p>Generate a court-admissible BSA 2023 §63(4) / Daubert Rule 702 affidavit for this examination. Opens as a formatted HTML document ready to print or export to PDF.</p>
+          <h4>Technical Reliability Summary</h4>
+          <p>Generate a technical implementation-status summary. Test error rates are not inferred, and the document is not an affidavit, statutory certificate, legal opinion, or admissibility determination.</p>
         </div>
-        <button class="btn-affidavit" id="affidavitBtn" onclick="generateAffidavit()">
+        <button class="btn-affidavit" id="affidavitBtn" onclick="generateReliabilitySummary()">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-          Generate Affidavit
+          Generate Technical Summary
         </button>
       </div>
 
@@ -894,7 +894,16 @@
           <span class="panel-badge warning">DEMO MODE</span>
         </div>
         <div class="panel-body">
-          <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem;">Select a signed evidence package below, then click "Simulate Tampering" to demonstrate that any field modification causes signature verification to fail with <code>INVALID</code> classification.</p>
+          <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem;">Run controlled audit-chain, artifact-byte, and key-substitution attacks against a selected demo case. Each action is verified; use Reset Demo Case to restore its pre-attack snapshot. This modifies stored demo data.</p>
+          <div class="input-row" style="margin-bottom:0.75rem">
+            <input class="form-input" id="tamperCaseId" type="text" placeholder="Case ID (or select an active case)" style="flex:1">
+          </div>
+          <div class="input-row" style="margin-bottom:0.75rem">
+            <button class="btn-danger" onclick="runAdversarialDemo('audit')">Tamper: Audit Chain</button>
+            <button class="btn-danger" onclick="runAdversarialDemo('artifact')">Tamper: Artifact Byte</button>
+            <button class="btn-danger" onclick="runAdversarialDemo('key')">Attack: Key Substitution</button>
+            <button class="btn-ghost" onclick="resetAdversarialDemo()">Reset Demo Case</button>
+          </div>
           <div class="input-row">
             <input class="form-input" id="tamperEvidenceId" type="text" placeholder="Evidence ID (e.g. EVID-XXXXXXXXXX)" style="flex:1">
             <button class="btn-danger" onclick="runTamperDemo()">

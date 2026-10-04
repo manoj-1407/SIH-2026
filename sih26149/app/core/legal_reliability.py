@@ -1,152 +1,94 @@
-"""
-Legal Reliability & Forensic Admissibility Statement Generator — SIH26149.
-
-Standards Compliance:
-- Bharatiya Sakshya Adhiniyam 2023 (BSA §63(4)) [replaces Indian Evidence Act §65B]
-- US Federal Daubert Standard (Rule 702): Known Error Rate, Empirical Testing, Falsifiability
-- ISO/IEC 27037:2012 (Digital Evidence Handling Guidelines)
-- NIST SP 800-86 (Guide to Integrating Forensic Techniques into Incident Response)
-
-Generates a cryptographically verifiable, court-admissible Reliability Affidavit documenting:
-- Empirical Error Rate: 0.000% across regression, boundary, adversarial, and fuzzing matrices
-- Hash Invariant & Cryptographic Envelope Specifications
-- Deterministic Tool Execution & Known Defensible Boundaries
-"""
-import time
+"""Generate technical reliability summaries without asserting legal compliance."""
 import json
 import hashlib
-import subprocess
-import sys
+from html import escape
 from typing import Dict, Any, Optional
 from datetime import datetime, timezone
-from pathlib import Path
 
-
-def _collect_pytest_metrics() -> Dict[str, Any]:
-    """Return the current test counts from the project suite, which keeps the legal statement tied to real measurement rather than static authoring."""
-    project_root = Path(__file__).resolve().parents[2]
-    try:
-        proc = subprocess.run(
-            [sys.executable, "-m", "pytest", "--collect-only", "-q"],
-            cwd=str(project_root),
-            capture_output=True,
-            text=True,
-            timeout=30,
-            check=False,
-        )
-        text = (proc.stdout or "") + (proc.stderr or "")
-        for token in ["collected", "items collected"]:
-            if token in text:
-                pass
-        # Parse common pytest collection output: "285 tests collected" or "285 items collected"
-        import re
-        m = re.search(r"(\d+)\s+(?:tests|items)\s+collected", text, flags=re.IGNORECASE)
-        if m:
-            total = int(m.group(1))
-            return {"total_tests": total, "measured": True, "source": "pytest --collect-only"}
-    except Exception:
-        pass
-    # Fall back to a documented minimum only when tests are not available; this keeps the statement honest.
-    return {"total_tests": 0, "measured": False, "source": "unavailable"}
-
-
-_PYTEST_METRICS = _collect_pytest_metrics()
-TOTAL_VERIFIED_TESTS = _PYTEST_METRICS["total_tests"] or 285
-CATEGORIES_COVERAGE = {
-    "full_suite_collective": {"tests": TOTAL_VERIFIED_TESTS, "failures": 0, "error_rate": 0.0},
-}
+TOTAL_VERIFIED_TESTS: Optional[int] = None
 
 
 def generate_reliability_statement(
-    examiner_name: str = "Senior Forensic Examiner",
-    lab_organization: str = "National Forensic & Sanitization Infrastructure (NTRO)",
+    examiner_name: str = "Not specified",
+    lab_organization: str = "Not specified",
     case_id: Optional[str] = None
 ) -> Dict[str, Any]:
-    """
-    Generates a structured, legally sound forensic reliability affidavit.
-    """
+    """Return a technical status summary; no tests are run and no legal opinion is made."""
     now_utc = datetime.now(timezone.utc).isoformat()
-    total_tests = sum(c["tests"] for c in CATEGORIES_COVERAGE.values())
-    total_failures = sum(c["failures"] for c in CATEGORIES_COVERAGE.values())
-    error_rate = (total_failures / total_tests) if total_tests > 0 else 0.0
-
-    affidavit_id = f"RELIABILITY-AFFIDAVIT-{hashlib.sha256(f'{now_utc}:{total_tests}'.encode()).hexdigest()[:12].upper()}"
-
-    statement = {
-        "affidavit_id": affidavit_id,
+    report_id = f"RELIABILITY-REPORT-{hashlib.sha256(now_utc.encode()).hexdigest()[:12].upper()}"
+    statement: Dict[str, Any] = {
+        "report_id": report_id,
         "generated_at_utc": now_utc,
         "applicable_legal_frameworks": [
-            "Bharatiya Sakshya Adhiniyam 2023, Section 63(4) (Electronic Records Admissibility)",
-            "Federal Rules of Evidence 702 / Daubert v. Merrell Dow Pharmaceuticals (Known Error Rate)",
-            "ISO/IEC 27037:2012 Handling of Digital Evidence",
-            "NIST SP 800-88 Rev. 2 Guidelines for Media Sanitization"
+            "Bharatiya Sakshya Adhiniyam (BSA) 2023 §39 (expert opinions) and §63 (certificate requirements): references only; compliance is not assessed.",
+            "US Federal Rule of Evidence 702 / Daubert: US legal framework, not an Indian admissibility determination.",
+            "ISO/IEC 27037:2012 and NIST SP 800-88 Rev. 2: technical references; conformance is not assessed here."
         ],
         "system_provenance": {
-            "workstation_id": "SIH26149-PROD-RC2",
-            "certifying_organization": lab_organization,
-            "lead_certifier": examiner_name,
-            "associated_case_id": case_id or "LAB-WIDE-BENCHMARK"
+            "organization": lab_organization or "Not specified",
+            "examiner": examiner_name or "Not specified",
+            "associated_case_id": case_id or "Not specified"
         },
         "empirical_reliability_metrics": {
-            "total_adversarial_test_vectors": total_tests,
-            "confirmed_test_failures": total_failures,
-            "empirical_error_rate_percentage": f"{error_rate:.4f}%",
-            "statistical_confidence_interval": "99.999% (Deterministic execution)",
-            "false_positive_rate": "0.0000% (Strict structural validation gating)",
-            "categories": CATEGORIES_COVERAGE
+            "total_adversarial_test_vectors": None,
+            "confirmed_test_failures": None,
+            "empirical_error_rate_percentage": "NOT MEASURED",
+            "statistical_confidence_interval": "NOT CALCULATED",
+            "false_positive_rate": "NOT MEASURED",
+            "tests_executed_by_this_report": False,
+            "categories": {}
         },
-        "court_admissibility_assertions": [
+        "technical_and_legal_boundaries": [
             {
-                "standard": "Daubert Criterion 1: Empirical Testing & Falsifiability",
-                "finding": "PASS",
-                "evidence": f"Automated CI/CD suite executes {total_tests} deterministic unit, fuzz, and adversarial tests prior to release."
+                "standard": "Test execution and empirical error rate",
+                "finding": "NOT MEASURED",
+                "evidence": "Generating this report does not execute or collect tests; no error rate is inferred."
             },
             {
-                "standard": "Daubert Criterion 2: Known or Potential Rate of Error",
-                "finding": "PASS",
-                "evidence": f"Demonstrated known error rate of 0.000% across all 10 forensic verification dimensions."
+                "standard": "Cryptographic controls",
+                "finding": "IMPLEMENTATION CLAIM ONLY",
+                "evidence": "The project implements Ed25519, canonicalization, and hash-chain checks; this report does not establish legal sufficiency."
             },
             {
-                "standard": "Daubert Criterion 3: Standards Controlling the Technique's Operation",
-                "finding": "PASS",
-                "evidence": "Strict enforcement of RFC 8785 JSON Canonicalization, RFC 8032 Ed25519 signing, and SHA-256 hash chaining."
-            },
-            {
-                "standard": "BSA 2023 §63(4): Integrity of Electronic Record Operation",
-                "finding": "PASS",
-                "evidence": "Signed digital certificates embed hash chain roots; zero unauthorized mutations permitted without signature invalidation."
+                "standard": "BSA 2023 §63(4) certificate requirements",
+                "finding": "NOT ASSESSED",
+                "evidence": "This software-generated summary is not a statutory certificate, affidavit, or admissibility determination."
             }
-        ]
+        ],
+        "not_a_legal_opinion_or_certificate": True
     }
 
-    # Canonical hash of the affidavit itself
     payload_str = json.dumps(statement, sort_keys=True, separators=(",", ":"))
-    statement["affidavit_integrity_sha256"] = hashlib.sha256(payload_str.encode()).hexdigest()
+    statement["report_integrity_sha256"] = hashlib.sha256(payload_str.encode()).hexdigest()
 
     return statement
 
 
 def generate_reliability_statement_html(statement: Dict[str, Any]) -> str:
-    """Renders the reliability affidavit into an official court-presentable HTML document."""
+    """Render the technical reliability summary with escaped report fields."""
     metrics = statement["empirical_reliability_metrics"]
-    assertions = statement["court_admissibility_assertions"]
+    boundaries = statement["technical_and_legal_boundaries"]
     sys_meta = statement["system_provenance"]
-
-    category_rows = "".join(
-        f"<tr><td><code>{k}</code></td><td style='text-align:center;'>{v['tests']}</td><td style='text-align:center;color:#00e676;font-weight:bold;'>{v['failures']}</td><td style='text-align:right;'>{v['error_rate']:.3f}%</td></tr>"
-        for k, v in metrics["categories"].items()
+    legal_reference_items = "".join(
+        f"<li>{escape(str(reference))}</li>"
+        for reference in statement["applicable_legal_frameworks"]
     )
 
-    assertion_rows = "".join(
-        f"<tr><td style='font-weight:600;'>{a['standard']}</td><td style='text-align:center;'><span style='background:#00e67620;color:#00e676;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:bold;'>{a['finding']}</span></td><td>{a['evidence']}</td></tr>"
-        for a in assertions
+    boundary_rows = "".join(
+        "<tr><td>{}</td><td>{}</td><td>{}</td></tr>".format(
+            escape(str(item["standard"])),
+            escape(str(item["finding"])),
+            escape(str(item["evidence"])),
+        )
+        for item in boundaries
     )
+    safe = lambda value: escape(str(value))
 
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Legal Forensic Reliability Statement — {statement['affidavit_id']}</title>
+  <title>Technical Reliability Summary — {safe(statement['report_id'])}</title>
   <style>
     body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: #0a0e17; color: #e2e8f0; line-height: 1.5; padding: 2rem; margin: 0; }}
     .container {{ max-width: 900px; margin: auto; background: #111827; border: 1px solid #1f293d; border-radius: 8px; padding: 2.5rem; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }}
@@ -170,40 +112,37 @@ def generate_reliability_statement_html(statement: Dict[str, Any]) -> str:
   <div class="container">
     <div class="header">
       <div>
-        <div class="title">LEGAL FORENSIC RELIABILITY AFFIDAVIT</div>
-        <div class="subtitle">Admissibility & Empirical Error Rate Assessment · Bharatiya Sakshya Adhiniyam (BSA 2023 §63(4)) / Daubert Rule 702</div>
+        <div class="title">TECHNICAL RELIABILITY SUMMARY</div>
+        <div class="subtitle">Measured implementation status only · legal compliance and admissibility not assessed</div>
       </div>
-      <div class="badge">{statement['affidavit_id']}</div>
+      <div class="badge">{safe(statement['report_id'])}</div>
     </div>
 
+    <p><strong>Important:</strong> This generated summary is not an affidavit, statutory certificate, legal opinion, or determination of admissibility. Review applicable BSA requirements with qualified counsel and the responsible certifying person.</p>
+    <h3 style="font-size:1.05rem;color:#fff;">Legal and technical references (not compliance findings)</h3>
+    <ul>{legal_reference_items}</ul>
     <div class="grid-2">
       <div class="card">
-        <div class="card-title">Certifying Organization</div>
-        <div class="card-val">{sys_meta['certifying_organization']}</div>
-        <div style="font-size:0.8rem;color:#94a3b8;margin-top:4px;">Lead Certifier: {sys_meta['lead_certifier']}</div>
+        <div class="card-title">Organization / examiner supplied</div>
+        <div class="card-val">{safe(sys_meta['organization'])}</div>
+        <div style="font-size:0.8rem;color:#94a3b8;margin-top:4px;">Examiner: {safe(sys_meta['examiner'])}</div>
       </div>
       <div class="card">
-        <div class="card-title">Empirical Error Rate</div>
-        <div class="card-val green">{metrics['empirical_error_rate_percentage']}</div>
-        <div style="font-size:0.8rem;color:#94a3b8;margin-top:4px;">Zero test failures ({metrics['confirmed_test_failures']}/{metrics['total_adversarial_test_vectors']} passed)</div>
+        <div class="card-title">Empirical error rate</div>
+        <div class="card-val">{safe(metrics['empirical_error_rate_percentage'])}</div>
+        <div style="font-size:0.8rem;color:#94a3b8;margin-top:4px;">Tests executed by this report: No</div>
       </div>
     </div>
 
-    <h3 style="font-size:1.05rem;color:#fff;margin-top:1.5rem;">1. Daubert & BSA 2023 Admissibility Evaluation</h3>
+    <h3 style="font-size:1.05rem;color:#fff;margin-top:1.5rem;">Technical and legal boundaries</h3>
     <table>
-      <thead><tr><th style="width:30%;">Legal Standard</th><th style="width:15%;text-align:center;">Finding</th><th>Forensic Engineering Evidence</th></tr></thead>
-      <tbody>{assertion_rows}</tbody>
-    </table>
-
-    <h3 style="font-size:1.05rem;color:#fff;">2. Automated Reliability & Regression Test Coverage</h3>
-    <table>
-      <thead><tr><th>Test Category</th><th style="text-align:center;">Vectors</th><th style="text-align:center;">Failures</th><th style="text-align:right;">Error Rate</th></tr></thead>
-      <tbody>{category_rows}</tbody>
+      <thead><tr><th>Area</th><th>Finding</th><th>Evidence / limitation</th></tr></thead>
+      <tbody>{boundary_rows}</tbody>
     </table>
 
     <div class="footer">
-      <div>INTEGRITY DIGEST (SHA-256): {statement['affidavit_integrity_sha256']}</div>
-      <div style="margin-top:4px;">GENERATED UTC: {statement['generated_at_utc']} · ISO/IEC 27037:2012 COMPLIANT</div>
+      <div>REPORT SHA-256: {safe(statement['report_integrity_sha256'])}</div>
+      <div style="margin-top:4px;">GENERATED UTC: {safe(statement['generated_at_utc'])} · CASE: {safe(sys_meta['associated_case_id'])}</div>
     </div>
   </div>
 </body>
@@ -215,9 +154,9 @@ def generate_artifact_admissibility_paragraph(
     case_dict: Dict[str, Any],
     examiner_dict: Dict[str, Any],
 ) -> str:
-    """Generate an 8-sentence expert admissibility paragraph for a recovered artifact.
+    """Generate a cautious legal-reference note for a recovered artifact.
 
-    Must contain exact citations: BSA 2023, §39; BSA 2023, §63(4); IT Act, 2000, §65B(2).
+    This is an operational record aid, not a legal opinion or statutory certificate.
     """
     artifact_name = artifact_dict.get('name') or artifact_dict.get('artifact_name') or artifact_dict.get('filename') or 'artifact'
     sha = artifact_dict.get('sha256') or artifact_dict.get('recovered_sha256') or 'N/A'
@@ -226,44 +165,48 @@ def generate_artifact_admissibility_paragraph(
     confidence = artifact_dict.get('confidence') or 'UNCLASSIFIED'
     case_ref = case_dict.get('title') or case_dict.get('case_ref') or ''
     case_id = case_dict.get('case_id') or 'UNKNOWN-CASE'
-    examiner_name = examiner_dict.get('name') or examiner_dict.get('examiner_name') or 'Examiner'
-    examiner_id = examiner_dict.get('id') or examiner_dict.get('examiner_id') or 'EXAMINER'
+    examiner_name = examiner_dict.get('name') or examiner_dict.get('examiner_name') or 'Not specified'
+    examiner_id = examiner_dict.get('id') or examiner_dict.get('examiner_id') or 'Not specified'
     timestamp = datetime.now(timezone.utc).isoformat()
 
-    if confidence and isinstance(confidence, str) and confidence.upper() == 'HEADER_ONLY':
-        scope_caveat = (
-            'This artifact was classified HEADER_ONLY, meaning recovery captured structural header metadata was recovered but full payload integrity cannot be assured, and weight accorded reduced weight in court proceedings under BSA 2023, §39.'
-        )
-    else:
-        scope_caveat = (
-            f'This artifact carries a confidence classification of {confidence}, which defines the scope and weight accordingly, and scope-caveated within these proceedings under applicable evidential corpus.'
-        )
+    source_pre = artifact_dict.get('source_sha256_pre')
+    source_post = artifact_dict.get('source_sha256_post')
+    source_integrity = (
+        f'Recorded source hashes: pre={source_pre}, post={source_post}; '
+        f'match={str(source_pre == source_post).lower()}.'
+        if source_pre and source_post
+        else 'Source pre/post hash comparison was not supplied in this artifact record.'
+    )
+    audit_event_id = artifact_dict.get('audit_event_id') or artifact_dict.get('last_event_id')
+    audit_note = (
+        f'Referenced audit event ID: {audit_event_id}.'
+        if audit_event_id
+        else 'No audit event ID was supplied in this artifact record.'
+    )
+    confidence_note = (
+        'HEADER_ONLY indicates that only a file header was recovered; payload '
+        'integrity and completeness are not established.'
+        if str(confidence).upper() == 'HEADER_ONLY'
+        else f'Recorded recovery confidence: {confidence}; this label does not independently establish completeness.'
+    )
 
-    s1 = (
-        f'I, {examiner_name} ({examiner_id}), NTRO Certified Forensic Examiner, hereby depose and state under penalty of perjury that on {timestamp} (ISO 8601), I recovered the digital artifact designated "{artifact_name}" (SHA-256: {sha}, size: {size} bytes) via method {method} in connection with case {case_id} ({case_ref}).'
-    )
-    s2 = (
-        f'This recovery was conducted in strict accordance with Bharatiya Sakshya Adhiniyam 2023, §39, which governs the collection and production of electronic evidence produced before a court or tribunal, and every step was documented in an RFC8785 JCS-canonicalized, Ed25519-signed, SHA-256 hash-chained audit trail.'
-    )
-    s3 = (
-        f'Pursuant to BSA 2023, §63(4), the integrity of the produced electronic record is assured by cryptographically signed evidence envelope which links the artifact digest to an append-only chain of custody, each entry of which cannot be altered without breaking the Ed25519 (RFC 8032) signature and without breaking the hash-chain forward-seal.'
-    )
-    s4 = (
-        f'In further compliance with the Information Technology Act, 2000, §65B(2), the artifact was produced by a computer process during the regular course of its lawful forensic investigation activity, and output of such of which the chain of custody output is preserved in the hash-chained audit trail.'
-    )
-    s5 = (
-        f'The recovery method employed was {method}, which produced this artifact with classification confidence {confidence}; the artifact digest SHA-256 {sha} and every subsequent verification the Ed25519/RFC8785/hash-chain audit trail referenced above attests to the artifact provenance and integrity of the exhibited result.'
-    )
-    s6 = (
-        f'The artifact was hashed and incorporated into the signed evidence package, and the audit events are each linked via SHA-256 hash chain, and the hash of which chain the the hash of each entry includes the previous entry entry_hash, producing an the the previous the the of hash previous the previous_hash thus rendering any detect alteration without producing a CHAIN_BREAK violation in any verifier.'
-    )
-    s7 = (
-        scope_caveat
-    )
-    s8 = (
-        f'I declare this statement and this {timestamp}; this day in compliance with all applicable statutory provisions including BSA 2023, §39, BSA 2023, §63(4), and IT Act, 2000, §65B(2), and further assert that the foregoing is true and correct to the best of my knowledge, information and belief as the best of my my my my knowledge information, information.'
-    )
-    return s1 + ' ' + s2 + ' ' + s3 + ' ' + s4 + ' ' + s5 + ' ' + s6 + ' ' + s7 + ' ' + s8
+    return ' '.join((
+        f'Operational artifact record generated at {timestamp} UTC for "{artifact_name}" '
+        f'(case ID {case_id}; reference "{case_ref}"; size {size} bytes; SHA-256 {sha}).',
+        f'The recorded recovery method is {method}, and the recorded examiner is '
+        f'{examiner_name} (ID: {examiner_id}); no examiner credential is asserted by this software.',
+        confidence_note,
+        source_integrity,
+        audit_note,
+        'BSA 2023, §39 concerns expert opinions under the Bharatiya Sakshya Adhiniyam; '
+        'this software-generated note is not itself an expert opinion.',
+        'BSA 2023, §63(4) concerns requirements for a certificate accompanying '
+        'specified electronic records; this note does not satisfy or replace that certificate.',
+        'Section 65B was in the Indian Evidence Act, 1872, not the Information '
+        'Technology Act; current and transitional applicability must be determined by qualified counsel.',
+        'This note is a technical record aid only, not a legal opinion, affidavit, '
+        'certification, or determination of admissibility.',
+    ))
 
 
 def generate_sanitization_admissibility_paragraph(
@@ -271,51 +214,53 @@ def generate_sanitization_admissibility_paragraph(
     case_dict: Dict[str, Any],
     examiner_dict: Dict[str, Any],
 ) -> str:
-    """Generate an 8-sentence expert admissibility paragraph for a sanitization result.
-
-    Cites NIST SP 800-88 Rev. 2 §, IEEE 2883-2022 (if present), BSA 2023 §63(4), IT Act §65B(2),
-    proof loop result (erasure_percentage, post_artifacts_count), source SHA invariant.
-    """
+    """Generate a cautious legal-reference note for a sanitization result."""
     method = sanitization_dict.get('method') or sanitization_dict.get('sanitization_method') or 'ZERO_FILL'
-    erasure_pct = sanitization_dict.get('erasure_percentage') or sanitization_dict.get('erasure_pct') or 0.0
-    post_count = sanitization_dict.get('post_artifacts_count') or sanitization_dict.get('post_artifacts') or 0
-    source_sha = sanitization_dict.get('source_sha256') or sanitization_dict.get('source_sha') or sanitization_dict.get('input_sha256') or 'N/A'
+    source_sha = (
+        sanitization_dict.get('pre_operation_sha256')
+        or sanitization_dict.get('source_sha256')
+        or sanitization_dict.get('source_sha')
+        or sanitization_dict.get('input_sha256')
+        or 'N/A'
+    )
     ieee_ref = sanitization_dict.get('ieee_2883_reference') or None
-    nist_section = sanitization_dict.get('nist_sp800_88_section') or '§ Clear / Purge matrix'
+    nist_section = sanitization_dict.get('nist_sp800_88_section') or 'not specified'
     case_ref = case_dict.get('title') or case_dict.get('case_ref') or ''
     case_id = case_dict.get('case_id') or 'UNKNOWN-CASE'
-    examiner_name = examiner_dict.get('name') or examiner_dict.get('examiner_name') or 'Examiner'
-    examiner_id = examiner_dict.get('id') or examiner_dict.get('examiner_id') or 'EXAMINER'
+    examiner_name = examiner_dict.get('name') or examiner_dict.get('examiner_name') or 'Not specified'
+    examiner_id = examiner_dict.get('id') or examiner_dict.get('examiner_id') or 'Not specified'
     timestamp = datetime.now(timezone.utc).isoformat()
-    classification = sanitization_dict.get('classification') or sanitization_dict.get('result_classification') or 'VERIFIED_WITHIN_SCOPE'
+    classification = sanitization_dict.get('classification') or sanitization_dict.get('result_classification') or 'NOT_REPORTED'
+    execution_status = sanitization_dict.get('execution_status') or sanitization_dict.get('status') or 'not supplied'
+    verification_details = sanitization_dict.get('verification_details') or {}
+    bytes_zeroed = verification_details.get('bytes_verified_zero')
+    if bytes_zeroed is not None:
+        readback_note = f'Read-back verification reported {bytes_zeroed} bytes containing zero.'
+    elif verification_details.get('post_sha256'):
+        readback_note = (
+            'Read-back verification reported a post-operation SHA-256 of '
+            f'{verification_details["post_sha256"]}; this is not a physical-media probe.'
+        )
+    else:
+        readback_note = 'Read-back verification details were not supplied.'
+    bytes_written = sanitization_dict.get('bytes_written')
+    write_note = (
+        f'The software reported writing {bytes_written} bytes.'
+        if bytes_written is not None
+        else 'The number of bytes written was not supplied.'
+    )
+    ieee_clause = f'IEEE 2883-2022 reference recorded: {ieee_ref}.' if ieee_ref else 'No IEEE 2883-2022 reference was supplied.'
 
-    ieee_clause = (
-        f'Cross-referenced IEEE 2883-2022 ({ieee_ref}) for sector/media-type-appropriate purge-or-clear decision matrix aligns the method selected method applied.' if ieee_ref else
-        'IEEE 2883-2022 standard for appropriate.'
-    )
-
-    s1 = (
-        f'I, {examiner_name} ({examiner_id}), NTRO Certified Examiner, depose that on {timestamp} (ISO 8601), I performed or supervised sanitization operation method {method} on case {case_id} ({case_ref}) pursuant to NIST SP 800-88 Rev. 2 {nist_section}.'
-    )
-    s2 = (
-        f'The sanitization proof-loop result recorded an erasure percentage of {erasure_pct}% with post-sanitization forensic carving artifacts of {post_count} residual recoverable artifacts detected, within the scope and clearance level NIST SP 800-88 Rev. 2 §-applicable requirements and this result.'
-    )
-    s3 = (
-        f'Pursuant to Bharatiya Sakshya Adhiniyam (BSA) 2023 §63(4), integrity the electronic record documenting this sanitization result is secured by the integrity of the electronic record and is assured by Ed25519 (RFC 8032) signed evidence envelope and the entire operation.'
-    )
-    s4 = (
-        f'In furtherance of Information Technology Act, 2000, §65B(2), the computer-process output during the regular conduct of the sanitization and verification process, output of which the evidence envelope contains the proof-loop result, the the process of the source SHA-256 {source_sha} invariant note documented prior-sha pre-operation preserved.'
-    )
-    s5 = (
-        f'Source media pre-operation source SHA-256 {source_sha}) was captured, and the same SHA-256 was invariant and attested to prior to commencement and compared in the proof loop; the evidence envelope contains the invariant attestation.'
-    )
-    s6 = (
-        ieee_clause
-    )
-    s7 = (
-        f'All sanitization method {method} was executed, with classification result {classification}, the proof loop verified with {erasure_pct}% erasure percentage, {post_count} post-artifacts count, the the source SHA invariant the source SHA invariant source-sha preserved.'
-    )
-    s8 = (
-        f'I declare this statement {timestamp} in compliance with NIST SP 800-88 Rev. 2, BSA 2023 §63(4), and IT Act, 2000, §65B(2), and affirm the the foregoing true and correct the best of my knowledge, information, and belief.'
-    )
-    return s1 + ' ' + s2 + ' ' + s3 + ' ' + s4 + ' ' + s5 + ' ' + s6 + ' ' + s7 + ' ' + s8
+    return ' '.join((
+        f'Operational sanitization record generated at {timestamp} UTC for case {case_id} '
+        f'("{case_ref}"): method={method}, NIST SP 800-88 Rev. 2 reference={nist_section}, '
+        f'status={execution_status}, recorded classification={classification}.',
+        write_note,
+        readback_note,
+        f'Pre-operation target SHA-256 recorded: {source_sha}; this value alone does not prove that sanitization succeeded.',
+        ieee_clause,
+        f'The recorded examiner is {examiner_name} (ID: {examiner_id}); no examiner credential is asserted by this software.',
+        'BSA 2023, §63(4) concerns requirements for a certificate accompanying specified electronic records; this note does not satisfy or replace that certificate.',
+        'Section 65B was in the Indian Evidence Act, 1872, not the Information Technology Act; current and transitional applicability must be determined by qualified counsel.',
+        'This note is a technical record aid only, not a legal opinion, affidavit, certification, or determination of admissibility.',
+    ))

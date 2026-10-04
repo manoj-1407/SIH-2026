@@ -4,7 +4,9 @@ Advanced File Carving Engine — SIH26149
 Signature-and-structure-based carving on raw/formatted disk images.
 No external tools required — pure Python byte-level analysis.
 
-Supported formats: JPEG, PNG, PDF, ZIP, DOCX, XLSX, MP4
+Supported format signatures include JPEG, PNG, PDF, ZIP/OOXML, OLE/MSG,
+EML, BMP, TIFF, GIF, AVI, MP3, and MOV/MP4. Confidence varies by format;
+legacy OLE and email support uses bounded structure heuristics.
 
 Design principles:
   - Every candidate is structurally validated, not just signature-matched.
@@ -662,8 +664,8 @@ def _carve_ole(data: bytes, offset: int) -> Optional[CarvedFile]:
 
     factors.append("OLE2 CFB magic signature verified")
 
-    sector_shift = _read_u16be(data, offset + 0x1E)
-    mini_sector_shift = _read_u16be(data, offset + 0x20)
+    sector_shift = int.from_bytes(data[offset + 0x1E:offset + 0x20], "little")
+    mini_sector_shift = int.from_bytes(data[offset + 0x20:offset + 0x22], "little")
     num_dir_sectors = _read_u32le(data, offset + 0x28)
 
     sector_checks = 0
@@ -1277,6 +1279,7 @@ _SIGNATURES = [
 _MP4_FTYP_AT_4 = True
 _EML_SIGNATURES = [b'From - ', b'Received: from ', b'Content-Type: multipart/']
 _MP3_MPEG_SYNC_SIGS = [b'\xFF\xE0', b'\xFF\xF0']
+_OLE_OUTPUT_TYPES = {"OLE", "DOC", "XLS", "PPT", "MSG"}
 
 
 # ── Main Scanner ───────────────────────────────────────────────────────────────
@@ -1318,7 +1321,11 @@ def carve_bytes(
             candidates.append((msig, 'MP3', _carve_mp3))
 
     for sig, type_name, carver in candidates:
-        if target_types is not None and type_name not in target_types:
+        if (
+            target_types is not None
+            and type_name not in target_types
+            and not (sig == _OLE_MAGIC and any(t in _OLE_OUTPUT_TYPES for t in target_types))
+        ):
             continue
 
         pos = 0

@@ -261,8 +261,13 @@ def download_evidence_package(evidence_id: str):
                     for entry in timeline:
                         jsonl_lines.append(json.dumps(entry))
                     zf.writestr('audit/events.jsonl', '\n'.join(jsonl_lines) + '\n')
-            except Exception:
-                zf.writestr('audit/events.jsonl', '')
+                else:
+                    zf.writestr('audit/events.jsonl', '')
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=500,
+                    detail='Unable to retrieve the chain-of-custody timeline for export',
+                ) from exc
         else:
             zf.writestr('audit/events.jsonl', '')
 
@@ -294,6 +299,8 @@ def download_evidence_package(evidence_id: str):
             f'  evidence_hash (SHA-256): {evidence_hash}\n'
             f'  signature (Ed25519 hex): {signature[:16]}...{signature[-16:] if len(signature) > 32 else signature}\n'
             f'{hashes_block}\n'
+            f'\n'
+            f'Payload limitation: this export includes only bytes already embedded in the evidence envelope; it does not retrieve recovered files from the source image.\n'
             f'\n'
             f'Scope: {envelope.get("scope", "N/A")}\n'
         )

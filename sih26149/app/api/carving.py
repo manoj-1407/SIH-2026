@@ -10,7 +10,7 @@ from app.forensics.carving import carve_image_summary
 from app.core.evidence_envelope import build_evidence_payload, sign_evidence_envelope, new_operation_id, new_evidence_id
 from app.core.legal_reliability import generate_artifact_admissibility_paragraph
 
-DEFAULT_EXAMINER = {'examiner_id': 'DEFAULT-EXAMINER-001', 'examiner_name': 'NTRO Certified Examiner'}
+DEFAULT_EXAMINER = {'examiner_id': 'NOT-SPECIFIED', 'examiner_name': 'Not specified'}
 
 router = APIRouter(prefix='/cases/{case_id}', tags=['Advanced Carving'])
 
@@ -24,8 +24,9 @@ class CarvingRequest(BaseModel):
 def run_carving(case_id: str, req: CarvingRequest):
     """
     Advanced raw file carving on the case's acquired evidence image.
-    Supports: JPEG, PNG, PDF, ZIP, DOCX, XLSX, MP4.
-    Performs structural validation + confidence scoring — no false positives promoted.
+    Supports the registered media signatures, including common legacy OLE
+    document subtypes and EML/MSG. Confidence is format-specific; legacy
+    container subtype identification uses heuristics and is not full parsing.
     """
     validate_case_id(case_id)
     try:
@@ -55,10 +56,9 @@ def run_carving(case_id: str, req: CarvingRequest):
         artifacts = summary.get(artifact_key, [])
         if artifacts:
             for artifact in artifacts:
-                try:
-                    artifact['legal_reliability_text'] = generate_artifact_admissibility_paragraph(artifact, case_dict, DEFAULT_EXAMINER)
-                except Exception:
-                    artifact['legal_reliability_text'] = ''
+                artifact['legal_reliability_text'] = generate_artifact_admissibility_paragraph(
+                    artifact, case_dict, DEFAULT_EXAMINER,
+                )
 
     # Build signed evidence package for this carving run
     key_id, priv_key = get_or_create_primary_key()
