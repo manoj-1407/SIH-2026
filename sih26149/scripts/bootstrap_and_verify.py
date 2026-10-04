@@ -8,8 +8,7 @@ Single-command autonomous validation gate for external operators, evaluators, an
  4. Deep Adversarial Verifier Attack Suite (14 attacks)
  5. Crash Recovery & State Invariant Suite (6 invariants)
  6. Storage Device Capability & Sanitization Matrix (6 profiles)
- 7. Expanded Real-World Recovery Corpus (Precision/Recall evaluation)
- 8. Multi-Run Benchmark Matrix Verification
+ 7. Controlled Synthetic Recovery Corpus (Precision/Recall evaluation)
 
 Outputs: docs/RC2_VALIDATION_REPORT.md
 """
@@ -74,23 +73,22 @@ def run_rc2_master_gate():
     all_passed = all(m["passed"] for m in modules)
 
     print("\n" + "=" * 75)
-    print(f"  RC2 MASTER GATE EXECUTION RESULT: {'ALL PASS (RC2 CERTIFIED)' if all_passed else 'SOME CHECKS FAILED'}")
+    print(f"  RC2 MASTER GATE EXECUTION RESULT: {'ALL CHECKS PASS' if all_passed else 'SOME CHECKS FAILED'}")
     print(f"  Total Duration: {total_dur}s")
     print("=" * 75)
 
     # Generate RC2 Master Validation Report
     report_path = Path(__file__).resolve().parent.parent / "docs" / "RC2_VALIDATION_REPORT.md"
-    md = f"""# SIH26149 Release Candidate 2 (RC2) Real-World Validation Report
+    md = f"""# SIH26149 Release Candidate 2 (RC2) Validation Run
 
 ## Executive Summary
 - **Evaluation Date**: `{time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())}`
-- **Baseline Evolution**: RC1 Frozen Baseline → **RC2 Real-World & Adversarial Hardening**
-- **RC2 Gate Status**: **{'CERTIFIED APPROVED' if all_passed else 'REJECTED'}**
+- **RC2 Gate Status**: **{'ALL CHECKS PASS' if all_passed else 'CHECKS FAILED'}**
 - **Total Duration**: {total_dur}s
 
 ---
 
-## 1. Master Validation Suite Results
+## Executed checks
 
 | Step | Validation Domain & Harness | Status | Duration | Coverage Scope |
 | :---: | :--- | :---: | :---: | :--- |
@@ -99,27 +97,13 @@ def run_rc2_master_gate():
         md += f"| **{m['step']:02d}** | {m['name']} | `{'PASS' if m['passed'] else 'FAIL'}` | {m['duration_sec']}s | Validated against repository ground truth |\n"
 
     md += """
----
 
-## 2. Key Quantitative Findings & Metric Evolution
+## Scope boundaries
 
-| Evaluation Track | RC1 Frozen Baseline | RC2 Real-World Hardened Result | Defense / Boundary Note |
-| :--- | :---: | :---: | :--- |
-| **Regression Tests** | 220 executed pass / 7 skip / 0 fail | **220 executed pass / 7 skip / 0 fail** | 100% pass on platform-supported tests |
-| **Operational Gate** | 20 / 20 PASS | **20 / 20 PASS** | End-to-end logical workflow intact |
-| **Adversarial Tamper Attacks** | 17 unit/integration tests | **14 / 14 Deep Attacks Prevented** | Manifest, signature, audit, key, & DEF-005 injection attacks |
-| **Crash & State Invariants** | Unit mocked | **6 / 6 Invariants Passed** | Atomic persistence, zero false SUCCESS, readback verification |
-| **NIST Device Profiles** | Theoretical matrix | **6 / 6 Profiles Mapped** | Virtual disk Clear, fail-closed hardware Purge |
-| **Recovery Precision** | 100.0% (0 false positives) | **100.0% (0 false positives)** | Zero corrupt/partial streams promoted past validation |
-| **Recovery Recall** | 83.3% (controlled corpus) | **80.0% (expanded 12-sample corpus)** | Fragmented/corrupt streams safely bounded to PARTIAL |
-| **Recovery F1 Score** | 0.9091 | **0.8889** | Honest real-world scoring without artificial boosting |
-
----
-
-## 3. Defensible Boundaries Maintained
-1. **Zero False Claims**: Complex fragmented files, corrupted streams, and unmanifested files are classified strictly as `PARTIAL` or `INVALID`, never falsely promoted to `VALID`.
-2. **Hardware Boundaries**: Physical write-blocking and ATA/NVMe Purge remain explicitly qualified as pending laboratory hardware bridges.
-3. **Cryptographic Self-Containment**: Independent verification operates completely offline without database access.
+- The recovery corpus invoked by this gate is controlled and synthetic. Its measured outcomes are published separately in `RC2_REAL_WORLD_CORPUS.md` (legacy filename).
+- A passing software test gate is not external certification or real-media validation.
+- No ATA/NVMe hardware sanitization, physical HDD/SSD benchmark, or NAND-level verification is run by this gate.
+- Performance results are generated separately by `scripts/run_benchmark_matrix.py` and summarized in `docs/FINAL_BENCHMARK_REPORT.md`.
 """
     report_path.write_text(md, encoding="utf-8")
     print(f"\n[+] Master RC2 Validation report written to: {report_path.resolve()}")

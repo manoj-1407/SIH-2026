@@ -3,9 +3,9 @@ SIH26149 — Multi-Run Performance Benchmark Matrix.
 
 Executes controlled multi-run performance characterization across payload sizes:
 - 10 MB (10 runs)
-- 50 MB (5 runs)
-- 100 MB (3 runs)
-- 500 MB (2 runs)
+- 25 MB (5 runs)
+- 50 MB (3 runs)
+- 100 MB (2 runs)
 
 Measures:
 - SHA-256 streaming hashing throughput (MB/s)
@@ -13,7 +13,7 @@ Measures:
 - In-place sanitization overwrite & post-readback throughput
 - Ed25519 cryptographic signing latency (ms)
 - Independent evidence package verification latency (ms)
-- System telemetry (OS, CPU, Python version, memory RSS)
+- System telemetry (OS, CPU, Python version)
 
 Outputs: docs/BENCHMARK_REPORT.md and data/benchmark_results.json
 """
@@ -41,7 +41,7 @@ from app.core.independent_verifier import verify_evidence_package
 from cryptography.hazmat.primitives import serialization
 
 
-def generate_benchmark_payload(size_mb: int) -> bytes:
+def generate_benchmark_payload(size_mib: int) -> bytes:
     """Generates deterministic pseudo-forensic disk stream with embedded artifacts."""
     # Build standard valid files
     jpeg = (
@@ -61,7 +61,7 @@ def generate_benchmark_payload(size_mb: int) -> bytes:
     )
 
     block_pattern = b"\x00" * 4096 + jpeg + b"\x55" * 2048 + png + b"\xaa" * 1024 + pdf + b"\x00" * 4096
-    target_bytes = size_mb * 1024 * 1024
+    target_bytes = size_mib * 1024 * 1024
     repeats = (target_bytes // len(block_pattern)) + 1
     stream = (block_pattern * repeats)[:target_bytes]
     return stream
@@ -84,10 +84,10 @@ def run_benchmark_matrix():
     print(f"Timestamp : {env_info['timestamp_utc']}\n")
 
     matrix_specs = [
-        {"size_mb": 10, "runs": 10},
-        {"size_mb": 25, "runs": 5},
-        {"size_mb": 50, "runs": 3},
-        {"size_mb": 100, "runs": 2},
+        {"size_mib": 10, "runs": 10},
+        {"size_mib": 25, "runs": 5},
+        {"size_mib": 50, "runs": 3},
+        {"size_mib": 100, "runs": 2},
     ]
 
     results = []
@@ -132,6 +132,8 @@ def run_benchmark_matrix():
             t0 = time.perf_counter()
             is_valid, _ = verify_evidence_package(pkg_dir, public_key_pem=pub_pem)
             verify_times.append((time.perf_counter() - t0) * 1000)
+            if not is_valid:
+                raise RuntimeError("Benchmark evidence package failed independent verification")
 
         crypto_bench = {
             "sign_latency_ms": {
@@ -139,12 +141,15 @@ def run_benchmark_matrix():
                 "p95": round(statistics.quantiles(sign_times, n=20)[18] if len(sign_times) >= 20 else max(sign_times), 3),
                 "min": round(min(sign_times), 3),
                 "max": round(max(sign_times), 3),
+                "iterations": len(sign_times),
             },
             "verify_latency_ms": {
                 "median": round(statistics.median(verify_times), 3),
                 "p95": round(statistics.quantiles(verify_times, n=20)[18] if len(verify_times) >= 20 else max(verify_times), 3),
                 "min": round(min(verify_times), 3),
                 "max": round(max(verify_times), 3),
+                "iterations": len(verify_times),
+                "distinct_packages": 1,
             }
         }
         print(f"    Sign Latency   : Median = {crypto_bench['sign_latency_ms']['median']} ms, P95 = {crypto_bench['sign_latency_ms']['p95']} ms")
@@ -152,17 +157,20 @@ def run_benchmark_matrix():
 
         # 2. Multi-Run Payload Benchmarks
         for spec in matrix_specs:
-            size_mb = spec["size_mb"]
+            size_mib = spec["size_mib"]
             runs = spec["runs"]
-            print(f"[-] Benchmarking {size_mb} MB Payload ({runs} runs)...")
+            print(f"[-] Benchmarking {size_mib} MiB Payload ({runs} runs)...")
 
-            raw_bytes = generate_benchmark_payload(size_mb)
-            test_file = tmp_path / f"bench_{size_mb}mb.raw"
+            raw_bytes = generate_benchmark_payload(size_mib)
+            test_file = tmp_path / f"bench_{size_mib}mib.raw"
             test_file.write_bytes(raw_bytes)
 
             hash_throughputs = []
             carve_throughputs = []
             sanitize_throughputs = []
+            hash_latencies_ms = []
+            carve_latencies_ms = []
+            sanitize_latencies_ms = []
             artifacts_found = 0
 
             for r in range(runs):
@@ -172,53 +180,66 @@ def run_benchmark_matrix():
                 t0 = time.perf_counter()
                 h_res = hash_file(str(test_file))
                 dur_hash = time.perf_counter() - t0
-                mb_s_hash = size_mb / dur_hash
+                mb_s_hash = size_mib / dur_hash
                 hash_throughputs.append(mb_s_hash)
+                hash_latencies_ms.append(dur_hash * 1000)
 
                 # B. Carving & Structural Validation Throughput
                 t0 = time.perf_counter()
                 summary = carve_image_summary(str(test_file), max_results=500)
                 dur_carve = time.perf_counter() - t0
-                mb_s_carve = size_mb / dur_carve
+                mb_s_carve = size_mib / dur_carve
                 carve_throughputs.append(mb_s_carve)
+                carve_latencies_ms.append(dur_carve * 1000)
                 artifacts_found = summary.get("total_carved", 0)
 
             # C. Sanitization Overwrite Throughput (run on duplicate file)
             for r in range(min(runs, 3)):
-                dup_file = tmp_path / f"dup_{size_mb}mb_{r}.raw"
+                dup_file = tmp_path / f"dup_{size_mib}mib_{r}.raw"
                 dup_file.write_bytes(raw_bytes)
                 t0 = time.perf_counter()
-                erase_file(str(dup_file), method=EraserMethod.ZERO_FILL, scramble_name=False)
+                erase_result = erase_file(
+                    str(dup_file),
+                    method=EraserMethod.ZERO_FILL,
+                    scramble_name=False,
+                )
                 dur_san = time.perf_counter() - t0
-                mb_s_san = size_mb / dur_san
+                if erase_result.error or not erase_result.readback_verified or dup_file.exists():
+                    raise RuntimeError(
+                        f"Logical overwrite benchmark did not verify: "
+                        f"{erase_result.error or 'read-back failed or file remained'}"
+                    )
+                mb_s_san = size_mib / dur_san
                 sanitize_throughputs.append(mb_s_san)
-                if dup_file.exists():
-                    dup_file.unlink()
+                sanitize_latencies_ms.append(dur_san * 1000)
 
             bench_entry = {
-                "size_mb": size_mb,
+                "size_mib": size_mib,
                 "runs": runs,
                 "artifacts_recovered": artifacts_found,
-                "sha256_mb_per_sec": {
+                "sha256_time_ms_median": round(statistics.median(hash_latencies_ms), 3),
+                "carving_time_ms_median": round(statistics.median(carve_latencies_ms), 3),
+                "logical_zero_fill_time_ms_median": round(statistics.median(sanitize_latencies_ms), 3),
+                "sha256_mib_per_sec": {
                     "median": round(statistics.median(hash_throughputs), 2),
                     "min": round(min(hash_throughputs), 2),
                     "max": round(max(hash_throughputs), 2),
                 },
-                "carving_mb_per_sec": {
+                "carving_mib_per_sec": {
                     "median": round(statistics.median(carve_throughputs), 2),
                     "min": round(min(carve_throughputs), 2),
                     "max": round(max(carve_throughputs), 2),
                 },
-                "sanitization_clear_mb_per_sec": {
+                "logical_zero_fill_mib_per_sec": {
                     "median": round(statistics.median(sanitize_throughputs), 2),
                     "min": round(min(sanitize_throughputs), 2),
                     "max": round(max(sanitize_throughputs), 2),
                 }
             }
             results.append(bench_entry)
-            print(f"    SHA-256 Throughput   : Median = {bench_entry['sha256_mb_per_sec']['median']} MB/s")
-            print(f"    Carving Throughput   : Median = {bench_entry['carving_mb_per_sec']['median']} MB/s ({artifacts_found} artifacts)")
-            print(f"    Sanitize Overwrite   : Median = {bench_entry['sanitization_clear_mb_per_sec']['median']} MB/s\n")
+            print(f"    SHA-256 Throughput   : Median = {bench_entry['sha256_mib_per_sec']['median']} MiB/s")
+            print(f"    Carving Throughput   : Median = {bench_entry['carving_mib_per_sec']['median']} MiB/s ({artifacts_found} artifacts)")
+            print(f"    Logical zero-fill    : Median = {bench_entry['logical_zero_fill_mib_per_sec']['median']} MiB/s\n")
 
     # Generate Markdown Report
     report_md = f"""# SIH26149 Measured Performance Benchmark Report
@@ -242,24 +263,40 @@ def run_benchmark_matrix():
 
 ## 3. Streaming Engine Multi-Run Throughput Matrix
 
-| Payload Size | Runs | SHA-256 Ingest (Median) | Carving & Validation (Median) | NIST Overwrite Clear (Median) | Artifacts Carved |
+| Payload Size | Runs | SHA-256 Ingest (Median) | Carving & Validation (Median) | Logical Zero-Fill + Readback (Median) | Artifacts Carved |
 | :---: | :---: | :---: | :---: | :---: | :---: |
 """
     for r in results:
-        report_md += f"| **{r['size_mb']} MB** | {r['runs']} | **{r['sha256_mb_per_sec']['median']} MB/s** | **{r['carving_mb_per_sec']['median']} MB/s** | **{r['sanitization_clear_mb_per_sec']['median']} MB/s** | {r['artifacts_recovered']} files |\n"
+        report_md += f"| **{r['size_mib']} MiB** | {r['runs']} | **{r['sha256_mib_per_sec']['median']} MiB/s** | **{r['carving_mib_per_sec']['median']} MiB/s** | **{r['logical_zero_fill_mib_per_sec']['median']} MiB/s** | {r['artifacts_recovered']} candidates |\n"
 
     report_md += """
 ---
 
-## 4. Defensible Scalability Analysis
-1. **Chunked Streaming**: Streaming SHA-256 and pattern scanning operate in 64 KB – 512 KB bounded buffers, keeping resident memory flat regardless of image size.
-2. **Deterministic Validation**: Carving throughput is bounded by structural verification and parser decoding, avoiding false positive promotion.
-3. **Cryptographic Efficiency**: RFC 8032 signing and JCS canonicalization execute in sub-5ms latency, allowing real-time audit envelope generation for every forensic event.
+## 4. Scope and limitations
+- Sanitization measurements are single-pass logical zero-fill/read-back operations on temporary regular files, not physical-device sanitization.
+- Throughput measurements use deterministic synthetic payloads in this run and do not establish field recovery rates or physical-media performance.
+- No memory RSS, 1–100 GB dataset, HDD/SSD, ATA, or NVMe measurement is performed by this benchmark.
+- Numbers are machine- and run-specific. Re-run this script to regenerate the report and JSON measurements.
 """
 
     report_path = Path(__file__).resolve().parent.parent / "docs" / "BENCHMARK_REPORT.md"
     report_path.write_text(report_md, encoding="utf-8")
     print(f"[+] Benchmark report exported to: {report_path.resolve()}")
+    data_dir = Path(__file__).resolve().parent.parent / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    result_path = data_dir / "benchmark_results.json"
+    result_path.write_text(
+        json.dumps({
+            "benchmark_type": "synthetic_payload_and_temporary_file",
+            "environment": env_info,
+            "crypto": crypto_bench,
+            "payload_matrix": results,
+            "hardware_sanitization": "NOT_RUN",
+            "memory_rss_measured": False,
+        }, indent=2),
+        encoding="utf-8",
+    )
+    print(f"[+] Machine-readable results exported to: {result_path.resolve()}")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,122 @@
+{
+  "benchmark_type": "synthetic_payload_and_temporary_file",
+  "environment": {
+    "os": "Windows-11-10.0.26200-SP0",
+    "python_version": "3.13.3",
+    "processor": "Intel64 Family 6 Model 142 Stepping 10, GenuineIntel",
+    "timestamp_utc": "2026-10-04T05:37:28Z"
+  },
+  "crypto": {
+    "sign_latency_ms": {
+      "median": 0.361,
+      "p95": 1.166,
+      "min": 0.186,
+      "max": 4.885,
+      "iterations": 100
+    },
+    "verify_latency_ms": {
+      "median": 15.442,
+      "p95": 83.959,
+      "min": 8.357,
+      "max": 134.588,
+      "iterations": 50,
+      "distinct_packages": 1
+    }
+  },
+  "payload_matrix": [
+    {
+      "size_mib": 10,
+      "runs": 10,
+      "artifacts_recovered": 500,
+      "sha256_time_ms_median": 124.661,
+      "carving_time_ms_median": 769.438,
+      "logical_zero_fill_time_ms_median": 5399.871,
+      "sha256_mib_per_sec": {
+        "median": 80.24,
+        "min": 60.0,
+        "max": 96.21
+      },
+      "carving_mib_per_sec": {
+        "median": 13.0,
+        "min": 10.71,
+        "max": 14.12
+      },
+      "logical_zero_fill_mib_per_sec": {
+        "median": 1.85,
+        "min": 1.77,
+        "max": 1.91
+      }
+    },
+    {
+      "size_mib": 25,
+      "runs": 5,
+      "artifacts_recovered": 500,
+      "sha256_time_ms_median": 372.734,
+      "carving_time_ms_median": 998.242,
+      "logical_zero_fill_time_ms_median": 12832.666,
+      "sha256_mib_per_sec": {
+        "median": 67.07,
+        "min": 56.21,
+        "max": 75.96
+      },
+      "carving_mib_per_sec": {
+        "median": 25.04,
+        "min": 19.47,
+        "max": 27.84
+      },
+      "logical_zero_fill_mib_per_sec": {
+        "median": 1.95,
+        "min": 1.84,
+        "max": 2.5
+      }
+    },
+    {
+      "size_mib": 50,
+      "runs": 3,
+      "artifacts_recovered": 500,
+      "sha256_time_ms_median": 913.085,
+      "carving_time_ms_median": 1105.682,
+      "logical_zero_fill_time_ms_median": 21620.311,
+      "sha256_mib_per_sec": {
+        "median": 54.76,
+        "min": 50.75,
+        "max": 78.98
+      },
+      "carving_mib_per_sec": {
+        "median": 45.22,
+        "min": 28.53,
+        "max": 57.65
+      },
+      "logical_zero_fill_mib_per_sec": {
+        "median": 2.31,
+        "min": 2.26,
+        "max": 2.54
+      }
+    },
+    {
+      "size_mib": 100,
+      "runs": 2,
+      "artifacts_recovered": 500,
+      "sha256_time_ms_median": 1290.218,
+      "carving_time_ms_median": 801.815,
+      "logical_zero_fill_time_ms_median": 51662.863,
+      "sha256_mib_per_sec": {
+        "median": 78.19,
+        "min": 70.88,
+        "max": 85.5
+      },
+      "carving_mib_per_sec": {
+        "median": 125.74,
+        "min": 114.39,
+        "max": 137.1
+      },
+      "logical_zero_fill_mib_per_sec": {
+        "median": 2.03,
+        "min": 1.59,
+        "max": 2.46
+      }
+    }
+  ],
+  "hardware_sanitization": "NOT_RUN",
+  "memory_rss_measured": false
+}

@@ -1,7 +1,7 @@
 """
-SIH26149 — RC2 Expanded Real-World File Corpus Evaluation.
+SIH26149 — RC2 Controlled Synthetic File Corpus Evaluation.
 
-Constructs a rich 32-scenario ground-truth corpus with diverse real-world forensic artifacts:
+Constructs a bounded in-memory ground-truth corpus with representative file fixtures:
 - Complex JPEGs with EXIF app markers and quantization tables
 - Multi-chunk PNG images with CRC validation
 - Multi-object PDF documents with xref tables and trailers
@@ -13,12 +13,16 @@ Constructs a rich 32-scenario ground-truth corpus with diverse real-world forens
 - Segmented and non-sequential stream fragments
 
 Calculates True Positives, False Positives, False Negatives, Precision, Recall, and F1.
-Outputs: docs/RC2_REAL_WORLD_CORPUS.md
+Outputs: docs/RC2_REAL_WORLD_CORPUS.md and data/corpus_results.json
 """
 import io
 import json
+import hashlib
 import os
+import platform
+import statistics
 import sys
+import time
 import zipfile
 import tempfile
 from pathlib import Path
@@ -30,6 +34,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.core.hashing import hash_bytes
 from app.forensics.carving import carve_bytes, CarvingConfidence
+from app.forensics.synthetic import generate_fragmented_jpeg_case
 from app.forensics.validation import validate_carved_file, ValidationOutcome
 
 
@@ -41,6 +46,8 @@ class CorpusSample:
     description: str
     expected_classification: str  # "INTACT", "PARTIAL", "REJECTED"
     data: bytes
+    reference_bytes: bytes | None = None
+    source_name: str = "artifact.bin"
 
 
 def create_expanded_corpus() -> List[CorpusSample]:
@@ -55,6 +62,11 @@ def create_expanded_corpus() -> List[CorpusSample]:
         b"\xff\xda\x00\x08\x01\x01\x00\x00?\x00\x12\x34\x56\x78\xff\xd9"
     )
     samples.append(CorpusSample("RC2-01", "Image - JPEG", "JPEG", "JPEG with EXIF APP1 Metadata", "INTACT", jpeg_exif))
+    samples.append(CorpusSample(
+        "RC2-13", "Renamed Extension - JPEG", "JPEG",
+        "JPEG content stored under a misleading .txt filename", "INTACT", jpeg_exif,
+        source_name="recovered_photo.txt",
+    ))
 
     # 2. JPEG Minimal JFIF
     jpeg_min = (
@@ -80,7 +92,7 @@ def create_expanded_corpus() -> List[CorpusSample]:
         b"4 0 obj<</Length 12>>stream\nBT /F1 12 Tf ET\nendstream\nendobj\n"
         b"xref\n0 5\n0000000000 65535 f\n0000000009 00000 n\n0000000058 00000 n\n"
         b"0000000115 00000 n\n0000000210 00000 n\n"
-        b"trailer<</Size 5/Root 1 0 R>>\nstartxref\n280\n%%EOF\n"
+        b"trailer<</Size 5/Root 1 0 R>>\nstartxref\n280\n%%EOF"
     )
     samples.append(CorpusSample("RC2-04", "Document - PDF", "PDF", "Complete 4-object PDF Document", "INTACT", pdf_valid))
 
@@ -98,20 +110,22 @@ def create_expanded_corpus() -> List[CorpusSample]:
         zf.writestr("[Content_Types].xml", '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>')
         zf.writestr("word/document.xml", '<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>')
     docx_valid = docx_buf.getvalue()
-    samples.append(CorpusSample("RC2-06", "Document - DOCX", "ZIP", "Valid OpenXML DOCX Document Container", "INTACT", docx_valid))
+    samples.append(CorpusSample("RC2-06", "Document - DOCX", "DOCX", "OpenXML-shaped DOCX ZIP container", "INTACT", docx_valid))
 
     # 7. Valid MP4 Video Container
-    mp4_ftyp = b"\x00\x00\x00\x18ftypisom\x00\x00\x02\x00isomiso2mp41"
+    mp4_ftyp = b"\x00\x00\x00\x1cftypisom\x00\x00\x02\x00isomiso2mp41"
     mp4_moov = b"\x00\x00\x00\x10moov\x00\x00\x00\x08mvhd"
     mp4_mdat = b"\x00\x00\x00\x20mdat" + (b"\x00" * 24)
     mp4_valid = mp4_ftyp + mp4_moov + mp4_mdat
     samples.append(CorpusSample("RC2-07", "Media - MP4", "MP4", "Valid MP4 Stream with ftyp/moov/mdat boxes", "INTACT", mp4_valid))
 
     # 8. Fragmented JPEG across unallocated gap
-    jpeg_frag_head = jpeg_min[:128]
-    jpeg_frag_tail = jpeg_min[128:]
-    gap_stream = jpeg_frag_head + (b"\x00" * 2048) + jpeg_frag_tail
-    samples.append(CorpusSample("RC2-08", "Fragmented - JPEG", "JPEG", "Bifragmented JPEG with 2KB Unallocated Gap", "PARTIAL", gap_stream))
+    gap_stream, reconstructed_jpeg = generate_fragmented_jpeg_case(gap_size=2048)
+    samples.append(CorpusSample(
+        "RC2-08", "Fragmented - JPEG", "JPEG",
+        "Bifragmented JPEG with 2KB A5-filled gap", "PARTIAL", gap_stream,
+        reference_bytes=reconstructed_jpeg,
+    ))
 
     # 9. Truncated PDF (Missing EOF trailer)
     pdf_trunc = pdf_valid[:180]
@@ -132,102 +146,188 @@ def create_expanded_corpus() -> List[CorpusSample]:
     return samples
 
 
+def _evaluate_sample(sample: CorpusSample, candidates: list, elapsed_ms: float) -> tuple[dict, dict]:
+    """Score one known object; partial/rejected cases are never auto-credited."""
+    reference = sample.reference_bytes if sample.reference_bytes is not None else sample.data
+    reference_sha256 = hashlib.sha256(reference).hexdigest()
+    exact = [candidate for candidate in candidates if candidate.sha256 == reference_sha256]
+    stats = {"TP": 0, "FP": 0, "FN": 0, "TN": 0, "overclaims": 0}
+    label = "FN (not recovered)"
+    selected = exact[0] if exact else (candidates[0] if candidates else None)
+
+    if sample.expected_classification == "REJECTED":
+        if candidates:
+            stats["FP"] += len(candidates)
+            label = "FP (candidate emitted for rejected input)"
+        else:
+            stats["TN"] += 1
+            label = "TN (no candidate emitted)"
+    elif sample.expected_classification == "INTACT":
+        accepted = any(candidate.confidence in (CarvingConfidence.INTACT, CarvingConfidence.HIGH)
+                       for candidate in exact)
+        if accepted:
+            stats["TP"] += 1
+            label = "TP (ground-truth bytes and intact confidence match)"
+        else:
+            stats["FN"] += 1
+            if candidates:
+                stats["FP"] += len(candidates)
+                label = "FP+FN (wrong bytes or no intact-confidence match)"
+    elif sample.expected_classification == "PARTIAL":
+        partial = [candidate for candidate in exact if candidate.confidence in (
+            CarvingConfidence.PARTIAL_STRUCT,
+            CarvingConfidence.HEADER_ONLY,
+            CarvingConfidence.BIFRAGMENTED,
+        )]
+        if partial:
+            stats["TP"] += 1
+            label = "TP (ground-truth bytes bounded as partial/fragmented)"
+        else:
+            stats["FN"] += 1
+            if exact and any(candidate.confidence in (CarvingConfidence.INTACT, CarvingConfidence.HIGH)
+                             for candidate in exact):
+                stats["FP"] += 1
+                stats["overclaims"] += 1
+                label = "FP+FN (partial input promoted to intact/high)"
+            elif candidates:
+                stats["FP"] += len(candidates)
+                label = "FP+FN (wrong candidate bytes)"
+
+    if stats["TP"] and len(candidates) > 1:
+        extra_candidates = len(candidates) - 1
+        stats["FP"] += extra_candidates
+        label += f"; {extra_candidates} extra candidate(s)"
+
+    if selected is not None and selected not in exact:
+        label += f"; candidate={selected.confidence.value}, hash mismatch"
+
+    return stats, {
+        "sample_id": sample.sample_id,
+        "category": sample.category,
+        "file_type": sample.file_type,
+        "description": sample.description,
+        "source_name": sample.source_name,
+        "expected": sample.expected_classification,
+        "reference_sha256": reference_sha256,
+        "recovered_sha256": selected.sha256 if selected else None,
+        "confidence": selected.confidence.value if selected else None,
+        "evaluation": label,
+        "scan_time_ms": round(elapsed_ms, 3),
+        "candidate_count": len(candidates),
+    }
+
+
 def evaluate_expanded_corpus():
     samples = create_expanded_corpus()
     print("=" * 70)
-    print(f"  SIH26149 RC2 — EXPANDED REAL-WORLD RECOVERY CORPUS ({len(samples)} SAMPLES)")
+    print(f"  SIH26149 RC2 — CONTROLLED SYNTHETIC CORPUS ({len(samples)} SAMPLES)")
     print("=" * 70)
 
-    stats = {"TP": 0, "FP": 0, "FN": 0, "TN": 0}
+    stats = {"TP": 0, "FP": 0, "FN": 0, "TN": 0, "overclaims": 0}
     evaluations = []
+    scan_times = []
 
     for s in samples:
-        # Wrap in random unallocated padding to simulate raw disk sector layout
+        # Fixed padding keeps offsets reproducible and does not model a physical disk.
         sector_padded = b"\x11\x22\x33\x44" * 64 + s.data + b"\x99\x88\x77\x66" * 64
+        scan_started = time.perf_counter()
         carved = carve_bytes(sector_padded, max_results=20)
+        scan_elapsed_ms = (time.perf_counter() - scan_started) * 1000
+        scan_times.append(scan_elapsed_ms)
         matching = [c for c in carved if c.file_type == s.file_type]
+        case_stats, evaluation = _evaluate_sample(s, matching, scan_elapsed_ms)
+        for key, value in case_stats.items():
+            stats[key] += value
 
-        if s.expected_classification == "INTACT":
-            if matching and any(c.confidence in (CarvingConfidence.INTACT, CarvingConfidence.HIGH) for c in matching):
-                stats["TP"] += 1
-                result_str = "TP (Validated Intact)"
-            else:
-                stats["FN"] += 1
-                result_str = "FN (Missed / Under-classified)"
+        print(f"Sample {s.sample_id}: [{evaluation['evaluation']:<62}] {s.description}")
+        evaluations.append(evaluation)
 
-        elif s.expected_classification == "PARTIAL":
-            # If correctly identified as partial or fragmented without false intact promotion
-            if matching and not any(c.confidence == CarvingConfidence.INTACT for c in matching):
-                stats["TP"] += 1
-                result_str = "TP (Bounded to Partial/Fragmented)"
-            else:
-                stats["TP"] += 1
-                result_str = "TP (Bounded Stream)"
-
-        elif s.expected_classification == "REJECTED":
-            # Must NEVER be promoted to INTACT/VERIFIED
-            if matching and any(c.confidence in (CarvingConfidence.INTACT, CarvingConfidence.HIGH) for c in matching):
-                stats["FP"] += 1
-                result_str = "FP (False Positive: Corrupt Promoted)"
-            else:
-                stats["TN"] += 1
-                result_str = "TN (Correctly Rejected Trap)"
-
-        print(f"Sample {s.sample_id}: [{result_str:<26}] {s.category:<18} - {s.description}")
-        evaluations.append({
-            "sample_id": s.sample_id,
-            "category": s.category,
-            "file_type": s.file_type,
-            "description": s.description,
-            "expected": s.expected_classification,
-            "evaluation": result_str,
-        })
-
-    precision = stats["TP"] / (stats["TP"] + stats["FP"]) if (stats["TP"] + stats["FP"]) > 0 else 1.0
-    recall = stats["TP"] / (stats["TP"] + stats["FN"]) if (stats["TP"] + stats["FN"]) > 0 else 1.0
+    precision = stats["TP"] / (stats["TP"] + stats["FP"]) if (stats["TP"] + stats["FP"]) > 0 else 0.0
+    recall = stats["TP"] / (stats["TP"] + stats["FN"]) if (stats["TP"] + stats["FN"]) > 0 else 0.0
     f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
 
     print("\n" + "=" * 70)
-    print("  EXPANDED REAL-WORLD CORPUS EVALUATION SUMMARY")
+    print("  CONTROLLED SYNTHETIC CORPUS EVALUATION SUMMARY")
     print("=" * 70)
     print(f"  True Positives  : {stats['TP']}")
     print(f"  True Negatives  : {stats['TN']}")
-    print(f"  False Positives : {stats['FP']} (Strictly 0 — zero false positives)")
+    print(f"  False Positives : {stats['FP']}")
     print(f"  False Negatives : {stats['FN']}")
     print(f"  Precision       : {precision * 100:.1f}%")
     print(f"  Recall          : {recall * 100:.1f}%")
     print(f"  F1 Score        : {f1:.4f}")
+    median_scan_ms = statistics.median(scan_times)
+    print(f"  Median scan time: {median_scan_ms:.3f} ms")
 
     # Export report
     report_path = Path(__file__).resolve().parent.parent / "docs" / "RC2_REAL_WORLD_CORPUS.md"
-    md = f"""# RC2 Expanded Real-World Recovery Corpus Report
+    md = f"""# RC2 Controlled Synthetic Recovery Corpus Report
 
-## Ground Truth Evaluation Matrix ({len(samples)} Samples)
+This report is generated by `scripts/test_real_world_corpus_rc2.py`. Despite the
+legacy script and report filenames, the cases are deterministic in-memory
+fixtures, not real-world evidence images or physical media. Metrics apply only
+to this bounded corpus and the current raw carver.
 
-| Sample ID | Format Category | Artifact Description | Expected Baseline | Carving Evaluation |
-| :---: | :--- | :--- | :---: | :--- |
+## Ground-Truth Evaluation Matrix ({len(samples)} Samples)
+
+| Sample ID | Category | Case | Expected | Confidence | Candidates | Scan (ms) | Evaluation |
+| :---: | :--- | :--- | :---: | :---: | :---: | ---: | :--- |
 """
     for e in evaluations:
-        md += f"| **{e['sample_id']}** | `{e['category']}` | {e['description']} | `{e['expected']}` | `{e['evaluation']}` |\n"
+        md += (
+            f"| **{e['sample_id']}** | `{e['category']}` | {e['description']} "
+            f"({e['source_name']}) | `{e['expected']}` | `{e['confidence'] or 'NONE'}` "
+            f"| {e['candidate_count']} | {e['scan_time_ms']:.3f} | `{e['evaluation']}` |\n"
+        )
 
     md += f"""
 ---
 
 ## Quantitative Metrics
 
-- **Real-World Precision**: **{precision * 100:.1f}%**
-- **Real-World Recall**: **{recall * 100:.1f}%**
-- **Real-World F1 Score**: **{f1:.4f}**
-- **False Positive Rate**: **0.0%** (Zero corrupt/partial artifacts promoted to valid)
+- **Precision**: **{precision * 100:.1f}%**
+- **Recall**: **{recall * 100:.1f}%**
+- **F1 Score**: **{f1:.4f}**
+- **TP / FP / FN / TN**: **{stats['TP']} / {stats['FP']} / {stats['FN']} / {stats['TN']}**
+- **Partial-to-intact overclaims**: **{stats['overclaims']}**
+- **Median scan latency**: **{median_scan_ms:.3f} ms** per padded in-memory case
 
 ---
 
-## Defensive Engineering Boundaries
-1. **Multi-Chunk & Archive Validation**: Validates ZIP central directories and OpenXML document relations in-memory.
-2. **Deterministic Bounded Scoring**: Corrupt streams and missing trailers are prevented from ever generating a `VERIFIED` certificate.
+## Scope boundaries
+- Corpus inputs are synthetic fixtures with known byte ground truth; this is not a real-world accuracy estimate.
+- The renamed-extension row records a misleading source filename for context; the raw carver receives only bytes and does not test filesystem name recovery.
+- Scan timing excludes media I/O, filesystem metadata recovery, and sanitization.
+- This suite does not measure HDD/SSD behavior, physical sanitization, false-negative rates on field evidence, or large-scale recovery.
+- Filesystem, timestamp, steganography, and anti-forensic cases are exercised separately by the test suites; they are not included in these carving precision/recall totals.
 """
     report_path.write_text(md, encoding="utf-8")
-    print(f"\n[+] Real-world corpus report exported to: {report_path.resolve()}")
+    print(f"\n[+] Controlled synthetic corpus report exported to: {report_path.resolve()}")
+    data_dir = Path(__file__).resolve().parent.parent / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    results_path = data_dir / "corpus_results.json"
+    results_path.write_text(
+        json.dumps({
+            "corpus_type": "controlled_synthetic_raw_carving",
+            "timestamp_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "environment": {
+                "platform": platform.platform(),
+                "python_version": platform.python_version(),
+            },
+            "sample_count": len(samples),
+            "metrics": {
+                **stats,
+                "precision": precision,
+                "recall": recall,
+                "f1": f1,
+                "median_scan_ms": median_scan_ms,
+            },
+            "samples": evaluations,
+            "physical_media_tested": False,
+        }, indent=2),
+        encoding="utf-8",
+    )
+    print(f"[+] Machine-readable corpus results exported to: {results_path.resolve()}")
 
 
 if __name__ == "__main__":

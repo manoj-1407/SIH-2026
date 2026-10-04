@@ -239,8 +239,26 @@ These values are documented in:
 
 - [docs/IMPLEMENTATION_AUDIT.md](docs/IMPLEMENTATION_AUDIT.md)
 - [docs/BENCHMARK_REPORT.md](docs/BENCHMARK_REPORT.md)
+- [docs/FINAL_BENCHMARK_REPORT.md](docs/FINAL_BENCHMARK_REPORT.md)
 - [docs/RECOVERY_ACCURACY.md](docs/RECOVERY_ACCURACY.md)
-- [docs/RC2_REAL_WORLD_CORPUS.md](docs/RC2_REAL_WORLD_CORPUS.md)
+- [docs/RC2_REAL_WORLD_CORPUS.md](docs/RC2_REAL_WORLD_CORPUS.md) (controlled synthetic corpus; legacy filename)
+
+## Offline independent verification
+
+The Node.js verifier runs without the web application or third-party Node
+packages. It requires an independently supplied trust anchor; it will not
+accept a public key embedded in the evidence package as proof of its own
+authenticity:
+
+```powershell
+node scripts/verify_evidence.js path\to\evidence.json --trusted-key path\to\examiner.pub.pem
+node scripts/verify_evidence.js path\to\package\manifest.json --registry path\to\trust_registry.json
+```
+
+See [docs/STANDALONE_VERIFIER.md](docs/STANDALONE_VERIFIER.md) for exit codes
+and the exact meaning of each assurance-checklist result. Cryptographic
+verification confirms signed content integrity; it does not establish that an
+operation actually reached physical media.
 
 ## Security posture
 

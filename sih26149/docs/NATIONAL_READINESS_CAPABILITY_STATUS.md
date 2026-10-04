@@ -16,6 +16,8 @@ not physical devices.
 The UI provides a command preview and risks only. This application does not
 execute hardware Purge commands. Physical-device sanitize execution, completion
 polling, and device-level post-operation verification are not implemented.
+No disposable validation drive was available for this cycle, so ATA/NVMe
+execution and physical-device benchmarking remain not run.
 
 ## Fragmented recovery and classification
 
@@ -31,6 +33,9 @@ JPEG with a known inserted gap and verifies reconstructed bytes by SHA-256.
 Its reported throughput is for the synthetic inputs measured in that run; it
 does not represent 1–100 GB media, physical-device performance, or broad
 real-world recovery rates.
+The expanded raw-carving evaluator requires ground-truth hashes and confidence
+classifications; missing partial recoveries and false candidates are scored as
+failures rather than credited automatically.
 
 ## Filesystem and proof-loop scope
 
@@ -42,3 +47,11 @@ The proof loop re-runs carving over an in-memory byte stream and records
 pre/post artifact metadata in signed evidence. It does not operate on or certify
 physical media. PURGE and DESTROY choices in this validation loop are simulated
 in-memory probes only; the evidence states this scope.
+
+## Independent verification and benchmark outputs
+
+The Node.js offline verifier requires a public key or trust registry supplied
+independently by the operator; an embedded package key cannot authenticate
+itself. Checks not represented in a signed input are reported as not attested.
+See `STANDALONE_VERIFIER.md` and `FINAL_BENCHMARK_REPORT.md` for the workflow
+and current controlled measurements.

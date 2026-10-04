@@ -6,8 +6,8 @@
  * Python FastAPI server. Uses only Node.js built-in crypto module.
  *
  * Usage:
- *   node scripts/verify_evidence.js <evidence.json> [public_key.pem]
- *   node scripts/verify_evidence.js <package_dir/manifest.json> [public_key.pem]
+ *   node scripts/verify_evidence.js <evidence.json> --trusted-key public_key.pem
+ *   node scripts/verify_evidence.js <package_dir/manifest.json> --registry trust_registry.json
  *
  * Standards: Ed25519 (RFC 8032), SHA-256 (FIPS 180-4),
  *            JSON canonical sort_keys serialization (RFC 8785 subset).
@@ -64,43 +64,37 @@ function verifyEd25519(publicKeyRaw, message, signatureHex) {
 function loadPublicKeyFromPem(pemPath) {
   const pem = fs.readFileSync(pemPath, 'utf8');
   const keyObj = crypto.createPublicKey(pem);
+  if (keyObj.asymmetricKeyType !== 'ed25519') {
+    throw new Error('Trusted public key must be Ed25519');
+  }
   const der = keyObj.export({ type: 'spki', format: 'der' });
   return der.slice(-32);
 }
 
 function loadPublicKeyFromHex(hex) {
+  if (typeof hex !== 'string' || !/^[0-9a-f]{64}$/i.test(hex)) {
+    failTrust('Trusted registry public_key_hex must encode exactly 32 bytes');
+  }
   return Buffer.from(hex, 'hex');
 }
 
-function resolvePublicKey(keyId, explicitPubKeyPath) {
-  if (explicitPubKeyPath && fs.existsSync(explicitPubKeyPath)) {
-    return { key: loadPublicKeyFromPem(explicitPubKeyPath), source: path.basename(explicitPubKeyPath) };
-  }
-  const regCandidates = [
-    path.join('data', 'keys', 'trust_registry.json'),
-    path.join(__dirname, '..', 'data', 'keys', 'trust_registry.json'),
-  ];
-  for (const regPath of regCandidates) {
-    if (fs.existsSync(regPath)) {
-      try {
-        const reg = JSON.parse(fs.readFileSync(regPath, 'utf8'));
-        if (keyId && reg[keyId]?.public_key_hex) {
-          return { key: loadPublicKeyFromHex(reg[keyId].public_key_hex), source: `trust registry [${keyId}]` };
-        }
-      } catch {}
+function resolvePublicKey(keyId, trustedPubKeyPath, registryPath) {
+  if (trustedPubKeyPath) {
+    if (!fs.existsSync(trustedPubKeyPath)) {
+      failTrust(`Trusted public key not found: ${trustedPubKeyPath}`);
     }
+    return { key: loadPublicKeyFromPem(trustedPubKeyPath), source: path.basename(trustedPubKeyPath) };
   }
-  const candidates = [];
-  if (keyId) {
-    candidates.push(path.join('data', 'keys', `${keyId}.pub.pem`));
-    candidates.push(path.join(__dirname, '..', 'data', 'keys', `${keyId}.pub.pem`));
-  }
-  candidates.push(path.join('data', 'keys', 'primary.pub.pem'));
-  candidates.push(path.join(__dirname, '..', 'data', 'keys', 'primary.pub.pem'));
-  for (const c of candidates) {
-    if (fs.existsSync(c)) {
-      return { key: loadPublicKeyFromPem(c), source: path.basename(c) };
+  if (registryPath) {
+    if (!fs.existsSync(registryPath)) {
+      failTrust(`Trusted key registry not found: ${registryPath}`);
     }
+    const registry = JSON.parse(fs.readFileSync(registryPath, 'utf8'));
+    const entry = keyId && registry[keyId];
+    if (!entry || entry.status !== 'ACTIVE' || typeof entry.public_key_hex !== 'string') {
+      failTrust(`Key ${keyId || '(missing key ID)'} is not present in the supplied trust registry`);
+    }
+    return { key: loadPublicKeyFromHex(entry.public_key_hex), source: `trust registry [${keyId}]` };
   }
   return { key: null, source: null };
 }
@@ -115,7 +109,35 @@ function failAudit(msg) {
   process.exit(1);
 }
 
-function verifyEnvelope(pkg, jsonPath, pubKeyPath) {
+function failTrust(msg) {
+  console.error(`\x1b[31m[UNTRUSTED] ${msg}\x1b[0m`);
+  process.exit(2);
+}
+
+function printEnvelopeAssurance(pkg) {
+  const scope = typeof pkg.scope === 'string' ? pkg.scope.trim() : '';
+  const operation = pkg.operation && typeof pkg.operation === 'object' ? pkg.operation : null;
+  const result = pkg.result && typeof pkg.result === 'object' ? pkg.result : null;
+  const probe = result && result.post_sanitization_probe;
+  const recovered = probe && Number.isInteger(probe.artifacts_recovered)
+    ? probe.artifacts_recovered
+    : null;
+
+  console.log(`HASH CHAIN : NOT INCLUDED (single-envelope format)`);
+  console.log(`SCOPE      : ${scope ? 'PASS (signed scope present)' : 'NOT ATTESTED'}`);
+  console.log(`OPERATION  : ${operation && Object.keys(operation).length
+    ? 'PASS (signed operation metadata present)' : 'NOT ATTESTED'}`);
+  if (recovered !== null) {
+    console.log(`POST-PROBE : ${recovered === 0 ? 'PASS' : 'FAIL'} (${recovered} residual artifact(s) reported)`);
+    if (result.assurance && result.assurance.operation_scope) {
+      console.log(`PROBE SCOPE: ${result.assurance.operation_scope}`);
+    }
+  } else {
+    console.log(`POST-PROBE : NOT ATTESTED`);
+  }
+}
+
+function verifyEnvelope(pkg, jsonPath, trustedPubKeyPath, registryPath) {
   console.log(`\x1b[36m=== SIH26149 Independent Evidence Verifier (Node.js) ===\x1b[0m`);
   console.log(`File: ${jsonPath}`);
   console.log(`Evidence ID: ${pkg.evidence_id || '-'}`);
@@ -149,21 +171,22 @@ function verifyEnvelope(pkg, jsonPath, pubKeyPath) {
   console.log(`\x1b[32m[OK] Hash verified: ${computedHash.substring(0, 32)}...\x1b[0m`);
 
   const signing = pkg.signing || {};
-  const resolved = resolvePublicKey(signing.key_id, pubKeyPath);
-  if (resolved.key) {
-    const sigValid = verifyEd25519(resolved.key, canonicalBytes, pkg.signature);
-    if (sigValid) {
-      console.log(`\x1b[32m[OK] Ed25519 signature VALID (${resolved.source})\x1b[0m`);
-    } else {
-      console.log(`\x1b[31m[INVALID] Ed25519 signature INVALID\x1b[0m`);
-      process.exit(1);
-    }
-  } else {
-    console.log(`\x1b[33m[WARN] No public key found - hash verified but signature not checked\x1b[0m`);
+  if (signing.algorithm !== 'Ed25519') {
+    fail(`INVALID - Unsupported signing algorithm: ${signing.algorithm || '(missing)'}`);
   }
+  const resolved = resolvePublicKey(signing.key_id, trustedPubKeyPath, registryPath);
+  if (!resolved.key) {
+    failTrust('A trusted public key or trust registry is required; an evidence package is not its own trust anchor');
+  }
+  if (!verifyEd25519(resolved.key, canonicalBytes, pkg.signature)) {
+    console.log(`\x1b[31m[INVALID] Ed25519 signature INVALID\x1b[0m`);
+    process.exit(1);
+  }
+  console.log(`\x1b[32m[OK] Ed25519 signature VALID (${resolved.source})\x1b[0m`);
 
   console.log();
-  console.log(`\x1b[32m[OK] VERIFIED - Evidence envelope integrity confirmed\x1b[0m`);
+  printEnvelopeAssurance(pkg);
+  console.log(`\x1b[32m[OK] CRYPTOGRAPHICALLY VERIFIED - Evidence envelope integrity confirmed\x1b[0m`);
   console.log(`  Algorithm: ${signing.algorithm || 'Ed25519'}`);
   console.log(`  Key ID: ${signing.key_id || '-'}`);
   console.log();
@@ -184,7 +207,7 @@ function walkDir(root) {
   return result;
 }
 
-function verifyDirectoryPackage(manifestPath, pubKeyPath) {
+function verifyDirectoryPackage(manifestPath, trustedPubKeyPath, registryPath) {
   const root = path.dirname(manifestPath);
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
   const sigPath = path.join(root, 'cryptography', 'signature.json');
@@ -241,23 +264,21 @@ function verifyDirectoryPackage(manifestPath, pubKeyPath) {
   }
   console.log(`\x1b[32m[OK] Manifest integrity (raw + canonical) verified\x1b[0m`);
 
-  let resolved = resolvePublicKey(sigData.key_id, pubKeyPath);
-  if (resolved.key === null && fs.existsSync(pubPkgPath)) {
-    try {
-      resolved = { key: loadPublicKeyFromPem(pubPkgPath), source: 'embedded public_key.pem' };
-    } catch {}
+  const resolved = resolvePublicKey(sigData.key_id, trustedPubKeyPath, registryPath);
+  if (!resolved.key) {
+    failTrust('A trusted public key or trust registry is required; embedded package keys are not trust anchors');
   }
-  if (resolved.key) {
-    const sigValid = verifyEd25519(resolved.key, manifestCanonical, sigData.signature);
-    if (sigValid) {
-      console.log(`\x1b[32m[OK] Ed25519 signature VALID (${resolved.source})\x1b[0m`);
-    } else {
-      console.log(`\x1b[31m[INVALID] Ed25519 signature INVALID\x1b[0m`);
-      process.exit(1);
+  if (fs.existsSync(pubPkgPath)) {
+    const embedded = loadPublicKeyFromPem(pubPkgPath);
+    if (!embedded.equals(resolved.key)) {
+      fail(`INVALID - Embedded public key does not match the independently trusted key`);
     }
-  } else {
-    console.log(`\x1b[33m[WARN] No public key found - hash verified but signature not checked\x1b[0m`);
   }
+  if (!verifyEd25519(resolved.key, manifestCanonical, sigData.signature)) {
+    console.log(`\x1b[31m[INVALID] Ed25519 signature INVALID\x1b[0m`);
+    process.exit(1);
+  }
+  console.log(`\x1b[32m[OK] Ed25519 signature VALID (${resolved.source})\x1b[0m`);
 
   if (fs.existsSync(auditPath) && fs.statSync(auditPath).size > 0) {
     const lines = fs.readFileSync(auditPath, 'utf8').split(/\r?\n/);
@@ -268,24 +289,36 @@ function verifyDirectoryPackage(manifestPath, pubKeyPath) {
       if (!line) continue;
       let event;
       try { event = JSON.parse(line); } catch { failAudit(`Malformed audit JSON at event ${idx}`); }
-      const storedPrev = event.previous_hash || 'GENESIS';
+      const storedPrev = event.previous_hash;
       if (storedPrev !== expectedPrev) {
         failAudit(`Chain broken at event ${idx}: expected previous_hash=${expectedPrev}, got ${storedPrev}`);
+      }
+      if (typeof event.entry_hash !== 'string' || !/^[0-9a-f]{64}$/i.test(event.entry_hash)) {
+        failAudit(`Missing or malformed entry_hash at event ${idx}`);
       }
       const sanitized = {};
       for (const [k, v] of Object.entries(event)) if (k !== 'entry_hash') sanitized[k] = v;
       const computedHash = sha256hex(canonicalize(sanitized));
-      if (event.entry_hash && event.entry_hash !== computedHash) {
+      if (event.entry_hash !== computedHash) {
         failAudit(`Entry hash mismatch at event ${idx}`);
       }
       expectedPrev = event.entry_hash;
       idx++;
     }
-    console.log(`\x1b[32m[OK] Audit event chain (${idx} events) verified - chain intact\x1b[0m`);
+    if (idx === 0) {
+      console.log(`\x1b[33m[NOT ATTESTED] Audit chain file is empty\x1b[0m`);
+    } else {
+      console.log(`\x1b[32m[OK] Audit event chain (${idx} events) verified - chain intact\x1b[0m`);
+    }
+  } else {
+    console.log(`\x1b[33m[NOT ATTESTED] Audit chain is not included in this package\x1b[0m`);
   }
 
   console.log();
-  console.log(`\x1b[32m[OK] VERIFIED - Evidence package integrity confirmed\x1b[0m`);
+  console.log(`SCOPE      : NOT ATTESTED (generic package manifest has no normalized scope field)`);
+  console.log(`OPERATION  : NOT ATTESTED (generic package manifest has no normalized operation field)`);
+  console.log(`POST-PROBE : NOT ATTESTED (generic package manifest has no normalized post-probe field)`);
+  console.log(`\x1b[32m[OK] CRYPTOGRAPHICALLY VERIFIED - Evidence package integrity confirmed\x1b[0m`);
   console.log(`  Files verified: ${Object.keys(file_hashes).length}`);
   console.log(`  Algorithm: ${sigData.algorithm || 'Ed25519'}`);
   console.log(`  Key ID: ${sigData.key_id || '-'}`);
@@ -293,14 +326,28 @@ function verifyDirectoryPackage(manifestPath, pubKeyPath) {
   console.log(`\x1b[36mThis result was computed by an independent Node.js implementation,\nseparate from the Python verifier in app/core/independent_verifier.py.\x1b[0m`);
 }
 
-const jsonArg = process.argv[2];
-const keyArg = process.argv[3] || null;
+const args = process.argv.slice(2);
+const jsonArg = args[0];
+let keyArg = null;
+let registryArg = null;
+for (let i = 1; i < args.length; i++) {
+  if (args[i] === '--trusted-key' && args[i + 1]) {
+    keyArg = args[++i];
+  } else if (args[i] === '--registry' && args[i + 1]) {
+    registryArg = args[++i];
+  } else if (!args[i].startsWith('--') && !keyArg) {
+    keyArg = args[i];
+  } else {
+    console.error(`Unknown or incomplete argument: ${args[i]}`);
+    process.exit(2);
+  }
+}
 
 if (!jsonArg || jsonArg === '--help' || jsonArg === '-h') {
-  console.log('Usage: node scripts/verify_evidence.js <evidence.json|manifest.json> [public_key.pem]');
-  console.log('  node scripts/verify_evidence.js evidence_EVID-ABCD123456.json');
-  console.log('  node scripts/verify_evidence.js case-XXXX/manifest.json');
-  process.exit(jsonArg ? 0 : 1);
+  console.log('Usage: node scripts/verify_evidence.js <evidence.json|manifest.json> (--trusted-key public_key.pem | --registry trust_registry.json)');
+  console.log('  node scripts/verify_evidence.js evidence.json --trusted-key examiner.pub.pem');
+  console.log('  node scripts/verify_evidence.js case-XXXX/manifest.json --registry trust_registry.json');
+  process.exit(jsonArg ? 0 : 2);
 }
 
 if (!fs.existsSync(jsonArg)) {
@@ -318,7 +365,7 @@ try {
 
 const isManifest = ('file_hashes' in topLevel) && ('schema_version' in topLevel);
 if (isManifest) {
-  verifyDirectoryPackage(jsonArg, keyArg);
+  verifyDirectoryPackage(jsonArg, keyArg, registryArg);
 } else {
-  verifyEnvelope(topLevel, jsonArg, keyArg);
+  verifyEnvelope(topLevel, jsonArg, keyArg, registryArg);
 }

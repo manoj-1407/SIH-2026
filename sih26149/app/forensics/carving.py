@@ -610,7 +610,7 @@ def _carve_mp4(data: bytes, offset: int) -> Optional[CarvedFile]:
 
     while pos + 8 <= search_limit:
         atom_size = _read_u32be_full(data, pos)
-        if atom_size < 8:
+        if atom_size < 8 or atom_size > search_limit - pos:
             break
         atom_type = data[pos + 4:pos + 8]
 
@@ -1070,7 +1070,7 @@ def _carve_mov(data: bytes, offset: int) -> Optional[CarvedFile]:
 
     while pos + 8 <= search_limit:
         atom_size = _read_u32be_full(data, pos)
-        if atom_size < 8:
+        if atom_size < 8 or atom_size > search_limit - pos:
             break
         atom_type = data[pos + 4:pos + 8]
         if atom_type == b'moov':

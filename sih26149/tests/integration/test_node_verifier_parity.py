@@ -45,9 +45,12 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 NODE_SCRIPT = REPO_ROOT / "scripts" / "verify_evidence.js"
 
 
-def _run_node(manifest_path: Path) -> tuple[int, str]:
+def _run_node(manifest_path: Path, trusted_public_key: Path | None = None) -> tuple[int, str]:
+    command = ["node", str(NODE_SCRIPT), str(manifest_path)]
+    if trusted_public_key is not None:
+        command.extend(["--trusted-key", str(trusted_public_key)])
     proc = subprocess.run(
-        ["node", str(NODE_SCRIPT), str(manifest_path)],
+        command,
         capture_output=True,
         text=True,
         cwd=str(REPO_ROOT),
@@ -57,7 +60,7 @@ def _run_node(manifest_path: Path) -> tuple[int, str]:
     return proc.returncode, combined
 
 
-def _build_package(work_dir: Path, artifact_bytes: bytes) -> Path:
+def _build_package(work_dir: Path, artifact_bytes: bytes) -> tuple[Path, Path]:
     case_id = "CASE-H08-PARITY"
     priv_pem, pub_raw = generate_keypair()
     from cryptography.hazmat.primitives import serialization
@@ -66,6 +69,8 @@ def _build_package(work_dir: Path, artifact_bytes: bytes) -> Path:
         encoding=serialization.Encoding.PEM,
         format=serialization.PublicFormat.SubjectPublicKeyInfo,
     )
+    trusted_key_path = work_dir / "trusted-examiner.pub.pem"
+    trusted_key_path.write_bytes(pub_pem)
 
     builder = EvidencePackageBuilder(case_id, work_dir)
 
@@ -134,49 +139,30 @@ def _build_package(work_dir: Path, artifact_bytes: bytes) -> Path:
     key_id = "KEY-H08-PARITY-001"
     builder.build_and_sign(priv_pem, pub_pem, key_id)
 
-    data_keys_dir = REPO_ROOT / "data" / "keys"
-    data_keys_dir.mkdir(parents=True, exist_ok=True)
-    trust_reg_p = data_keys_dir / "trust_registry.json"
-    reg = {}
-    if trust_reg_p.exists():
-        try:
-            reg = json.loads(trust_reg_p.read_text(encoding="utf-8"))
-        except Exception:
-            reg = {}
-    pub_hex = pub_raw.hex() if isinstance(pub_raw, bytes) else pub_raw
-    reg[key_id] = {
-        "key_id": key_id,
-        "public_key_hex": pub_hex,
-        "status": "ACTIVE",
-        "created_at": time.time(),
-        "owner": "H08-TEST",
-    }
-    trust_reg_p.write_text(json.dumps(reg, indent=2), encoding="utf-8")
-
-    return builder.package_dir
+    return builder.package_dir, trusted_key_path
 
 
 def test_verifier_parity_pristine_package_both_verified(tmp_path):
     artifact = generate_valid_png()
-    pkg_dir = _build_package(tmp_path, artifact)
+    pkg_dir, trusted_key_path = _build_package(tmp_path, artifact)
     manifest_p = pkg_dir / "manifest.json"
     assert manifest_p.exists()
 
-    from app.core.trust import KeyRegistry
-    trust_reg_path = REPO_ROOT / "data" / "keys" / "trust_registry.json"
-    reg = KeyRegistry(str(trust_reg_path))
-    ok_py, cl_py = verify_evidence_package(pkg_dir, key_registry=reg)
+    public_key_pem = trusted_key_path.read_bytes()
+    ok_py, cl_py = verify_evidence_package(pkg_dir, public_key_pem=public_key_pem)
     assert ok_py is True, f"Python verifier rejected pristine package: {cl_py.explanation}"
     assert cl_py.classification == EvidenceClassification.VERIFIED
 
-    exit_code, stdout = _run_node(manifest_p)
+    exit_code, stdout = _run_node(manifest_p, trusted_key_path)
     assert exit_code == 0, f"Node verifier exit={exit_code} stdout={stdout[:600]}"
     assert "VERIFIED" in stdout, f"Node stdout missing VERIFIED: {stdout[:500]}"
+    assert "Audit event chain (3 events) verified" in stdout
+    assert "SCOPE      : NOT ATTESTED" in stdout
 
 
 def test_verifier_parity_artifact_byte_flip_both_reject(tmp_path):
     artifact = bytearray(generate_valid_png())
-    pkg_dir = _build_package(tmp_path, bytes(artifact))
+    pkg_dir, trusted_key_path = _build_package(tmp_path, bytes(artifact))
     manifest_p = pkg_dir / "manifest.json"
 
     art_dir = pkg_dir / "recovery" / "artifacts"
@@ -188,14 +174,11 @@ def test_verifier_parity_artifact_byte_flip_both_reject(tmp_path):
         flipped = bytes([b[0] ^ 0x01])
         f.write(flipped)
 
-    from app.core.trust import KeyRegistry
-    trust_reg_path = REPO_ROOT / "data" / "keys" / "trust_registry.json"
-    reg = KeyRegistry(str(trust_reg_path))
-    ok_py, cl_py = verify_evidence_package(pkg_dir, key_registry=reg)
+    ok_py, cl_py = verify_evidence_package(pkg_dir, public_key_pem=trusted_key_path.read_bytes())
     assert ok_py is False
     assert cl_py.classification == EvidenceClassification.INVALID
 
-    exit_code, stdout = _run_node(manifest_p)
+    exit_code, stdout = _run_node(manifest_p, trusted_key_path)
     assert exit_code != 0, f"Node verifier accepted tampered artifact (exit=0)"
     haystack = stdout.upper()
     assert ("INVALID" in haystack) or ("FAILED" in haystack), (
@@ -205,7 +188,7 @@ def test_verifier_parity_artifact_byte_flip_both_reject(tmp_path):
 
 def test_verifier_parity_audit_event_tamper_both_reject(tmp_path):
     artifact = generate_valid_png()
-    pkg_dir = _build_package(tmp_path, artifact)
+    pkg_dir, trusted_key_path = _build_package(tmp_path, artifact)
     manifest_p = pkg_dir / "manifest.json"
 
     audit_p = pkg_dir / "audit" / "events.jsonl"
@@ -222,16 +205,24 @@ def test_verifier_parity_audit_event_tamper_both_reject(tmp_path):
     lines[-1] = b.decode("utf-8", errors="replace")
     audit_p.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
-    from app.core.trust import KeyRegistry
-    trust_reg_path = REPO_ROOT / "data" / "keys" / "trust_registry.json"
-    reg = KeyRegistry(str(trust_reg_path))
-    ok_py, cl_py = verify_evidence_package(pkg_dir, key_registry=reg)
+    ok_py, cl_py = verify_evidence_package(pkg_dir, public_key_pem=trusted_key_path.read_bytes())
     assert ok_py is False
 
-    exit_code, stdout = _run_node(manifest_p)
+    exit_code, stdout = _run_node(manifest_p, trusted_key_path)
     assert exit_code != 0, f"Node verifier accepted audit chain tamper (exit=0)"
     haystack = stdout.upper()
     chain_related = ("AUDIT_CHAIN" in haystack) or ("CHAIN" in haystack) or ("TAMPER" in haystack)
     assert chain_related, (
         f"Node output on audit tamper doesn't mention AUDIT_CHAIN/CHAIN/TAMPER: {stdout[:500]}"
     )
+
+
+def test_node_verifier_rejects_embedded_key_without_trust_anchor(tmp_path):
+    pkg_dir, _ = _build_package(tmp_path, generate_valid_png())
+    manifest_p = pkg_dir / "manifest.json"
+
+    exit_code, stdout = _run_node(manifest_p)
+
+    assert exit_code == 2
+    assert "UNTRUSTED" in stdout
+    assert "CRYPTOGRAPHICALLY VERIFIED" not in stdout

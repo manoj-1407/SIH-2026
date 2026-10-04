@@ -1,0 +1,106 @@
+{
+  "evaluation_type": "controlled_synthetic_raw_carving",
+  "timestamp_utc": "2026-10-04T05:45:40Z",
+  "sample_count": 8,
+  "metrics": {
+    "TP": 4,
+    "FP": 4,
+    "FN": 2,
+    "TN": 0,
+    "precision": 0.5,
+    "recall": 0.6666666666666666,
+    "f1": 0.5714285714285715,
+    "median_scan_ms": 1.1815500038210303
+  },
+  "samples": [
+    {
+      "item_id": "GT-01",
+      "category": "Contiguous",
+      "expected": "INTACT",
+      "description": "Valid JFIF JPEG",
+      "reference_sha256": "f2369567b90639430fcc26995afa41e3bd4d1c5a507bbd904504f2f887bce243",
+      "recovered_sha256": "f2369567b90639430fcc26995afa41e3bd4d1c5a507bbd904504f2f887bce243",
+      "confidence": "INTACT",
+      "scan_time_ms": 1.46,
+      "evaluation": "TP (ground-truth bytes and intact confidence match)"
+    },
+    {
+      "item_id": "GT-02",
+      "category": "Contiguous",
+      "expected": "INTACT",
+      "description": "Valid PNG with IHDR/IEND",
+      "reference_sha256": "6422564120b76bbc05819b296f96f7e82593e60bb33f3ecf2abaad1cdbf85339",
+      "recovered_sha256": "6422564120b76bbc05819b296f96f7e82593e60bb33f3ecf2abaad1cdbf85339",
+      "confidence": "INTACT",
+      "scan_time_ms": 0.48,
+      "evaluation": "TP (ground-truth bytes and intact confidence match)"
+    },
+    {
+      "item_id": "GT-03",
+      "category": "Contiguous",
+      "expected": "INTACT",
+      "description": "Valid PDF document",
+      "reference_sha256": "334f1573a41cad51a595f02c47ed571665bb27a2cb7d83116e9921534d444c0d",
+      "recovered_sha256": null,
+      "confidence": null,
+      "scan_time_ms": 1.203,
+      "evaluation": "FP+FN (wrong bytes or confidence)"
+    },
+    {
+      "item_id": "GT-04",
+      "category": "Sequential Fragmented",
+      "expected": "RECONSTRUCTED",
+      "description": "JPEG with 1KB gap",
+      "reference_sha256": "f2369567b90639430fcc26995afa41e3bd4d1c5a507bbd904504f2f887bce243",
+      "recovered_sha256": "f2369567b90639430fcc26995afa41e3bd4d1c5a507bbd904504f2f887bce243",
+      "confidence": "BIFRAGMENTED",
+      "scan_time_ms": 1.477,
+      "evaluation": "TP (ground-truth reconstruction hash matches)"
+    },
+    {
+      "item_id": "GT-05",
+      "category": "Missing Fragments",
+      "expected": "PARTIAL",
+      "description": "JPEG missing SOS/EOI",
+      "reference_sha256": "1d0f2ba0a52bfacefc4d7193d768fd63f1e336c519a325b2d13033e6ff48a0f3",
+      "recovered_sha256": "1d0f2ba0a52bfacefc4d7193d768fd63f1e336c519a325b2d13033e6ff48a0f3",
+      "confidence": "HEADER_ONLY",
+      "scan_time_ms": 4.647,
+      "evaluation": "TP (ground-truth bytes bounded as partial)"
+    },
+    {
+      "item_id": "GT-06",
+      "category": "Missing Fragments",
+      "expected": "PARTIAL",
+      "description": "PDF missing xref table",
+      "reference_sha256": "18d4c7e6f5c8ca37240574e94bca095168c39b45bc410e09480d76f88ee8110f",
+      "recovered_sha256": null,
+      "confidence": null,
+      "scan_time_ms": 1.16,
+      "evaluation": "FP+FN (wrong candidate bytes)"
+    },
+    {
+      "item_id": "GT-07",
+      "category": "Corrupted Traps",
+      "expected": "REJECTED",
+      "description": "JPEG header with garbage body",
+      "reference_sha256": "82e2e9bf70db4f51629ac1bdd996b75cdce547b8d1c4a4ede5a5540f06a7dc5f",
+      "recovered_sha256": null,
+      "confidence": null,
+      "scan_time_ms": 0.79,
+      "evaluation": "FP (candidate emitted for rejected input)"
+    },
+    {
+      "item_id": "GT-08",
+      "category": "Corrupted Traps",
+      "expected": "REJECTED",
+      "description": "PNG with invalid chunk CRC",
+      "reference_sha256": "34d3bf7eb699ad417bb4b584ddb243661fd46036bec3158fe6d8b9c58d047543",
+      "recovered_sha256": null,
+      "confidence": null,
+      "scan_time_ms": 0.334,
+      "evaluation": "FP (candidate emitted for rejected input)"
+    }
+  ],
+  "physical_media_tested": false
+}
